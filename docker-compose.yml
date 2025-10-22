@@ -34,6 +34,38 @@ services:
       - "log_connections=on"
       - "-c"
       - "log_disconnections=on"
+  redis:
+    image: redis:7
+    container_name: redis
+    restart: always
+    ports:
+      - "6379:6379"
+    command:
+      [
+        "redis-server",
+        "--slowlog-log-slower-than",
+        "1000",
+        "--slowlog-max-len",
+        "256",
+        "--logfile",
+        "/var/log/redis/redis-server.log",
+      ]
+    volumes:
+      - redis_data:/data
+      - ./logs/redis:/var/log/redis # 로그 마운트
+    networks:
+      - backend
+
+  redis-cli:
+    image: redis:7
+    container_name: redis-cli
+    depends_on:
+      - redis
+    networks:
+      - backend
+    command: [ "tail", "-f", "/dev/null" ] # 컨테이너를 계속 실행 상태로 유지
+    volumes:
+      - ./redis-scripts:/scripts # Redis 스크립트 디렉토리 마운트
 
   backend:
     build:
@@ -43,6 +75,8 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      redis:
+        condition: service_started
     ports:
       - "8080:8080"
     networks:
@@ -53,6 +87,7 @@ services:
 
 volumes:
   postgres_data:
+  redis_data:
 
 networks:
   backend:
