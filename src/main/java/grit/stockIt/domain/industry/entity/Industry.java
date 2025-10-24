@@ -20,7 +20,7 @@ import org.hibernate.annotations.SQLRestriction;
 public class Industry extends BaseEntity {
 
     @Id // 기본 키 (Primary Key)
-    @Column(name = "industry_code", length = 10) // DB 컬럼명 및 길이 일치
+    @Column(name = "industry_code", length = 20) // DB 컬럼명 및 길이 일치
     private String code; // 업종 코드 (PK)
 
     @Column(name = "industry_name", nullable = true, length = 100) // 이름은 초기에 null일 수 있음
