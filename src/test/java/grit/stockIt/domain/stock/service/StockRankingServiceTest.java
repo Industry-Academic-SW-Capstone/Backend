@@ -65,7 +65,7 @@ class StockRankingServiceTest {
     }
 
     @Test
-    @DisplayName("웹소켓용 주식코드 조회 - 10건 확인")
+    @DisplayName("웹소켓용 주식코드 조회 - 10건 확인 (DB 필터링)")
     void testStockCodesForWebSocket() {
         // Given
         int expectedCount = 10;
@@ -75,7 +75,7 @@ class StockRankingServiceTest {
 
         // Then
         assertNotNull(stockCodes, "조회된 주식코드 리스트는 null이 아니어야 함");
-        assertEquals(expectedCount, stockCodes.size(), "조회된 주식코드 수는 " + expectedCount + "개여야 함");
+        assertTrue(stockCodes.size() <= expectedCount, "조회된 주식코드 수는 " + expectedCount + "개 이하여야 함");
         
         // 모든 코드가 6자리인지 확인
         stockCodes.forEach(code -> {
@@ -83,7 +83,30 @@ class StockRankingServiceTest {
             assertEquals(6, code.length(), "주식코드는 6자리여야 함: " + code);
         });
         
-        System.out.println("웹소켓용 주식코드 " + stockCodes.size() + "개 조회 성공");
+        System.out.println("웹소켓용 주식코드 " + stockCodes.size() + "개 조회 성공 (DB에 있는 종목만)");
+        System.out.println("주식코드: " + stockCodes);
+    }
+
+    @Test
+    @DisplayName("거래대금 상위 종목 코드 조회 - 10건 확인 (DB 필터링)")
+    void testAmountTopStockCodes() {
+        // Given
+        int expectedCount = 10;
+
+        // When
+        List<String> stockCodes = stockRankingService.getAmountTopStockCodes(expectedCount);
+
+        // Then
+        assertNotNull(stockCodes, "조회된 주식코드 리스트는 null이 아니어야 함");
+        assertTrue(stockCodes.size() <= expectedCount, "조회된 주식코드 수는 " + expectedCount + "개 이하여야 함");
+        
+        // 모든 코드가 6자리인지 확인
+        stockCodes.forEach(code -> {
+            assertNotNull(code, "주식코드는 null이 아니어야 함");
+            assertEquals(6, code.length(), "주식코드는 6자리여야 함: " + code);
+        });
+        
+        System.out.println("거래대금 상위 주식코드 " + stockCodes.size() + "개 조회 성공 (DB에 있는 종목만)");
         System.out.println("주식코드: " + stockCodes);
     }
 }

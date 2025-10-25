@@ -1,6 +1,8 @@
 package grit.stockIt.domain.stock.service;
 
 import grit.stockIt.domain.stock.dto.StockRankingDto;
+import grit.stockIt.domain.stock.entity.Stock;
+import grit.stockIt.domain.stock.repository.StockRepository;
 import grit.stockIt.global.auth.KisTokenManager;
 import grit.stockIt.global.config.KisApiProperties;
 import lombok.RequiredArgsConstructor;
@@ -10,6 +12,8 @@ import org.springframework.web.reactive.function.client.WebClient;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 @Slf4j
 @Service
@@ -19,6 +23,7 @@ public class StockRankingService {
     private final WebClient webClient;
     private final KisTokenManager kisTokenManager;
     private final KisApiProperties kisApiProperties;
+    private final StockRepository stockRepository;
 
     // 거래량 상위 종목 조회
     @SuppressWarnings("unchecked")
@@ -98,17 +103,52 @@ public class StockRankingService {
         }
     }
 
-    // 거래량 상위 종목의 주식코드만 반환 (웹소켓 구독용)
+    // 거래량 상위 종목의 주식코드만 반환 (웹소켓 구독용) - DB에 있는 종목만
     public List<String> getVolumeTopStockCodes(int limit) {
-        return getVolumeTopStocks(limit).stream()
+        return getVolumeTopStocksFiltered(limit).stream()
                 .map(StockRankingDto::stockCode)
                 .toList();
     }
 
-    // 거래대금 상위 종목의 주식코드만 반환 (웹소켓 구독용)
+    // 거래대금 상위 종목의 주식코드만 반환 (웹소켓 구독용) - DB에 있는 종목만
     public List<String> getAmountTopStockCodes(int limit) {
-        return getAmountTopStocks(limit).stream()
+        return getAmountTopStocksFiltered(limit).stream()
                 .map(StockRankingDto::stockCode)
+                .toList();
+    }
+
+    // 거래량 상위 종목 조회 (DB에 있는 종목만 필터링)
+    public List<StockRankingDto> getVolumeTopStocksFiltered(int limit) {
+        List<StockRankingDto> allStocks = getVolumeTopStocks(limit);
+        return filterStocksInDatabase(allStocks, limit);
+    }
+
+    // 거래대금 상위 종목 조회 (DB에 있는 종목만 필터링)
+    public List<StockRankingDto> getAmountTopStocksFiltered(int limit) {
+        List<StockRankingDto> allStocks = getAmountTopStocks(limit);
+        return filterStocksInDatabase(allStocks, limit);
+    }
+
+    // 데이터베이스에 있는 종목만 필터링
+    private List<StockRankingDto> filterStocksInDatabase(List<StockRankingDto> stocks, int limit) {
+        // 종목 코드 리스트 추출
+        List<String> stockCodes = stocks.stream()
+                .map(StockRankingDto::stockCode)
+                .toList();
+
+        // 데이터베이스에서 존재하는 종목들만 조회
+        List<Stock> existingStocks = stockRepository.findByCodeIn(stockCodes);
+        Set<String> existingStockCodes = existingStocks.stream()
+                .map(Stock::getCode)
+                .collect(Collectors.toSet());
+
+        log.info("API에서 조회된 종목 수: {}, DB에 존재하는 종목 수: {}", 
+                stocks.size(), existingStockCodes.size());
+
+        // DB에 있는 종목만 필터링하고 원하는 개수만큼 반환
+        return stocks.stream()
+                .filter(stock -> existingStockCodes.contains(stock.stockCode()))
+                .limit(limit)
                 .toList();
     }
 

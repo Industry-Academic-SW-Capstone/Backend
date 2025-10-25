@@ -7,4 +7,7 @@ import java.util.List;
 
 public interface StockRepository extends JpaRepository<Stock,String> {
     List<Stock> findByMarketType(String marketType);
+    
+    // 종목 코드 리스트로 존재하는 종목들만 조회
+    List<Stock> findByCodeIn(List<String> stockCodes);
 }
