@@ -20,11 +20,7 @@ public class StockRankingService {
     private final KisTokenManager kisTokenManager;
     private final KisApiProperties kisApiProperties;
 
-    /**
-     * 거래량 상위 종목 조회
-     * @param limit 조회할 종목 수 (기본값: 20)
-     * @return 거래량 상위 종목 리스트
-     */
+    // 거래량 상위 종목 조회
     @SuppressWarnings("unchecked")
     public List<StockRankingDto> getVolumeTopStocks(int limit) {
         try {
@@ -63,11 +59,7 @@ public class StockRankingService {
         }
     }
 
-    /**
-     * 거래대금 상위 종목 조회
-     * @param limit 조회할 종목 수 (기본값: 20)
-     * @return 거래대금 상위 종목 리스트
-     */
+    // 거래대금 상위 종목 조회
     @SuppressWarnings("unchecked")
     public List<StockRankingDto> getAmountTopStocks(int limit) {
         try {
@@ -106,13 +98,16 @@ public class StockRankingService {
         }
     }
 
-    /**
-     * 상위 종목의 주식코드만 반환 (웹소켓 구독용)
-     * @param limit 조회할 종목 수
-     * @return 주식코드 리스트
-     */
+    // 거래량 상위 종목의 주식코드만 반환 (웹소켓 구독용)
     public List<String> getVolumeTopStockCodes(int limit) {
         return getVolumeTopStocks(limit).stream()
+                .map(StockRankingDto::stockCode)
+                .toList();
+    }
+
+    // 거래대금 상위 종목의 주식코드만 반환 (웹소켓 구독용)
+    public List<String> getAmountTopStockCodes(int limit) {
+        return getAmountTopStocks(limit).stream()
                 .map(StockRankingDto::stockCode)
                 .toList();
     }

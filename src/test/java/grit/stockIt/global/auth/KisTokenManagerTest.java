@@ -30,10 +30,10 @@ class KisTokenManagerTest {
         String appsecret = System.getenv("KIS_API_APPSECRET");
         
         if (appkey == null || appkey.isEmpty() || appsecret == null || appsecret.isEmpty()) {
-            System.out.println("⚠️ 환경변수 KIS_API_APPKEY 또는 KIS_API_APPSECRET가 설정되지 않았습니다.");
+            System.out.println("⚠환경변수 KIS_API_APPKEY 또는 KIS_API_APPSECRET가 설정되지 않았습니다.");
             System.out.println("테스트용 더미 값으로 실행됩니다.");
         } else {
-            System.out.println("✅ 환경변수에서 실제 API 키를 사용합니다.");
+            System.out.println("환경변수에서 실제 API 키를 사용합니다.");
         }
     }
 
