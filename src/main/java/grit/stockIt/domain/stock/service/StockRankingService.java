@@ -1,6 +1,8 @@
 package grit.stockIt.domain.stock.service;
 
 import grit.stockIt.domain.stock.dto.StockRankingDto;
+import grit.stockIt.domain.stock.dto.KisRankingResponseDto;
+import grit.stockIt.domain.stock.dto.KisStockDataDto;
 import grit.stockIt.domain.stock.entity.Stock;
 import grit.stockIt.domain.stock.repository.StockRepository;
 import grit.stockIt.global.auth.KisTokenManager;
@@ -26,12 +28,11 @@ public class StockRankingService {
     private final StockRepository stockRepository;
 
     // 거래량 상위 종목 조회
-    @SuppressWarnings("unchecked")
     public List<StockRankingDto> getVolumeTopStocks(int limit) {
         try {
             String accessToken = kisTokenManager.getAccessToken();
             
-            Map<String, Object> response = webClient.get()
+            KisRankingResponseDto response = webClient.get()
                     .uri(uriBuilder -> uriBuilder
                             .path("/uapi/domestic-stock/v1/quotations/volume-rank")
                             .queryParam("FID_COND_MRKT_DIV_CODE", "J")
@@ -53,7 +54,7 @@ public class StockRankingService {
                     .header("tr_id", "FHPST01710000")
                     .header("custtype", "P")
                     .retrieve()
-                    .bodyToMono(Map.class)
+                    .bodyToMono(KisRankingResponseDto.class)
                     .block();
 
             return parseVolumeRankingResponse(response, limit);
@@ -65,12 +66,11 @@ public class StockRankingService {
     }
 
     // 거래대금 상위 종목 조회
-    @SuppressWarnings("unchecked")
     public List<StockRankingDto> getAmountTopStocks(int limit) {
         try {
             String accessToken = kisTokenManager.getAccessToken();
             
-            Map<String, Object> response = webClient.get()
+            KisRankingResponseDto response = webClient.get()
                     .uri(uriBuilder -> uriBuilder
                             .path("/uapi/domestic-stock/v1/quotations/volume-rank")
                             .queryParam("FID_COND_MRKT_DIV_CODE", "J")
@@ -92,7 +92,7 @@ public class StockRankingService {
                     .header("tr_id", "FHPST01710000")
                     .header("custtype", "P")
                     .retrieve()
-                    .bodyToMono(Map.class)
+                    .bodyToMono(KisRankingResponseDto.class)
                     .block();
 
             return parseAmountRankingResponse(response, limit);
@@ -153,35 +153,20 @@ public class StockRankingService {
     }
 
     /**
-     * 거래량 순위 응답 파싱
+     * 거래량 순위 응답 파싱 (DTO 사용)
      */
-    @SuppressWarnings("unchecked")
-    private List<StockRankingDto> parseVolumeRankingResponse(Map<String, Object> response, int limit) {
+    private List<StockRankingDto> parseVolumeRankingResponse(KisRankingResponseDto response, int limit) {
         try {
-            log.info("API 응답 구조 확인: {}", response.keySet());
+            log.info("API 응답 코드: {}, 메시지: {}", response.rtCd(), response.msg1());
             
-            // 응답 구조에 따라 동적으로 파싱
-            Object output = response.get("output");
-            log.info("output 타입: {}", output != null ? output.getClass().getSimpleName() : "null");
+            // output이 List인지 Map인지 확인하여 처리
+            List<KisStockDataDto> stockDataList = parseOutputData(response.output());
             
-            List<Map<String, Object>> data;
+            log.info("파싱된 데이터 개수: {}", stockDataList.size());
             
-            if (output instanceof Map) {
-                Map<String, Object> outputMap = (Map<String, Object>) output;
-                data = (List<Map<String, Object>>) outputMap.get("data");
-            } else if (output instanceof List) {
-                // output이 직접 List인 경우
-                data = (List<Map<String, Object>>) output;
-            } else {
-                // 다른 구조인 경우 전체 응답을 데이터로 사용
-                data = List.of(response);
-            }
-            
-            log.info("파싱된 데이터 개수: {}", data != null ? data.size() : 0);
-            
-            return data.stream()
+            return stockDataList.stream()
                     .limit(limit)
-                    .map(this::mapToStockRankingDto)
+                    .map(this::mapKisDataToStockRankingDto)
                     .toList();
                     
         } catch (Exception e) {
@@ -192,35 +177,20 @@ public class StockRankingService {
     }
 
     /**
-     * 거래대금 순위 응답 파싱
+     * 거래대금 순위 응답 파싱 (DTO 사용)
      */
-    @SuppressWarnings("unchecked")
-    private List<StockRankingDto> parseAmountRankingResponse(Map<String, Object> response, int limit) {
+    private List<StockRankingDto> parseAmountRankingResponse(KisRankingResponseDto response, int limit) {
         try {
-            log.info("API 응답 구조 확인: {}", response.keySet());
+            log.info("API 응답 코드: {}, 메시지: {}", response.rtCd(), response.msg1());
             
-            // 응답 구조에 따라 동적으로 파싱
-            Object output = response.get("output");
-            log.info("output 타입: {}", output != null ? output.getClass().getSimpleName() : "null");
+            // output이 List인지 Map인지 확인하여 처리
+            List<KisStockDataDto> stockDataList = parseOutputData(response.output());
             
-            List<Map<String, Object>> data;
+            log.info("파싱된 데이터 개수: {}", stockDataList.size());
             
-            if (output instanceof Map) {
-                Map<String, Object> outputMap = (Map<String, Object>) output;
-                data = (List<Map<String, Object>>) outputMap.get("data");
-            } else if (output instanceof List) {
-                // output이 직접 List인 경우
-                data = (List<Map<String, Object>>) output;
-            } else {
-                // 다른 구조인 경우 전체 응답을 데이터로 사용
-                data = List.of(response);
-            }
-            
-            log.info("파싱된 데이터 개수: {}", data != null ? data.size() : 0);
-            
-            return data.stream()
+            return stockDataList.stream()
                     .limit(limit)
-                    .map(this::mapToStockRankingDto)
+                    .map(this::mapKisDataToStockRankingDto)
                     .toList();
                     
         } catch (Exception e) {
@@ -231,18 +201,64 @@ public class StockRankingService {
     }
 
     /**
-     * API 응답 데이터를 StockRankingDto로 변환
+     * output 데이터를 KisStockDataDto 리스트로 변환
      */
-    private StockRankingDto mapToStockRankingDto(Map<String, Object> data) {
-        return new StockRankingDto(
-                (String) data.get("mksc_shrn_iscd"), // 주식코드
-                (String) data.get("hts_kor_isnm"),   // 한글종목명
-                parseLongValue(data.get("acml_vol")), // 누적거래량
-                parseLongValue(data.get("acml_tr_pbmn")), // 누적거래대금
-                parseLongValue(data.get("mkt_cap")),  // 시가총액
-                determineMarketType((String) data.get("mksc_shrn_iscd")) // 시장구분
+    @SuppressWarnings("unchecked")
+    private List<KisStockDataDto> parseOutputData(Object output) {
+        if (output instanceof List) {
+            // output이 직접 List인 경우
+            List<Map<String, Object>> dataList = (List<Map<String, Object>>) output;
+            return dataList.stream()
+                    .map(this::mapToKisStockDataDto)
+                    .toList();
+        } else if (output instanceof Map) {
+            // output이 Map이고 "data" 키를 가진 경우
+            Map<String, Object> outputMap = (Map<String, Object>) output;
+            Object data = outputMap.get("data");
+            if (data instanceof List) {
+                List<Map<String, Object>> dataList = (List<Map<String, Object>>) data;
+                return dataList.stream()
+                        .map(this::mapToKisStockDataDto)
+                        .toList();
+            }
+        }
+        
+        // 예외적인 경우 빈 리스트 반환
+        log.warn("예상하지 못한 output 구조: {}", output);
+        return List.of();
+    }
+
+    /**
+     * Map을 KisStockDataDto로 변환
+     */
+    private KisStockDataDto mapToKisStockDataDto(Map<String, Object> data) {
+        return new KisStockDataDto(
+                (String) data.get("mksc_shrn_iscd"),
+                (String) data.get("hts_kor_isnm"),
+                (String) data.get("data_rank"),
+                (String) data.get("stck_prpr"),
+                (String) data.get("prdy_vrss_sign"),
+                (String) data.get("prdy_vrss"),
+                (String) data.get("prdy_ctrt"),
+                (String) data.get("acml_vol"),
+                (String) data.get("acml_tr_pbmn")
         );
     }
+
+    /**
+     * KisStockDataDto를 StockRankingDto로 변환
+     */
+    private StockRankingDto mapKisDataToStockRankingDto(KisStockDataDto kisData) {
+        return new StockRankingDto(
+                kisData.stockCode(),
+                kisData.stockName(),
+                parseLongValue(kisData.volume()),
+                parseLongValue(kisData.amount()),
+                0L, // 시가총액 (API에서 제공하지 않음)
+                determineMarketType(kisData.stockCode())
+        );
+    }
+
 
     /**
      * Object를 Long으로 안전하게 변환
