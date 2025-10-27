@@ -61,6 +61,12 @@ dependencies {
 	// Redis
 	implementation 'org.springframework.boot:spring-boot-starter-data-redis'
 
+	// WebSocket
+	implementation 'org.springframework.boot:spring-boot-starter-websocket'
+
+	// STOMP
+	implementation 'org.springframework:spring-messaging'
+
 }
 
 tasks.named('test') {
