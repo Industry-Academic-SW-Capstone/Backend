@@ -25,7 +25,7 @@ class StockRankingServiceTest {
         int expectedCount = 30;
 
         // When
-        List<StockRankingDto> stocks = stockRankingService.getVolumeTopStocks(expectedCount);
+        List<StockRankingDto> stocks = stockRankingService.getVolumeTopStocks(expectedCount).block();
 
         // Then
         assertNotNull(stocks, "조회된 종목 리스트는 null이 아니어야 함");
@@ -48,7 +48,7 @@ class StockRankingServiceTest {
         int expectedCount = 20;
 
         // When
-        List<StockRankingDto> stocks = stockRankingService.getAmountTopStocks(expectedCount);
+        List<StockRankingDto> stocks = stockRankingService.getAmountTopStocks(expectedCount).block();
 
         // Then
         assertNotNull(stocks, "조회된 종목 리스트는 null이 아니어야 함");
@@ -71,7 +71,7 @@ class StockRankingServiceTest {
         int expectedCount = 10;
 
         // When
-        List<String> stockCodes = stockRankingService.getVolumeTopStockCodes(expectedCount);
+        List<String> stockCodes = stockRankingService.getVolumeTopStockCodes(expectedCount).block();
 
         // Then
         assertNotNull(stockCodes, "조회된 주식코드 리스트는 null이 아니어야 함");
@@ -94,7 +94,7 @@ class StockRankingServiceTest {
         int expectedCount = 10;
 
         // When
-        List<String> stockCodes = stockRankingService.getAmountTopStockCodes(expectedCount);
+        List<String> stockCodes = stockRankingService.getAmountTopStockCodes(expectedCount).block();
 
         // Then
         assertNotNull(stockCodes, "조회된 주식코드 리스트는 null이 아니어야 함");

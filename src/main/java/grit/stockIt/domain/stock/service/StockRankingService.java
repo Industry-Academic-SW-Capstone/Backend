@@ -11,6 +11,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
+import reactor.core.publisher.Mono;
 
 import java.util.List;
 import java.util.Map;
@@ -27,106 +28,96 @@ public class StockRankingService {
     private final KisApiProperties kisApiProperties;
     private final StockRepository stockRepository;
 
-    // 거래량 상위 종목 조회
-    public List<StockRankingDto> getVolumeTopStocks(int limit) {
-        try {
-            String accessToken = kisTokenManager.getAccessToken();
-            
-            KisRankingResponseDto response = webClient.get()
-                    .uri(uriBuilder -> uriBuilder
-                            .path("/uapi/domestic-stock/v1/quotations/volume-rank")
-                            .queryParam("FID_COND_MRKT_DIV_CODE", "J")
-                            .queryParam("FID_COND_SCR_DIV_CODE", "20171")
-                            .queryParam("FID_INPUT_ISCD", "0000")
-                            .queryParam("FID_DIV_CLS_CODE", "0")
-                            .queryParam("FID_BLNG_CLS_CODE", "0")
-                            .queryParam("FID_TRGT_CLS_CODE", "111111111")
-                            .queryParam("FID_TRGT_EXLS_CLS_CODE", "0000000000")
-                            .queryParam("FID_INPUT_PRICE_1", "")
-                            .queryParam("FID_INPUT_PRICE_2", "")
-                            .queryParam("FID_VOL_CNT", "")
-                            .queryParam("FID_INPUT_DATE_1", "")
-                            .build())
-                    .header("content-type", "application/json; charset=utf-8")
-                    .header("authorization", "Bearer " + accessToken)
-                    .header("appkey", kisApiProperties.appkey())
-                    .header("appsecret", kisApiProperties.appsecret())
-                    .header("tr_id", "FHPST01710000")
-                    .header("custtype", "P")
-                    .retrieve()
-                    .bodyToMono(KisRankingResponseDto.class)
-                    .block();
-
-            return parseVolumeRankingResponse(response, limit);
-            
-        } catch (Exception e) {
-            log.error("거래량 상위 종목 조회 중 오류 발생", e);
-            throw new RuntimeException("거래량 상위 종목 조회 실패", e);
-        }
+    // 거래량 상위 종목 조회 (비동기)
+    public Mono<List<StockRankingDto>> getVolumeTopStocks(int limit) {
+        String accessToken = kisTokenManager.getAccessToken();
+        
+        return webClient.get()
+                .uri(uriBuilder -> uriBuilder
+                        .path("/uapi/domestic-stock/v1/quotations/volume-rank")
+                        .queryParam("FID_COND_MRKT_DIV_CODE", "J")
+                        .queryParam("FID_COND_SCR_DIV_CODE", "20171")
+                        .queryParam("FID_INPUT_ISCD", "0000")
+                        .queryParam("FID_DIV_CLS_CODE", "0")
+                        .queryParam("FID_BLNG_CLS_CODE", "0")
+                        .queryParam("FID_TRGT_CLS_CODE", "111111111")
+                        .queryParam("FID_TRGT_EXLS_CLS_CODE", "0000000000")
+                        .queryParam("FID_INPUT_PRICE_1", "")
+                        .queryParam("FID_INPUT_PRICE_2", "")
+                        .queryParam("FID_VOL_CNT", "")
+                        .queryParam("FID_INPUT_DATE_1", "")
+                        .build())
+                .header("content-type", "application/json; charset=utf-8")
+                .header("authorization", "Bearer " + accessToken)
+                .header("appkey", kisApiProperties.appkey())
+                .header("appsecret", kisApiProperties.appsecret())
+                .header("tr_id", "FHPST01710000")
+                .header("custtype", "P")
+                .retrieve()
+                .bodyToMono(KisRankingResponseDto.class)
+                .map(response -> parseVolumeRankingResponse(response, limit))
+                .doOnError(e -> log.error("거래량 상위 종목 조회 중 오류 발생", e))
+                .onErrorResume(e -> Mono.error(new RuntimeException("거래량 상위 종목 조회 실패", e)));
     }
 
-    // 거래대금 상위 종목 조회
-    public List<StockRankingDto> getAmountTopStocks(int limit) {
-        try {
-            String accessToken = kisTokenManager.getAccessToken();
-            
-            KisRankingResponseDto response = webClient.get()
-                    .uri(uriBuilder -> uriBuilder
-                            .path("/uapi/domestic-stock/v1/quotations/volume-rank")
-                            .queryParam("FID_COND_MRKT_DIV_CODE", "J")
-                            .queryParam("FID_COND_SCR_DIV_CODE", "20171")
-                            .queryParam("FID_INPUT_ISCD", "0000")
-                            .queryParam("FID_DIV_CLS_CODE", "0")
-                            .queryParam("FID_BLNG_CLS_CODE", "3") // 거래대금 순위
-                            .queryParam("FID_TRGT_CLS_CODE", "111111111")
-                            .queryParam("FID_TRGT_EXLS_CLS_CODE", "0000000000")
-                            .queryParam("FID_INPUT_PRICE_1", "")
-                            .queryParam("FID_INPUT_PRICE_2", "")
-                            .queryParam("FID_VOL_CNT", "")
-                            .queryParam("FID_INPUT_DATE_1", "")
-                            .build())
-                    .header("content-type", "application/json; charset=utf-8")
-                    .header("authorization", "Bearer " + accessToken)
-                    .header("appkey", kisApiProperties.appkey())
-                    .header("appsecret", kisApiProperties.appsecret())
-                    .header("tr_id", "FHPST01710000")
-                    .header("custtype", "P")
-                    .retrieve()
-                    .bodyToMono(KisRankingResponseDto.class)
-                    .block();
-
-            return parseAmountRankingResponse(response, limit);
-            
-        } catch (Exception e) {
-            log.error("거래대금 상위 종목 조회 중 오류 발생", e);
-            throw new RuntimeException("거래대금 상위 종목 조회 실패", e);
-        }
+    // 거래대금 상위 종목 조회 (비동기)
+    public Mono<List<StockRankingDto>> getAmountTopStocks(int limit) {
+        String accessToken = kisTokenManager.getAccessToken();
+        
+        return webClient.get()
+                .uri(uriBuilder -> uriBuilder
+                        .path("/uapi/domestic-stock/v1/quotations/volume-rank")
+                        .queryParam("FID_COND_MRKT_DIV_CODE", "J")
+                        .queryParam("FID_COND_SCR_DIV_CODE", "20171")
+                        .queryParam("FID_INPUT_ISCD", "0000")
+                        .queryParam("FID_DIV_CLS_CODE", "0")
+                        .queryParam("FID_BLNG_CLS_CODE", "3") // 거래대금 순위
+                        .queryParam("FID_TRGT_CLS_CODE", "111111111")
+                        .queryParam("FID_TRGT_EXLS_CLS_CODE", "0000000000")
+                        .queryParam("FID_INPUT_PRICE_1", "")
+                        .queryParam("FID_INPUT_PRICE_2", "")
+                        .queryParam("FID_VOL_CNT", "")
+                        .queryParam("FID_INPUT_DATE_1", "")
+                        .build())
+                .header("content-type", "application/json; charset=utf-8")
+                .header("authorization", "Bearer " + accessToken)
+                .header("appkey", kisApiProperties.appkey())
+                .header("appsecret", kisApiProperties.appsecret())
+                .header("tr_id", "FHPST01710000")
+                .header("custtype", "P")
+                .retrieve()
+                .bodyToMono(KisRankingResponseDto.class)
+                .map(response -> parseAmountRankingResponse(response, limit))
+                .doOnError(e -> log.error("거래대금 상위 종목 조회 중 오류 발생", e))
+                .onErrorResume(e -> Mono.error(new RuntimeException("거래대금 상위 종목 조회 실패", e)));
     }
 
-    // 거래량 상위 종목의 주식코드만 반환 (웹소켓 구독용) - DB에 있는 종목만
-    public List<String> getVolumeTopStockCodes(int limit) {
-        return getVolumeTopStocksFiltered(limit).stream()
-                .map(StockRankingDto::stockCode)
-                .toList();
+    // 거래량 상위 종목의 주식코드만 반환 (웹소켓 구독용) - DB에 있는 종목만 (비동기)
+    public Mono<List<String>> getVolumeTopStockCodes(int limit) {
+        return getVolumeTopStocksFiltered(limit)
+                .map(stocks -> stocks.stream()
+                        .map(StockRankingDto::stockCode)
+                        .toList());
     }
 
-    // 거래대금 상위 종목의 주식코드만 반환 (웹소켓 구독용) - DB에 있는 종목만
-    public List<String> getAmountTopStockCodes(int limit) {
-        return getAmountTopStocksFiltered(limit).stream()
-                .map(StockRankingDto::stockCode)
-                .toList();
+    // 거래대금 상위 종목의 주식코드만 반환 (웹소켓 구독용) - DB에 있는 종목만 (비동기)
+    public Mono<List<String>> getAmountTopStockCodes(int limit) {
+        return getAmountTopStocksFiltered(limit)
+                .map(stocks -> stocks.stream()
+                        .map(StockRankingDto::stockCode)
+                        .toList());
     }
 
-    // 거래량 상위 종목 조회 (DB에 있는 종목만 필터링)
-    public List<StockRankingDto> getVolumeTopStocksFiltered(int limit) {
-        List<StockRankingDto> allStocks = getVolumeTopStocks(limit);
-        return filterStocksInDatabase(allStocks, limit);
+    // 거래량 상위 종목 조회 (DB에 있는 종목만 필터링) (비동기)
+    public Mono<List<StockRankingDto>> getVolumeTopStocksFiltered(int limit) {
+        return getVolumeTopStocks(limit)
+                .map(allStocks -> filterStocksInDatabase(allStocks, limit));
     }
 
-    // 거래대금 상위 종목 조회 (DB에 있는 종목만 필터링)
-    public List<StockRankingDto> getAmountTopStocksFiltered(int limit) {
-        List<StockRankingDto> allStocks = getAmountTopStocks(limit);
-        return filterStocksInDatabase(allStocks, limit);
+    // 거래대금 상위 종목 조회 (DB에 있는 종목만 필터링) (비동기)
+    public Mono<List<StockRankingDto>> getAmountTopStocksFiltered(int limit) {
+        return getAmountTopStocks(limit)
+                .map(allStocks -> filterStocksInDatabase(allStocks, limit));
     }
 
     // 데이터베이스에 있는 종목만 필터링 (marketType을 DB에서 조회)
