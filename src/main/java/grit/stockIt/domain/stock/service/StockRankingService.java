@@ -129,7 +129,7 @@ public class StockRankingService {
         return filterStocksInDatabase(allStocks, limit);
     }
 
-    // 데이터베이스에 있는 종목만 필터링
+    // 데이터베이스에 있는 종목만 필터링 (marketType을 DB에서 조회)
     private List<StockRankingDto> filterStocksInDatabase(List<StockRankingDto> stocks, int limit) {
         // 종목 코드 리스트 추출
         List<String> stockCodes = stocks.stream()
@@ -138,16 +138,31 @@ public class StockRankingService {
 
         // 데이터베이스에서 존재하는 종목들만 조회
         List<Stock> existingStocks = stockRepository.findByCodeIn(stockCodes);
-        Set<String> existingStockCodes = existingStocks.stream()
-                .map(Stock::getCode)
-                .collect(Collectors.toSet());
+        
+        // 종목 코드 -> Stock 엔티티 맵 생성 (marketType 조회용)
+        Map<String, Stock> stockMap = existingStocks.stream()
+                .collect(Collectors.toMap(Stock::getCode, stock -> stock));
+        
+        Set<String> existingStockCodes = stockMap.keySet();
 
         log.info("API에서 조회된 종목 수: {}, DB에 존재하는 종목 수: {}", 
                 stocks.size(), existingStockCodes.size());
 
-        // DB에 있는 종목만 필터링하고 원하는 개수만큼 반환
+        // DB에 있는 종목만 필터링하고, DB에서 조회한 marketType으로 DTO 재생성
         return stocks.stream()
                 .filter(stock -> existingStockCodes.contains(stock.stockCode()))
+                .map(stockDto -> {
+                    Stock stock = stockMap.get(stockDto.stockCode());
+                    // DB의 marketType 정보로 DTO 재생성
+                    return new StockRankingDto(
+                        stockDto.stockCode(),
+                        stockDto.stockName(),
+                        stockDto.volume(),
+                        stockDto.amount(),
+                        stockDto.marketCap(),
+                        stock.getMarketType()
+                    );
+                })
                 .limit(limit)
                 .toList();
     }
@@ -246,7 +261,8 @@ public class StockRankingService {
     }
 
     /**
-     * KisStockDataDto를 StockRankingDto로 변환
+     * KisStockDataDto를 StockRankingDto로 변환 (임시 marketType 사용)
+     * 실제 marketType은 DB에서 조회한 뒤 다시 설정됨
      */
     private StockRankingDto mapKisDataToStockRankingDto(KisStockDataDto kisData) {
         return new StockRankingDto(
@@ -255,7 +271,7 @@ public class StockRankingService {
                 parseLongValue(kisData.volume()),
                 parseLongValue(kisData.amount()),
                 0L, // 시가총액 (API에서 제공하지 않음)
-                determineMarketType(kisData.stockCode())
+                "UNKNOWN" // 임시값, DB 조회 후 올바른 값으로 교체됨
         );
     }
 
@@ -274,16 +290,5 @@ public class StockRankingService {
             }
         }
         return 0L;
-    }
-
-    /**
-     * 주식코드로 시장구분 판단
-     */
-    private String determineMarketType(String stockCode) {
-        if (stockCode == null) return "UNKNOWN";
-        
-        // 코스피: 6자리, 코스닥: 6자리 (일반적으로 구분이 어려우므로 추가 로직 필요)
-        // 실제로는 MST 파일의 시장구분 정보를 활용하는 것이 정확함
-        return "KOSPI"; // 임시로 KOSPI로 설정
     }
 }
