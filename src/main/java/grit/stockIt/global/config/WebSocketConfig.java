@@ -1,4 +1,4 @@
-package grit.stockIt.websocket;
+package grit.stockIt.global.config;
 
 import org.springframework.context.annotation.Configuration;
 import org.springframework.messaging.simp.config.MessageBrokerRegistry;
