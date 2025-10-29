@@ -55,6 +55,18 @@ dependencies {
 	testImplementation 'org.springframework.security:spring-security-test'
 	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 
+	// WebClient
+	implementation 'org.springframework.boot:spring-boot-starter-webflux'
+
+	// Redis
+	implementation 'org.springframework.boot:spring-boot-starter-data-redis'
+
+	// WebSocket
+	implementation 'org.springframework.boot:spring-boot-starter-websocket'
+
+	// STOMP
+	implementation 'org.springframework:spring-messaging'
+
 }
 
 tasks.named('test') {
