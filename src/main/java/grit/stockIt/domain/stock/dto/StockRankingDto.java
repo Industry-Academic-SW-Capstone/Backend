@@ -1,41 +1,69 @@
 package grit.stockIt.domain.stock.dto;
 
 /**
- * 주식 순위 정보를 담는 DTO
+ * 주식 순위 정보를 담는 DTO (가격 정보 포함)
  * @param stockCode 주식코드
  * @param stockName 주식명
  * @param volume 거래량
  * @param amount 거래대금
- * @param marketCap 시가총액
  * @param marketType 시장구분 (KOSPI/KOSDAQ)
+ * @param currentPrice 현재가
+ * @param changeAmount 전일대비 금액
+ * @param changeRate 전일대비율
+ * @param changeSign 등락 부호
  */
 public record StockRankingDto(
         String stockCode,
         String stockName,
         Long volume,
         Long amount,
-        Long marketCap,
-        String marketType
+        String marketType,
+
+        // 가격 정보 (실시간 업데이트용)
+        Integer currentPrice,
+        Integer changeAmount,
+        String changeRate,
+        PriceChangeSign changeSign
 ) {
-    
+
     /**
-     * 거래량 상위 종목용 생성자
+     * 등락 부호 enum
      */
-    public static StockRankingDto forVolumeRanking(String stockCode, String stockName, Long volume, String marketType) {
-        return new StockRankingDto(stockCode, stockName, volume, 0L, 0L, marketType);
-    }
-    
-    /**
-     * 거래대금 상위 종목용 생성자
-     */
-    public static StockRankingDto forAmountRanking(String stockCode, String stockName, Long amount, String marketType) {
-        return new StockRankingDto(stockCode, stockName, 0L, amount, 0L, marketType);
-    }
-    
-    /**
-     * 시가총액 상위 종목용 생성자
-     */
-    public static StockRankingDto forMarketCapRanking(String stockCode, String stockName, Long marketCap, String marketType) {
-        return new StockRankingDto(stockCode, stockName, 0L, 0L, marketCap, marketType);
+    public enum PriceChangeSign {
+        UPPER_LIMIT("1", "상한가"),
+        RISE("2", "상승"),
+        STEADY("3", "보합"),
+        LOWER_LIMIT("4", "하한가"),
+        FALL("5", "하락");
+        
+        private final String code;
+        private final String description;
+        
+        PriceChangeSign(String code, String description) {
+            this.code = code;
+            this.description = description;
+        }
+        
+        public String getCode() {
+            return code;
+        }
+        
+        public String getDescription() {
+            return description;
+        }
+        
+        /**
+         * KIS API 코드로부터 PriceChangeSign 변환
+         */
+        public static PriceChangeSign fromCode(String code) {
+            if (code == null) return STEADY;
+            
+            for (PriceChangeSign sign : values()) {
+                if (sign.code.equals(code)) {
+                    return sign;
+                }
+            }
+            return STEADY;
+        }
     }
 }

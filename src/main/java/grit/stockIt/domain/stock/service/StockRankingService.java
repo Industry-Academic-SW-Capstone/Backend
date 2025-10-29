@@ -31,7 +31,7 @@ public class StockRankingService {
     // 거래량 상위 종목 조회 (비동기)
     public Mono<List<StockRankingDto>> getVolumeTopStocks(int limit) {
         String accessToken = kisTokenManager.getAccessToken();
-        
+
         return webClient.get()
                 .uri(uriBuilder -> uriBuilder
                         .path("/uapi/domestic-stock/v1/quotations/volume-rank")
@@ -63,7 +63,7 @@ public class StockRankingService {
     // 거래대금 상위 종목 조회 (비동기)
     public Mono<List<StockRankingDto>> getAmountTopStocks(int limit) {
         String accessToken = kisTokenManager.getAccessToken();
-        
+
         return webClient.get()
                 .uri(uriBuilder -> uriBuilder
                         .path("/uapi/domestic-stock/v1/quotations/volume-rank")
@@ -129,14 +129,14 @@ public class StockRankingService {
 
         // 데이터베이스에서 존재하는 종목들만 조회
         List<Stock> existingStocks = stockRepository.findByCodeIn(stockCodes);
-        
+
         // 종목 코드 -> Stock 엔티티 맵 생성 (marketType 조회용)
         Map<String, Stock> stockMap = existingStocks.stream()
                 .collect(Collectors.toMap(Stock::getCode, stock -> stock));
-        
+
         Set<String> existingStockCodes = stockMap.keySet();
 
-        log.info("API에서 조회된 종목 수: {}, DB에 존재하는 종목 수: {}", 
+        log.info("API에서 조회된 종목 수: {}, DB에 존재하는 종목 수: {}",
                 stocks.size(), existingStockCodes.size());
 
         // DB에 있는 종목만 필터링하고, DB에서 조회한 marketType으로 DTO 재생성
@@ -144,14 +144,18 @@ public class StockRankingService {
                 .filter(stock -> existingStockCodes.contains(stock.stockCode()))
                 .map(stockDto -> {
                     Stock stock = stockMap.get(stockDto.stockCode());
-                    // DB의 marketType 정보로 DTO 재생성
+                    // DB의 marketType 정보로 DTO 재생성 (가격 정보 유지)
                     return new StockRankingDto(
-                        stockDto.stockCode(),
-                        stockDto.stockName(),
-                        stockDto.volume(),
-                        stockDto.amount(),
-                        stockDto.marketCap(),
-                        stock.getMarketType()
+                            stockDto.stockCode(),
+                            stockDto.stockName(),
+                            stockDto.volume(),
+                            stockDto.amount(),
+                            stock.getMarketType(),
+                            // 가격 정보 유지
+                            stockDto.currentPrice(),
+                            stockDto.changeAmount(),
+                            stockDto.changeRate(),
+                            stockDto.changeSign()
                     );
                 })
                 .limit(limit)
@@ -164,17 +168,17 @@ public class StockRankingService {
     private List<StockRankingDto> parseVolumeRankingResponse(KisRankingResponseDto response, int limit) {
         try {
             log.info("API 응답 코드: {}, 메시지: {}", response.rtCd(), response.msg1());
-            
+
             // output이 List인지 Map인지 확인하여 처리
             List<KisStockDataDto> stockDataList = parseOutputData(response.output());
-            
+
             log.info("파싱된 데이터 개수: {}", stockDataList.size());
-            
+
             return stockDataList.stream()
                     .limit(limit)
                     .map(this::mapKisDataToStockRankingDto)
                     .toList();
-                    
+
         } catch (Exception e) {
             log.error("거래량 순위 응답 파싱 중 오류 발생", e);
             log.error("응답 내용: {}", response);
@@ -188,17 +192,17 @@ public class StockRankingService {
     private List<StockRankingDto> parseAmountRankingResponse(KisRankingResponseDto response, int limit) {
         try {
             log.info("API 응답 코드: {}, 메시지: {}", response.rtCd(), response.msg1());
-            
+
             // output이 List인지 Map인지 확인하여 처리
             List<KisStockDataDto> stockDataList = parseOutputData(response.output());
-            
+
             log.info("파싱된 데이터 개수: {}", stockDataList.size());
-            
+
             return stockDataList.stream()
                     .limit(limit)
                     .map(this::mapKisDataToStockRankingDto)
                     .toList();
-                    
+
         } catch (Exception e) {
             log.error("거래대금 순위 응답 파싱 중 오류 발생", e);
             log.error("응답 내용: {}", response);
@@ -228,7 +232,7 @@ public class StockRankingService {
                         .toList();
             }
         }
-        
+
         // 예외적인 경우 빈 리스트 반환
         log.warn("예상하지 못한 output 구조: {}", output);
         return List.of();
@@ -261,8 +265,13 @@ public class StockRankingService {
                 kisData.stockName(),
                 parseLongValue(kisData.volume()),
                 parseLongValue(kisData.amount()),
-                0L, // 시가총액 (API에서 제공하지 않음)
-                "UNKNOWN" // 임시값, DB 조회 후 올바른 값으로 교체됨
+                "UNKNOWN", // 임시값, DB 조회 후 올바른 값으로 교체됨
+
+                // 가격 정보 추가
+                parseIntValue(kisData.currentPrice()),
+                parseIntValue(kisData.changeAmount()),
+                kisData.changeRate(),
+                StockRankingDto.PriceChangeSign.fromCode(kisData.changeSign())
         );
     }
 
@@ -281,5 +290,19 @@ public class StockRankingService {
             }
         }
         return 0L;
+    }
+
+    /**
+     * String을 Integer로 안전하게 변환
+     */
+    private Integer parseIntValue(String value) {
+        if (value == null || value.trim().isEmpty()) return 0;
+        try {
+            // 음수 처리 (전일대비는 음수일 수 있음)
+            return Integer.parseInt(value.trim());
+        } catch (NumberFormatException e) {
+            log.warn("Integer 파싱 실패: {}", value);
+            return 0;
+        }
     }
 }
