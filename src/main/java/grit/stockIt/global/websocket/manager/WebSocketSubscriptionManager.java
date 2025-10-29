@@ -101,17 +101,5 @@ public class WebSocketSubscriptionManager {
     public Set<String> getAllSubscribedStocks() {
         return subscriberCounts.keySet();
     }
-    
-    /**
-     * 전체 구독 정보 로그
-     */
-    public void logSubscriptionStatus() {
-        log.info("=== 구독 현황 ===");
-        log.info("구독 중인 종목 수: {}", subscriberCounts.size());
-        log.info("활성 세션 수: {}", sessionSubscriptions.size());
-        subscriberCounts.forEach((code, count) -> 
-            log.info("  {} : {}명", code, count.get())
-        );
-    }
 }
 
