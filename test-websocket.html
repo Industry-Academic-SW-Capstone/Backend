@@ -82,6 +82,10 @@
             if (stompClient !== null) {
                 stompClient.disconnect();
             }
+            
+            // 구독 상태 초기화
+            subscriptions = {};
+            
             document.getElementById('status').textContent = '연결 안 됨';
             document.getElementById('status').className = 'disconnected';
             document.getElementById('connectBtn').disabled = false;
