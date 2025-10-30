@@ -50,13 +50,9 @@ public class KisWebSocketClient extends TextWebSocketHandler {
                 connectToKis();
             }
             
-            // 이미 구독 중이면 스킵
-            if (subscribedStocks.contains(stockCode)) {
-                log.debug("이미 구독 중: {}", stockCode);
-                return;
-            }
-            
-            // 구독 메시지 전송
+            // 구독 메시지 전송 (중복 구독은 KIS API가 처리)
+            // subscribedStocks 체크를 제거하여 항상 구독 메시지 전송
+            // 이렇게 하면 연결이 끊어진 후 재연결 시에도 정상 작동
             sendSubscribeMessage(stockCode);
             subscribedStocks.add(stockCode);
             
@@ -153,7 +149,13 @@ public class KisWebSocketClient extends TextWebSocketHandler {
         try {
             String payload = message.getPayload();
             
-            // JSON 파싱
+            // 파이프 구분 형식인지 확인 (실시간 데이터)
+            if (payload.startsWith("0|") || payload.startsWith("1|")) {
+                handleRealtimeData(payload);
+                return;
+            }
+            
+            // JSON 파싱 (초기 응답)
             KisWebSocketResponse response = objectMapper.readValue(payload, KisWebSocketResponse.class);
             
             // PINGPONG 메시지 처리 (Heartbeat)
@@ -200,12 +202,88 @@ public class KisWebSocketClient extends TextWebSocketHandler {
     }
     
     /**
+     * 실시간 데이터 처리 (파이프 구분 형식)
+     * 형식: 0|H0STCNT0|001|005930^103659^103800^2^3300^3.28^...
+     * 파이프(|)로 먼저 구분 후, 실제 데이터는 캐럿(^)으로 구분
+     */
+    private void handleRealtimeData(String payload) {
+        try {
+            // 파이프로 split (메타데이터 구분)
+            String[] parts = payload.split("\\|");
+            
+            if (parts.length < 4) {
+                log.warn("KIS 데이터 형식 오류: 파이프 구분 필드 부족 ({}개)", parts.length);
+                return;
+            }
+            
+            // 암호화 여부 (0: 미암호화, 1: 암호화)
+            String encrypted = parts[0];
+            if ("1".equals(encrypted)) {
+                log.warn("암호화된 데이터 수신 (현재 미지원)");
+                return;
+            }
+            
+            // parts[1]: TR ID (H0STCNT0)
+            // parts[2]: 데이터 건수 (001, 002 등)
+            // parts[3]: 실제 데이터 (캐럿으로 구분)
+            
+            // 실제 데이터를 캐럿으로 split
+            String[] dataFields = parts[3].split("\\^");
+            
+            if (dataFields.length < 15) {
+                log.debug("KIS 데이터 필드 부족: {}개 (최소 15개 필요)", dataFields.length);
+                return;
+            }
+            
+            // KIS API Response Body 필드 순서 (이미지 문서 기준)
+            String stockCode = dataFields[0];        // MKSC_SHRN_ISCD: 종목코드
+            // dataFields[1]: STCK_CNTG_HOUR: 체결시간
+            String currentPrice = dataFields[2];     // STCK_PRPR: 현재가
+            String changeSign = dataFields[3];       // PRDY_VRSS_SIGN: 전일대비부호 (1:상한 2:상승 3:보합 4:하한 5:하락)
+            String changeAmount = dataFields[4];     // PRDY_VRSS: 전일대비
+            String changeRate = dataFields[5];       // PRDY_CTRT: 전일대비율
+            // dataFields[6]: WGHN_AVRG_STCK_PRC: 가중평균주식가격
+            // dataFields[7-11]: 시가, 고가, 저가, 매도호가, 매수호가 등
+            // dataFields[12]: CNTG_VOL: 체결량
+            String volume = dataFields.length > 13 ? dataFields[13] : "0";  // ACML_VOL: 누적거래량
+            
+            // DTO 변환
+            StockPriceUpdateDto updateDto = StockPriceUpdateDto.from(
+                    stockCode,
+                    "", // 종목명은 클라이언트가 이미 알고 있음
+                    parseIntValue(currentPrice),
+                    parseIntValue(changeAmount),
+                    changeRate,
+                    changeSign,
+                    parseLongValue(volume)
+            );
+            
+            // 클라이언트에게 브로드캐스트
+            messagingTemplate.convertAndSend(
+                    "/topic/stock/" + updateDto.stockCode(),
+                    updateDto
+            );
+            
+            log.debug("시세 업데이트 전송: {} - {}원 ({})", 
+                    updateDto.stockCode(), updateDto.currentPrice(), updateDto.changeSign());
+            
+        } catch (Exception e) {
+            log.error("실시간 데이터 파싱 실패: {}", payload, e);
+        }
+    }
+    
+    /**
      * 연결 종료 처리
      */
     @Override
     public void afterConnectionClosed(WebSocketSession session, CloseStatus status) {
         log.warn("KIS 웹소켓 연결 종료: {}", status);
         kisSession = null;
+        
+        // 연결이 끊어지면 구독 상태도 초기화
+        // 재연결 시 자동으로 재구독됨
+        subscribedStocks.clear();
+        log.info("KIS 구독 상태 초기화");
         
         // TODO: 재연결 로직
     }
