@@ -45,6 +45,15 @@ public class KisWebSocketClient extends TextWebSocketHandler {
     private static final int MAX_RECONNECT_ATTEMPTS = 5;
     private static final long INITIAL_RECONNECT_DELAY = 2000; // 2초
     
+    // KIS API 실시간 데이터 필드 관련 상수
+    private static final int MIN_REALTIME_DATA_FIELDS = 15; // KIS API 실시간 체결 데이터 최소 필드 개수
+    private static final int FIELD_INDEX_STOCK_CODE = 0;    // 종목코드
+    private static final int FIELD_INDEX_CURRENT_PRICE = 2; // 현재가
+    private static final int FIELD_INDEX_CHANGE_SIGN = 3;   // 전일대비부호
+    private static final int FIELD_INDEX_CHANGE_AMOUNT = 4; // 전일대비
+    private static final int FIELD_INDEX_CHANGE_RATE = 5;   // 전일대비율
+    private static final int FIELD_INDEX_VOLUME = 13;       // 누적거래량
+    
     private static final String KIS_WS_URL = "ws://ops.koreainvestment.com:21000";
     
     /**
@@ -241,22 +250,24 @@ public class KisWebSocketClient extends TextWebSocketHandler {
             // 실제 데이터를 캐럿으로 split
             String[] dataFields = parts[3].split("\\^");
             
-            if (dataFields.length < 15) {
-                log.debug("KIS 데이터 필드 부족: {}개 (최소 15개 필요)", dataFields.length);
+            if (dataFields.length < MIN_REALTIME_DATA_FIELDS) {
+                log.debug("KIS 데이터 필드 부족: {}개 (최소 {}개 필요)", 
+                        dataFields.length, MIN_REALTIME_DATA_FIELDS);
                 return;
             }
             
             // KIS API Response Body 필드 순서 (이미지 문서 기준)
-            String stockCode = dataFields[0];        // MKSC_SHRN_ISCD: 종목코드
+            String stockCode = dataFields[FIELD_INDEX_STOCK_CODE];        // MKSC_SHRN_ISCD: 종목코드
             // dataFields[1]: STCK_CNTG_HOUR: 체결시간
-            String currentPrice = dataFields[2];     // STCK_PRPR: 현재가
-            String changeSign = dataFields[3];       // PRDY_VRSS_SIGN: 전일대비부호 (1:상한 2:상승 3:보합 4:하한 5:하락)
-            String changeAmount = dataFields[4];     // PRDY_VRSS: 전일대비
-            String changeRate = dataFields[5];       // PRDY_CTRT: 전일대비율
+            String currentPrice = dataFields[FIELD_INDEX_CURRENT_PRICE];  // STCK_PRPR: 현재가
+            String changeSign = dataFields[FIELD_INDEX_CHANGE_SIGN];      // PRDY_VRSS_SIGN: 전일대비부호 (1:상한 2:상승 3:보합 4:하한 5:하락)
+            String changeAmount = dataFields[FIELD_INDEX_CHANGE_AMOUNT];  // PRDY_VRSS: 전일대비
+            String changeRate = dataFields[FIELD_INDEX_CHANGE_RATE];      // PRDY_CTRT: 전일대비율
             // dataFields[6]: WGHN_AVRG_STCK_PRC: 가중평균주식가격
             // dataFields[7-11]: 시가, 고가, 저가, 매도호가, 매수호가 등
             // dataFields[12]: CNTG_VOL: 체결량
-            String volume = dataFields.length > 13 ? dataFields[13] : "0";  // ACML_VOL: 누적거래량
+            String volume = dataFields.length > FIELD_INDEX_VOLUME ? 
+                    dataFields[FIELD_INDEX_VOLUME] : "0";  // ACML_VOL: 누적거래량
             
             // DTO 변환
             StockPriceUpdateDto updateDto = StockPriceUpdateDto.from(
