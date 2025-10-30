@@ -15,7 +15,7 @@ import java.nio.charset.Charset;
 import java.util.zip.ZipInputStream;
 
 @Slf4j
-@Component // Bean으로 등록
+@Component
 @RequiredArgsConstructor
 public class MstFileDownloader {
 

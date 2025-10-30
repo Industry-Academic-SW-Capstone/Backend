@@ -1,12 +1,12 @@
-package grit.stockIt.job.service; // 실제 패키지 경로로 수정하세요
+package grit.stockIt.job.service;
 
 import grit.stockIt.domain.industry.entity.Industry;
 import grit.stockIt.domain.industry.repository.IndustryRepository;
 import grit.stockIt.domain.stock.entity.Stock;
 import grit.stockIt.domain.stock.repository.StockRepository;
-import grit.stockIt.job.dto.MstRecord;        // 실제 DTO 경로로 수정하세요
-import grit.stockIt.job.util.MstFileDownloader; // 실제 Downloader 경로로 수정하세요
-import grit.stockIt.job.util.MstFileParser;   // 실제 Parser 경로로 수정하세요
+import grit.stockIt.job.dto.MstRecord;
+import grit.stockIt.job.util.MstFileDownloader;
+import grit.stockIt.job.util.MstFileParser;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -21,8 +21,8 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class MasterFileUpdateService {
 
-    private final MstFileDownloader downloader; // 파일 다운로더
-    private final MstFileParser parser;         // 파일 파서
+    private final MstFileDownloader downloader;
+    private final MstFileParser parser;
     private final IndustryRepository industryRepository;
     private final StockRepository stockRepository;
 
