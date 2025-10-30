@@ -5,6 +5,7 @@ import grit.stockIt.domain.stock.dto.StockPriceUpdateDto;
 import grit.stockIt.global.auth.KisTokenManager;
 import grit.stockIt.global.websocket.dto.KisWebSocketRequest;
 import grit.stockIt.global.websocket.dto.KisWebSocketResponse;
+import grit.stockIt.global.websocket.manager.WebSocketSubscriptionManager;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
@@ -18,6 +19,8 @@ import org.springframework.web.socket.handler.TextWebSocketHandler;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * KIS 웹소켓 클라이언트
@@ -31,9 +34,16 @@ public class KisWebSocketClient extends TextWebSocketHandler {
     private final KisTokenManager kisTokenManager;
     private final SimpMessagingTemplate messagingTemplate;
     private final ObjectMapper objectMapper;
+    private final WebSocketSubscriptionManager subscriptionManager;
     
     private WebSocketSession kisSession;
     private final Set<String> subscribedStocks = Collections.synchronizedSet(new HashSet<>());
+    
+    // 재연결 관련 필드
+    private final AtomicBoolean isReconnecting = new AtomicBoolean(false);
+    private final AtomicInteger reconnectAttempts = new AtomicInteger(0);
+    private static final int MAX_RECONNECT_ATTEMPTS = 5;
+    private static final long INITIAL_RECONNECT_DELAY = 2000; // 2초
     
     private static final String KIS_WS_URL = "ws://ops.koreainvestment.com:21000";
     
@@ -277,22 +287,134 @@ public class KisWebSocketClient extends TextWebSocketHandler {
      */
     @Override
     public void afterConnectionClosed(WebSocketSession session, CloseStatus status) {
-        log.warn("KIS 웹소켓 연결 종료: {}", status);
+        log.warn("KIS 웹소켓 연결 종료: {} (코드: {}, 이유: {})", 
+                status, status.getCode(), status.getReason());
         kisSession = null;
         
-        // 연결이 끊어지면 구독 상태도 초기화
-        // 재연결 시 자동으로 재구독됨
-        subscribedStocks.clear();
-        log.info("KIS 구독 상태 초기화");
+        // 구독 목록은 유지 (재연결 시 재구독에 사용)
+        log.info("KIS 연결 종료 - 구독 목록 유지: {} ({}개)", subscribedStocks, subscribedStocks.size());
         
-        // TODO: 재연결 로직
+        // 비정상 종료인 경우에만 자동 재연결 시도
+        if (!status.equals(CloseStatus.NORMAL)) {
+            log.info("비정상 종료 감지 - 재연결 시도 예약");
+            scheduleReconnect();
+        }
     }
     
     /**
      * 연결 상태 확인
      */
-    private boolean isConnected() {
+    public boolean isConnected() {
         return kisSession != null && kisSession.isOpen();
+    }
+    
+    /**
+     * 재연결 예약 (Exponential Backoff)
+     */
+    private void scheduleReconnect() {
+        if (isReconnecting.get()) {
+            log.debug("이미 재연결 시도 중");
+            return;
+        }
+        
+        int attempts = reconnectAttempts.get();
+        if (attempts >= MAX_RECONNECT_ATTEMPTS) {
+            log.error("최대 재연결 시도 횟수 초과 ({}회) - 재연결 중단", MAX_RECONNECT_ATTEMPTS);
+            reconnectAttempts.set(0);
+            return;
+        }
+        
+        long delay = INITIAL_RECONNECT_DELAY * (long) Math.pow(2, attempts);
+        log.info("{}초 후 재연결 시도 ({}/{}회)", delay / 1000, attempts + 1, MAX_RECONNECT_ATTEMPTS);
+        
+        new Thread(() -> {
+            try {
+                Thread.sleep(delay);
+                reconnect();
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                log.error("재연결 대기 중 인터럽트 발생", e);
+            }
+        }, "KIS-Reconnect-Thread").start();
+    }
+    
+    /**
+     * KIS 서버 재연결
+     */
+    public synchronized void reconnect() {
+        if (isConnected()) {
+            log.debug("이미 연결되어 있음 - 재연결 불필요");
+            reconnectAttempts.set(0);
+            return;
+        }
+        
+        if (!isReconnecting.compareAndSet(false, true)) {
+            log.debug("이미 재연결 시도 중");
+            return;
+        }
+        
+        try {
+            log.info("KIS 서버 재연결 시도 중... ({}/{}회)", 
+                    reconnectAttempts.get() + 1, MAX_RECONNECT_ATTEMPTS);
+            
+            connectToKis();
+            
+            if (isConnected()) {
+                log.info("✅ KIS 재연결 성공!");
+                reconnectAttempts.set(0);
+                resubscribeAll();
+            } else {
+                log.warn("❌ KIS 재연결 실패");
+                reconnectAttempts.incrementAndGet();
+                scheduleReconnect();
+            }
+            
+        } catch (Exception e) {
+            log.error("재연결 중 오류 발생", e);
+            reconnectAttempts.incrementAndGet();
+            scheduleReconnect();
+        } finally {
+            isReconnecting.set(false);
+        }
+    }
+    
+    /**
+     * 모든 구독 종목 재구독
+     */
+    private void resubscribeAll() {
+        try {
+            // WebSocketSubscriptionManager의 구독 목록과 내부 구독 목록을 합침
+            Set<String> allStocks = new HashSet<>(subscriptionManager.getAllSubscribedStocks());
+            allStocks.addAll(subscribedStocks);
+            
+            if (allStocks.isEmpty()) {
+                log.info("재구독할 종목 없음");
+                return;
+            }
+            
+            log.info("종목 재구독 시작: {} ({}개)", allStocks, allStocks.size());
+            
+            // 기존 구독 목록 초기화 후 재구독
+            subscribedStocks.clear();
+            
+            for (String stockCode : allStocks) {
+                try {
+                    sendSubscribeMessage(stockCode);
+                    subscribedStocks.add(stockCode);
+                    log.debug("재구독 완료: {}", stockCode);
+                    
+                    // API 부하 방지를 위한 짧은 지연
+                    Thread.sleep(100);
+                } catch (Exception e) {
+                    log.error("종목 재구독 실패: {}", stockCode, e);
+                }
+            }
+            
+            log.info("✅ 전체 재구독 완료: {}개", subscribedStocks.size());
+            
+        } catch (Exception e) {
+            log.error("재구독 프로세스 실패", e);
+        }
     }
     
     private Integer parseIntValue(String value) {
