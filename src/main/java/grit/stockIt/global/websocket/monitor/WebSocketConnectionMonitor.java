@@ -25,10 +25,10 @@ public class WebSocketConnectionMonitor {
     public void checkConnection() {
         try {
             if (!kisWebSocketClient.isConnected()) {
-                log.warn("⚠️ KIS 웹소켓 연결 끊김 감지 - 재연결 시도");
+                log.warn("KIS 웹소켓 연결 끊김 감지 - 재연결 시도");
                 kisWebSocketClient.reconnect();
             } else {
-                log.debug("✅ KIS 웹소켓 연결 정상");
+                log.debug("KIS 웹소켓 연결 정상");
             }
         } catch (Exception e) {
             log.error("연결 상태 확인 중 오류 발생", e);
@@ -41,7 +41,7 @@ public class WebSocketConnectionMonitor {
     @Scheduled(fixedDelay = 300000, initialDelay = 60000)
     public void logConnectionStatus() {
         boolean isConnected = kisWebSocketClient.isConnected();
-        log.info("📊 KIS 웹소켓 연결 상태: {}", isConnected ? "연결됨 ✅" : "연결 안됨 ❌");
+        log.info("KIS 웹소켓 연결 상태: {}", isConnected ? "연결됨" : "연결 안됨");
     }
 }
 

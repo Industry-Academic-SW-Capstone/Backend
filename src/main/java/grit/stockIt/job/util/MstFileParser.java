@@ -16,7 +16,7 @@ import java.util.List;
 public class MstFileParser {
     private static final int SHRN_ISCD_LEN = 9;    // 단축코드
     private static final int STND_ISCD_LEN = 12;   // 표준코드
-    private static final int KOR_ISNM_LEN = 40;    // 한글명 (⭐ 가장 불확실! 실제 길이에 맞게 조정)
+    private static final int KOR_ISNM_LEN = 40;    // 한글명 (주의: 가장 불확실! 실제 길이에 맞게 조정)
     // ... 기타 필드 ...
     private static final int STCK_LSTN_DATE_LEN = 8; // 상장일자
 

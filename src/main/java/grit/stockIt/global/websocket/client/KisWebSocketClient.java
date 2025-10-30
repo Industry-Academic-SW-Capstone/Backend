@@ -396,11 +396,11 @@ public class KisWebSocketClient extends TextWebSocketHandler {
             connectToKis();
             
             if (isConnected()) {
-                log.info("✅ KIS 재연결 성공!");
+                log.info("KIS 재연결 성공!");
                 reconnectAttempts.set(0);
                 resubscribeAll();
             } else {
-                log.warn("❌ KIS 재연결 실패");
+                log.warn("KIS 재연결 실패");
                 reconnectAttempts.incrementAndGet();
                 scheduleReconnect();
             }
@@ -446,7 +446,7 @@ public class KisWebSocketClient extends TextWebSocketHandler {
                 }
             }
             
-            log.info("✅ 전체 재구독 완료: {}개", subscribedStocks.size());
+            log.info("전체 재구독 완료: {}개", subscribedStocks.size());
             
         } catch (Exception e) {
             log.error("재구독 프로세스 실패", e);
