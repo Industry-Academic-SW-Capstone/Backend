@@ -89,9 +89,10 @@ public class KisWebSocketClient extends TextWebSocketHandler {
             subscribedStocks.remove(stockCode);
             log.info("KIS 구독 해제: {} (남은 {}개)", stockCode, subscribedStocks.size());
             
-            // 구독 종목이 없으면 5분 후 연결 해제 예약
+            // 구독 종목이 없으면 연결 해제
             if (subscribedStocks.isEmpty()) {
-                log.info("구독 종목 없음. 연결 유지 중...");
+                log.info("구독 종목 없음. KIS 연결 해제");
+                disconnectFromKis();
             }
             
         } catch (Exception e) {
@@ -306,6 +307,30 @@ public class KisWebSocketClient extends TextWebSocketHandler {
      */
     public boolean isConnected() {
         return kisSession != null && kisSession.isOpen();
+    }
+    
+    /**
+     * KIS 웹소켓 연결 해제
+     */
+    private void disconnectFromKis() {
+        if (!isConnected()) {
+            log.debug("이미 연결 해제됨");
+            return;
+        }
+        
+        try {
+            log.info("KIS 웹소켓 연결 해제 시작");
+            
+            // 정상 종료 
+            kisSession.close(CloseStatus.NORMAL);
+            kisSession = null;
+            
+            log.info("KIS 웹소켓 연결 해제 완료");
+            
+        } catch (Exception e) {
+            log.error("KIS 연결 해제 실패", e);
+            kisSession = null;
+        }
     }
     
     /**

@@ -22,6 +22,9 @@ public class WebSocketSubscriptionManager {
     // 세션ID -> 구독 중인 종목 코드들
     private final Map<String, Set<String>> sessionSubscriptions = new ConcurrentHashMap<>();
     
+    // subscriptionId -> 종목코드 매핑 (구독 해제 시 필요)
+    private final Map<String, String> subscriptionIdToStockCode = new ConcurrentHashMap<>();
+    
     /**
      * 구독자 수 증가
      * @return 증가 후 구독자 수
@@ -100,6 +103,26 @@ public class WebSocketSubscriptionManager {
      */
     public Set<String> getAllSubscribedStocks() {
         return subscriberCounts.keySet();
+    }
+    
+    /**
+     * subscriptionId → stockCode 매핑 저장
+     */
+    public void addSubscriptionMapping(String subscriptionId, String stockCode) {
+        subscriptionIdToStockCode.put(subscriptionId, stockCode);
+        log.debug("구독 매핑 저장: {} → {}", subscriptionId, stockCode);
+    }
+    
+    /**
+     * subscriptionId로 stockCode 조회 및 매핑 제거
+     * @return 종목 코드 (없으면 null)
+     */
+    public String removeSubscriptionMapping(String subscriptionId) {
+        String stockCode = subscriptionIdToStockCode.remove(subscriptionId);
+        if (stockCode != null) {
+            log.debug("구독 매핑 제거: {} → {}", subscriptionId, stockCode);
+        }
+        return stockCode;
     }
 }
 

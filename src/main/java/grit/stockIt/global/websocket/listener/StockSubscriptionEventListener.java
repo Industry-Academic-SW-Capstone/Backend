@@ -33,6 +33,7 @@ public class StockSubscriptionEventListener {
         StompHeaderAccessor headers = StompHeaderAccessor.wrap(event.getMessage());
         String destination = headers.getDestination();
         String sessionId = headers.getSessionId();
+        String subscriptionId = headers.getSubscriptionId();
         
         if (destination == null || !destination.startsWith("/topic/stock/")) {
             return;
@@ -41,7 +42,12 @@ public class StockSubscriptionEventListener {
         // /topic/stock/005930 → 005930 추출
         String stockCode = destination.substring("/topic/stock/".length());
         
-        log.debug("세션 {}가 종목 {} 구독 요청", sessionId, stockCode);
+        log.debug("세션 {}가 종목 {} 구독 요청 (subscriptionId: {})", sessionId, stockCode, subscriptionId);
+        
+        // subscriptionId → stockCode 매핑 저장 (구독 해제 시 필요)
+        if (subscriptionId != null) {
+            subscriptionManager.addSubscriptionMapping(subscriptionId, stockCode);
+        }
         
         // 세션 구독 기록 (중복 체크)
         boolean isNewSubscription = subscriptionManager.addSessionSubscription(sessionId, stockCode);
@@ -70,9 +76,29 @@ public class StockSubscriptionEventListener {
         
         log.debug("세션 {} 구독 해제 (subscriptionId: {})", sessionId, subscriptionId);
         
-        // 구독 ID로 종목 코드를 찾아서 처리
-        // (실제로는 구독 시 subscriptionId와 stockCode 매핑 필요)
-        // 현재는 연결 해제 시 일괄 처리
+        if (subscriptionId == null) {
+            log.warn("subscriptionId가 null입니다");
+            return;
+        }
+        
+        // subscriptionId로 종목 코드 조회 및 매핑 제거
+        String stockCode = subscriptionManager.removeSubscriptionMapping(subscriptionId);
+        
+        if (stockCode == null) {
+            log.debug("subscriptionId {}에 해당하는 종목 코드를 찾을 수 없습니다", subscriptionId);
+            return;
+        }
+        
+        log.info("종목 {} 구독 해제 (세션: {})", stockCode, sessionId);
+        
+        // 구독자 수 감소
+        int count = subscriptionManager.decrementSubscribers(stockCode);
+        
+        // 마지막 구독자였으면 KIS 구독 해제
+        if (count == 0) {
+            log.info("종목 {} 마지막 구독자 해제. KIS 구독 해제", stockCode);
+            unsubscribeFromKis(stockCode);
+        }
     }
     
     /**
