@@ -82,13 +82,21 @@ public class KisTokenManager {
         Map<String, String> requestBody = Map.of(
                 "grant_type", "client_credentials",
                 "appkey", properties.appkey(),
-                "appsecret", properties.appsecret()
+                "secretkey", properties.appsecret()  // appsecret이 아니라 secretkey!
         );
 
         Mono<Map> responseMono = webClient.post()
                 .uri(properties.url() + "/oauth2/Approval") // 웹소켓 접속키 발급 URL
+                .header("Content-Type", "application/json; charset=utf-8")
                 .bodyValue(requestBody)
                 .retrieve()
+                .onStatus(status -> status.is4xxClientError() || status.is5xxServerError(),
+                        response -> response.bodyToMono(String.class)
+                                .flatMap(body -> {
+                                    log.error("KIS Approval Key 발급 실패. Status: {}, Body: {}", 
+                                            response.statusCode(), body);
+                                    return Mono.error(new RuntimeException("Approval Key 발급 실패: " + body));
+                                }))
                 .bodyToMono(Map.class);
 
         Map<String, Object> response = responseMono.block();
