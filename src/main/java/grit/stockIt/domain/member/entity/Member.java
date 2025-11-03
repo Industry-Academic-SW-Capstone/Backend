@@ -1,7 +1,6 @@
 package grit.stockIt.domain.member.entity;
 
 import grit.stockIt.domain.auth.entity.KakaoToken;
-import grit.stockIt.global.common.BaseEntity;              // 추가
 import jakarta.persistence.*;
 import lombok.AccessLevel;
 import lombok.AllArgsConstructor;

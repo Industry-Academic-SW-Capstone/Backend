@@ -9,6 +9,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.client.WebClient;
+import reactor.core.publisher.Mono;
 
 @Slf4j
 @Component
@@ -16,51 +17,42 @@ import org.springframework.web.reactive.function.client.WebClient;
 public class KakaoOAuthClient {
 
     private final WebClient webClient;
-    private final KakaoOAuthProperties kakaoOAuthProperties;
-
-    private static final String TOKEN_URL = "https://kauth.kakao.com/oauth/token";
-    private static final String USER_INFO_URL = "https://kapi.kakao.com/v2/user/me";
-    private static final String LOGOUT_URL = "https://kapi.kakao.com/v1/user/logout";
+    private final KakaoOAuthProperties kakaoProperties;
 
     /**
-     * 인가 코드로 카카오 액세스 토큰 요청
+     * 인가 코드로 액세스 토큰 발급 (비동기)
      */
-    public KakaoTokenResponse getAccessToken(String code) {
+    public Mono<KakaoTokenResponse> getAccessToken(String code) {
         return webClient.post()
-                .uri(TOKEN_URL)
+                .uri("https://kauth.kakao.com/oauth/token")
                 .header(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_FORM_URLENCODED_VALUE)
-                .body(org.springframework.web.reactive.function.BodyInserters.fromFormData("grant_type", "authorization_code")
-                        .with("client_id", kakaoOAuthProperties.getRestApiKey())
-                        .with("redirect_uri", kakaoOAuthProperties.getRedirectUri())
-                        .with("code", code))
+                .bodyValue("grant_type=authorization_code" +
+                        "&client_id=" + kakaoProperties.getRestApiKey() +
+                        "&redirect_uri=" + kakaoProperties.getRedirectUri() +
+                        "&code=" + code)
                 .retrieve()
-                .bodyToMono(KakaoTokenResponse.class)
-                .block();
+                .bodyToMono(KakaoTokenResponse.class);
     }
 
     /**
-     * 액세스 토큰으로 카카오 사용자 정보 조회
+     * 액세스 토큰으로 사용자 정보 조회 (비동기)
      */
-    public KakaoUserInfoResponse getUserInfo(String accessToken) {
+    public Mono<KakaoUserInfoResponse> getUserInfo(String accessToken) {
         return webClient.get()
-                .uri(USER_INFO_URL)
+                .uri("https://kapi.kakao.com/v2/user/me")
                 .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken)
                 .retrieve()
-                .bodyToMono(KakaoUserInfoResponse.class)
-                .block();
+                .bodyToMono(KakaoUserInfoResponse.class);
     }
 
     /**
-     * 카카오 로그아웃
+     * 카카오 로그아웃 (비동기)
      */
-    public void logout(String accessToken) {
-        webClient.post()
-                .uri(LOGOUT_URL)
+    public Mono<Void> logout(String accessToken) {
+        return webClient.post()
+                .uri("https://kapi.kakao.com/v1/user/logout")
                 .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken)
                 .retrieve()
-                .bodyToMono(Void.class)
-                .block();
-        
-        log.info("카카오 로그아웃 완료");
+                .bodyToMono(Void.class);
     }
 }
