@@ -50,7 +50,7 @@ public class MemberController {
         }
         
         String email = auth.getName();
-        log.info("로그아웃: {}", email);  // 이제 작동
+        log.info("로그아웃: {}", email);
         
         return ResponseEntity.ok("로그아웃되었습니다.");
     }

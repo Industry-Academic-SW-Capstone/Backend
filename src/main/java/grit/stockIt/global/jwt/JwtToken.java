@@ -21,5 +21,4 @@ import lombok.NoArgsConstructor;
 @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
 public class JwtToken {
     private String accessToken; // JWT Access Token
-    private String accessToken; // JWT Access Token
 }

@@ -17,10 +17,13 @@ public class SecurityConfig {
 
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(
+                                "/api/auth/kakao/callback",
+                                "/api/auth/kakao/signup/complete",
+                                "/api/members/login",
+                                "/api/members/signup",
                                 "/v3/api-docs/**",
                                 "/swagger-ui/**",
-                                "/swagger-ui.html",
-                                "/v3/api-docs.yaml"
+                                "/swagger-ui.html"
                         ).permitAll()
                         // 전부 허용 (개발용)
                         .anyRequest().permitAll()
