@@ -15,7 +15,8 @@ import lombok.NoArgsConstructor;
 @Builder
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 @AllArgsConstructor
-public class Member extends BaseEntity {                   // BaseEntity 상속
+public class Member extends BaseEntity {
+    
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     @Column(name = "member_id")
@@ -41,9 +42,13 @@ public class Member extends BaseEntity {                   // BaseEntity 상속
     @JoinColumn(name = "kakaotoken_id")
     private KakaoToken kakaoToken;
 
+    /**
+     * 카카오 토큰 업데이트 또는 생성
+     */
     public void updateKakaoToken(KakaoToken kakaoToken) {
         this.kakaoToken = kakaoToken;
+        if (kakaoToken != null) {
+            kakaoToken.setMember(this);  // 양방향 관계 설정
+        }
     }
-
-    // 아래 커스텀 빌더는 제거합니다. (provider는 서비스에서 명시적으로 세팅)
 }

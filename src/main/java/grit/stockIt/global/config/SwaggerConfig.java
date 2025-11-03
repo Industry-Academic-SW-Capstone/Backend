@@ -6,13 +6,13 @@ import io.swagger.v3.oas.models.info.Info;
 import io.swagger.v3.oas.models.info.License;
 import io.swagger.v3.oas.models.security.SecurityRequirement;
 import io.swagger.v3.oas.models.security.SecurityScheme;
-import org.springdoc.core.customizers.OpenApiCustomizer;
+import org.springdoc.core.customizers.GlobalOpenApiCustomizer;
 import org.springdoc.core.models.GroupedOpenApi;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpHeaders;
 
-import java.util.List;
+import java.util.Collections;
 import java.util.Set;
 
 @Configuration
@@ -23,14 +23,19 @@ public class SwaggerConfig {
     @Bean
     public GroupedOpenApi allApis() {
         return GroupedOpenApi.builder()
-                .group("all") // 모두 적용
+                .group("all")
                 .pathsToMatch("/**")
                 .build();
     }
 
     @Bean
-    public OpenAPI openAPI() {
+    public OpenAPI customOpenAPI() {
         return new OpenAPI()
+                .info(new Info()
+                        .title("StockIt API")
+                        .version("v1.0")
+                        .description("주식 모의투자 서비스 API")
+                        .license(new License().name("Apache 2.0").url("http://springdoc.org")))
                 .components(new Components().addSecuritySchemes(
                         SCHEME_NAME,
                         new SecurityScheme()
@@ -43,29 +48,22 @@ public class SwaggerConfig {
     }
 
     @Bean
-    public OpenApiCustomizer securityOpenApiCustomiser() {
-        Set<String> whitelist = Set.of(
-                "/api/auth/kakao/callback",
-                "/api/auth/kakao/signup",
-                "/api/auth/login",
-                "/api/auth/signup",
-                "/api/auth/refresh"
-        );
+    public GlobalOpenApiCustomizer securityOpenApiCustomizer() {
+        return openApi -> {
+            Set<String> whitelist = Set.of(
+                    "/api/auth/kakao/callback",
+                    "/api/auth/kakao/signup/complete",
+                    "/api/members/login",
+                    "/api/members/signup"
+            );
 
-        return openApi -> openApi.getPaths().forEach((path, item) -> {
-            if (whitelist.contains(path)) {
-                item.readOperations().forEach(op -> op.setSecurity(List.of()));
+            if (openApi.getPaths() != null) {
+                openApi.getPaths().forEach((path, item) -> {
+                    if (whitelist.contains(path)) {
+                        item.readOperations().forEach(op -> op.setSecurity(Collections.emptyList()));
+                    }
+                });
             }
-        });
-    }
-
-    @Bean
-    public OpenAPI customOpenAPI() {
-        return new OpenAPI()
-                .info(new Info()
-                        .title("Spring API 문서")
-                        .version("v1.0")
-                        .description("Spring Boot 기반 API 문서 입니다.")
-                        .license(new License().name("Apache 2.0").url("http://springdoc.org")));
+        };
     }
 }

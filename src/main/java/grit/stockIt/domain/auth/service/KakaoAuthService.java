@@ -1,6 +1,7 @@
 package grit.stockIt.domain.auth.service;
 
 import grit.stockIt.domain.auth.client.KakaoOAuthClient;
+import grit.stockIt.domain.auth.dto.KakaoLoginResponse;
 import grit.stockIt.domain.auth.dto.KakaoSignupResponse;
 import grit.stockIt.domain.auth.dto.KakaoTokenResponse;
 import grit.stockIt.domain.auth.dto.KakaoUserInfoResponse;
@@ -33,7 +34,7 @@ public class KakaoAuthService {
      * 카카오 로그인 (신규 회원이면 가입 정보 반환)
      */
     @Transactional
-    public Object login(String code) {
+    public KakaoLoginResponse login(String code) {
         KakaoTokenResponse tokenResponse = kakaoOAuthClient.getAccessToken(code);
         KakaoUserInfoResponse userInfo = kakaoOAuthClient.getUserInfo(tokenResponse.getAccessToken());
 
@@ -45,23 +46,27 @@ public class KakaoAuthService {
         Optional<Member> existingMember = memberRepository.findByEmail(email);
 
         if (existingMember.isPresent()) {
+            // 기존 회원 - JWT 토큰 발급
             Member member = existingMember.get();
             updateKakaoToken(member, tokenResponse);
 
             String jwt = jwtService.generateToken(member.getEmail());
-            return JwtToken.builder().accessToken(jwt).build();
+            JwtToken jwtToken = JwtToken.builder().accessToken(jwt).build();
+            
+            return KakaoLoginResponse.ofExistingUser(jwtToken);
         } else {
-            // 프로필 null 안전 처리
+            // 신규 회원 - 회원가입 정보 반환
             var profile = userInfo.getKakaoAccount().getProfile();
             String nickname = (profile != null) ? profile.getNickname() : null;
             String profileImage = (profile != null) ? profile.getProfileImageUrl() : null;
 
-            return KakaoSignupResponse.builder()
+            KakaoSignupResponse signupInfo = KakaoSignupResponse.builder()
                     .email(email)
                     .name(nickname)
                     .profileImage(profileImage)
-                    // .isNewUser(true)
                     .build();
+
+            return KakaoLoginResponse.ofNewUser(signupInfo);
         }
     }
 
@@ -119,15 +124,23 @@ public class KakaoAuthService {
                 : null;
 
         if (member.getKakaoToken() == null) {
+            // 새로운 토큰 생성
             KakaoToken kakaoToken = KakaoToken.builder()
                     .accessToken(tokenResponse.getAccessToken())
                     .accessTokenExpiresIn(accessTokenExpiry)
                     .refreshToken(tokenResponse.getRefreshToken())
                     .refreshTokenExpiresIn(refreshTokenExpiry)
                     .build();
-            member.updateKakaoToken(kakaoToken);   // 주인 쪽에 세팅(주석 해제)
+            
+            member.updateKakaoToken(kakaoToken);  // 양방향 관계 자동 설정
         } else {
-            member.getKakaoToken().updateToken(tokenResponse.getAccessToken(), accessTokenExpiry);
+            // 기존 토큰 업데이트
+            member.getKakaoToken().updateAllTokens(
+                    tokenResponse.getAccessToken(),
+                    accessTokenExpiry,
+                    tokenResponse.getRefreshToken(),
+                    refreshTokenExpiry
+            );
         }
     }
 }
