@@ -52,3 +52,7 @@ kis:
     url: "https://openapi.koreainvestment.com:9443"
     appkey: ${KIS_API_APPKEY}
     appsecret: ${KIS_API_APPSECRET}
+
+kakao:
+  rest-api-key: ${KAKAO_REST_API_KEY}
+  redirect-uri: ${KAKAO_REDIRECT_URI}
