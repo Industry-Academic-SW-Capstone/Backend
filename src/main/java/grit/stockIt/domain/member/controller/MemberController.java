@@ -3,19 +3,22 @@ package grit.stockIt.domain.member.controller;
 import grit.stockIt.domain.member.dto.MemberLoginRequest;
 import grit.stockIt.domain.member.dto.MemberResponse;
 import grit.stockIt.domain.member.dto.MemberSignupRequest;
-import grit.stockIt.domain.member.service.LocalMemberService; // LocalMemberService로 변경
+import grit.stockIt.domain.member.service.LocalMemberService;
 import grit.stockIt.global.jwt.JwtToken;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
-import jakarta.servlet.http.HttpServletRequest;
-import jakarta.servlet.http.HttpSession;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;  // 추가
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.validation.FieldError;
+import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.*;
-import org.springframework.web.bind.MethodArgumentNotValidException; // 추가
-import org.springframework.validation.FieldError;                    // 추가
 
+@Slf4j  // 추가
 @RestController
 @RequestMapping("/api/members")
 @RequiredArgsConstructor
@@ -37,13 +40,18 @@ public class MemberController {
         return ResponseEntity.ok(token);
     }
 
-    @Operation(summary = "로그아웃", description = "현재 세션을 종료합니다.")
+    @Operation(summary = "로그아웃", description = "현재 로그인한 사용자를 로그아웃합니다.")
     @PostMapping("/logout")
-    public ResponseEntity<String> logout(HttpServletRequest request) {
-        HttpSession session = request.getSession(false);
-        if (session != null) {
-            session.invalidate();
+    public ResponseEntity<String> logout() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        
+        if (auth == null || !auth.isAuthenticated() || "anonymousUser".equals(auth.getPrincipal())) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("인증되지 않은 요청입니다.");
         }
+        
+        String email = auth.getName();
+        log.info("로그아웃: {}", email);  // 이제 작동
+        
         return ResponseEntity.ok("로그아웃되었습니다.");
     }
 
