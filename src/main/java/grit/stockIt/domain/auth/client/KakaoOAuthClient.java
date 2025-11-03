@@ -29,10 +29,10 @@ public class KakaoOAuthClient {
         return webClient.post()
                 .uri(TOKEN_URL)
                 .header(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_FORM_URLENCODED_VALUE)
-                .bodyValue("grant_type=authorization_code" +
-                        "&client_id=" + kakaoOAuthProperties.getRestApiKey() +
-                        "&redirect_uri=" + kakaoOAuthProperties.getRedirectUri() +
-                        "&code=" + code)
+                .body(org.springframework.web.reactive.function.BodyInserters.fromFormData("grant_type", "authorization_code")
+                        .with("client_id", kakaoOAuthProperties.getRestApiKey())
+                        .with("redirect_uri", kakaoOAuthProperties.getRedirectUri())
+                        .with("code", code))
                 .retrieve()
                 .bodyToMono(KakaoTokenResponse.class)
                 .block();
