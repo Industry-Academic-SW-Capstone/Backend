@@ -1,7 +1,6 @@
 package grit.stockIt.domain.mission.entity;
 
-import grit.stockIt.domain.mission.entity.MissionType;
-import grit.stockIt.domain.mission.entity.ValidationType;
+import grit.stockIt.domain.reward.entity.Reward;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -10,26 +9,36 @@ import lombok.NoArgsConstructor;
 @Getter
 @NoArgsConstructor
 public class Mission {
-
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long missionId; // 미션 ID 기획과 매칭
+    private Long missionId;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
-    private MissionType missionType; // 일일, 주간 미션
+    private MissionType missionType;
+
+    public boolean isDaily() {
+        return missionType == MissionType.DAILY;
+    }
+
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
-    private ValidationType validationType; // 클라이언트가 완료처리 OR 서버의 처리
+    private ValidationType validationType;
 
     @Column(nullable = false)
-    private String title; // 미션 주제
+    private String title;
 
-    private String description; // 미션 설명
+    private String description;
 
     @Column(nullable = false)
-    private int requiredCount = 1; // 목표 횟수 (예: 분할매수 3회)
+    private int requiredCount = 1;
 
-    private Long rewardId; // 보상 정보 (별도 테이블 FK)
+    // rewardId를 실제 Reward 엔티티와의 관계로 변경
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "reward_id")
+    private Reward reward;
+
+    // 미션의 활성화 여부
+    private boolean isActive = true;
 }

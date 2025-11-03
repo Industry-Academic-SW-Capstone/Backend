@@ -1,6 +1,7 @@
 package grit.stockIt.domain.mission.dto;
 
 import grit.stockIt.domain.mission.entity.Mission;
+import grit.stockIt.domain.user.entity.UserMission;
 import grit.stockIt.domain.mission.entity.UserMissionProgress;
 import lombok.Getter;
 
@@ -22,6 +23,16 @@ public class MissionProgressDto {
         this.isCompleted = progress.isCompleted();
         this.isRewardClaimed = progress.isRewardClaimed();
     }
+
+    public MissionProgressDto(Mission mission, UserMission userMission) {
+        this.missionId = mission.getMissionId();
+        this.title = mission.getTitle();
+        this.requiredCount = mission.getRequiredCount();
+        this.currentProgress = userMission.getCurrentCount();
+        this.isCompleted = userMission.isCompleted();
+        this.isRewardClaimed = userMission.getStatus() == UserMission.MissionStatus.REWARD_CLAIMED;
+    }
+
 
     // 2. (진행도 X) 미션 원본만으로 DTO 생성 (아직 시작 안 한 미션)
     public MissionProgressDto(Mission mission) {
