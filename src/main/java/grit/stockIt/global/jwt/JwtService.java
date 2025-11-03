@@ -11,13 +11,11 @@ import java.util.Date;
 
 /**
  * JWT 토큰 생성, 검증, 파싱을 담당하는 서비스
- * - Access Token 생성 및 검증
- * - 토큰에서 사용자 정보 추출
  */
 @Service
 public class JwtService {
 
-    @Value("${jwt.secret:mySecretKey123456789012345678901234567890}")
+    @Value("${jwt.secret}")
     private String secret; // JWT 서명에 사용할 비밀키
 
     @Value("${jwt.expiration:86400000}") // 24시간 (밀리초)
@@ -33,17 +31,17 @@ public class JwtService {
     }
 
     /**
-     * 학번을 기반으로 JWT Access Token 생성
+     * 이메일 기반으로 JWT Access Token 생성
      * 
-     * @param studentId 사용자 학번
+     * @param email 사용자 이메일
      * @return 생성된 JWT 토큰 문자열
      */
-    public String generateToken(String studentId) {
+    public String generateToken(String email) {
         Date now = new Date();
         Date expiryDate = new Date(now.getTime() + expiration);
 
         return Jwts.builder()
-                .subject(studentId) // 토큰 주체 (학번)
+                .subject(email) // 토큰 주체 (이메일)
                 .issuedAt(now) // 발급 시간
                 .expiration(expiryDate) // 만료 시간
                 .signWith(getSigningKey()) // 서명
@@ -51,18 +49,18 @@ public class JwtService {
     }
 
     /**
-     * JWT 토큰에서 학번 추출
+     * JWT 토큰에서 이메일 추출
      * 
      * @param token JWT 토큰 문자열
-     * @return 추출된 학번
+     * @return 추출된 이메일
      */
-    public String getStudentIdFromToken(String token) {
+    public String extractEmail(String token) {
         Claims claims = Jwts.parser()
                 .verifyWith(getSigningKey()) // 서명 검증
                 .build()
                 .parseSignedClaims(token) // 토큰 파싱
                 .getPayload(); // 페이로드 추출
-        return claims.getSubject(); // 학번 반환
+        return claims.getSubject(); // 이메일 반환
     }
 
     /**

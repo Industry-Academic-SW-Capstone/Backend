@@ -26,13 +26,13 @@ import java.io.IOException;
 @RequiredArgsConstructor
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
-    private final JwtService jwtService; // JWT 토큰 처리 서비스
-    private final UserDetailsService userDetailsService; // 사용자 정보 로드 서비스
+    private final JwtService jwtService;
+    private final UserDetailsService userDetailsService;
 
     /**
      * JWT 인증 필터 메인 로직
      * 1. Authorization 헤더에서 Bearer 토큰 추출
-     * 2. 토큰에서 학번 추출
+     * 2. 토큰에서 이메일 추출
      * 3. 토큰 유효성 검증
      * 4. Spring Security 컨텍스트에 인증 정보 설정
      */
@@ -46,7 +46,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         // 1. Authorization 헤더에서 JWT 토큰 추출
         final String authHeader = request.getHeader("Authorization");
         final String jwt;
-        final String studentId;
+        final String email;
 
         // Bearer 토큰이 없으면 다음 필터로 넘어감
         if (authHeader == null || !authHeader.startsWith("Bearer ")) {
@@ -57,18 +57,18 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         // 2. "Bearer " 접두사 제거하고 실제 토큰 추출
         jwt = authHeader.substring(7);
         try {
-            // 3. 토큰에서 학번 추출
-            studentId = jwtService.getStudentIdFromToken(jwt);
+            // 3. 토큰에서 이메일 추출
+            email = jwtService.extractEmail(jwt);
         } catch (Exception e) {
             // 토큰 파싱 실패 시 다음 필터로 넘어감
             filterChain.doFilter(request, response);
             return;
         }
 
-        // 4. 학번이 있고 아직 인증되지 않은 경우에만 인증 처리
-        if (studentId != null && SecurityContextHolder.getContext().getAuthentication() == null) {
+        // 4. 이메일이 있고 아직 인증되지 않은 경우에만 인증 처리
+        if (email != null && SecurityContextHolder.getContext().getAuthentication() == null) {
             // 사용자 정보 로드
-            UserDetails userDetails = this.userDetailsService.loadUserByUsername(studentId);
+            UserDetails userDetails = this.userDetailsService.loadUserByUsername(email);
             
             // 토큰 유효성 검증
             if (jwtService.validateToken(jwt)) {
