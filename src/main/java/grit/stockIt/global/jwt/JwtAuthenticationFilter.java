@@ -60,9 +60,10 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             // 3. 토큰에서 이메일 추출
             email = jwtService.extractEmail(jwt);
         } catch (Exception e) {
-            // 토큰 파싱 실패 시 다음 필터로 넘어감
+            logger.warn("JWT 토큰 파싱 중 오류 발생: {}", e.getMessage());
             filterChain.doFilter(request, response);
             return;
+        }
         }
 
         // 4. 이메일이 있고 아직 인증되지 않은 경우에만 인증 처리
