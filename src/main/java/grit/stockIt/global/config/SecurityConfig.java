@@ -3,6 +3,8 @@ package grit.stockIt.global.config;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 
 @Configuration
@@ -15,10 +17,13 @@ public class SecurityConfig {
 
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(
+                                "/api/auth/kakao/callback",
+                                "/api/auth/kakao/signup/complete",
+                                "/api/members/login",
+                                "/api/members/signup",
                                 "/v3/api-docs/**",
                                 "/swagger-ui/**",
-                                "/swagger-ui.html",
-                                "/v3/api-docs.yaml"
+                                "/swagger-ui.html"
                         ).permitAll()
                         // 전부 허용 (개발용)
                         .anyRequest().permitAll()
@@ -30,5 +35,10 @@ public class SecurityConfig {
 
         // 세션 정책은 기본(IF_REQUIRED)로 두면 HttpSession 사용에 무리 없음
         return http.build();
+    }
+
+    @Bean
+    public PasswordEncoder passwordEncoder() {
+        return new BCryptPasswordEncoder();
     }
 }
