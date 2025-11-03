@@ -15,6 +15,8 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.concurrent.CompletableFuture;
+
 @Slf4j
 @RestController
 @RequestMapping("/api/auth/kakao")
@@ -26,9 +28,9 @@ public class KakaoAuthController {
 
     @Operation(summary = "카카오 로그인 콜백", description = "카카오 OAuth 콜백 처리")
     @GetMapping("/callback")
-    public ResponseEntity<KakaoLoginResponse> kakaoCallback(@RequestParam String code) {
-        KakaoLoginResponse result = kakaoAuthService.login(code);
-        return ResponseEntity.ok(result);
+    public CompletableFuture<ResponseEntity<KakaoLoginResponse>> kakaoCallback(@RequestParam String code) {
+        return kakaoAuthService.login(code)
+                .thenApply(ResponseEntity::ok);
     }
 
     @Operation(summary = "카카오 회원가입 완료", description = "신규 회원 가입 완료 처리")
@@ -40,14 +42,16 @@ public class KakaoAuthController {
 
     @Operation(summary = "카카오 로그아웃", description = "카카오 로그아웃 처리")
     @PostMapping("/logout")
-    public ResponseEntity<String> logout() {
+    public CompletableFuture<ResponseEntity<String>> logout() {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
         if (auth == null || !auth.isAuthenticated() || "anonymousUser".equals(auth.getPrincipal())) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("인증이 필요합니다.");
+            return CompletableFuture.completedFuture(
+                ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("인증이 필요합니다.")
+            );
         }
 
         String email = auth.getName();
-        kakaoAuthService.logout(email);
-        return ResponseEntity.ok("로그아웃되었습니다.");
+        return kakaoAuthService.logout(email)
+                .thenApply(v -> ResponseEntity.ok("로그아웃되었습니다."));
     }
 }
