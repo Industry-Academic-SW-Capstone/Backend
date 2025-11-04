@@ -84,26 +84,75 @@ public class MasterFileUpdateService {
     }
 
 
+    // 업종 코드별 업종명 매핑
+    private static final Map<String, String> INDUSTRY_NAME_MAP = createIndustryNameMap();
+
+    private static Map<String, String> createIndustryNameMap() {
+        Map<String, String> map = new HashMap<>();
+        // KOSPI 업종 코드 (11개)
+        map.put("0000", "기타/미분류");
+        map.put("0016", "유통/서비스");
+        map.put("0017", "에너지/가스");
+        map.put("0018", "건설");
+        map.put("0019", "운송/물류");
+        map.put("0020", "통신");
+        map.put("0021", "금융/보험");
+        map.put("0026", "서비스");
+        map.put("0027", "제조/화학");
+        map.put("0028", "부동산");
+        map.put("0029", "IT/소프트웨어/게임");
+        map.put("0030", "미디어/엔터테인먼트");
+        // KOSDAQ 업종 코드 (7개)
+        map.put("1006", "IT서비스/소프트웨어");
+        map.put("1009", "제조/기계");
+        map.put("1010", "건설/엔지니어링");
+        map.put("1011", "IT/서비스");
+        map.put("1013", "기계/엔지니어링");
+        map.put("1014", "금융/투자");
+        map.put("1015", "미디어/엔터테인먼트");
+        return Collections.unmodifiableMap(map);
+    }
+
     private void saveUniqueIndustries(List<MstRecord> parsedData) {
         Set<String> uniqueIndustryCodes = parsedData.stream()
                 .map(MstRecord::industryCode)
                 .filter(code -> code != null && !code.isEmpty())
                 .collect(Collectors.toSet());
 
-        Set<String> existingCodes = industryRepository.findAllById(uniqueIndustryCodes).stream()
+        List<Industry> existingIndustries = industryRepository.findAllById(uniqueIndustryCodes);
+        Set<String> existingCodes = existingIndustries.stream()
                 .map(Industry::getCode)
                 .collect(Collectors.toSet());
 
+        // 신규 산업 저장
         List<Industry> industriesToSave = new ArrayList<>();
         for (String code : uniqueIndustryCodes) {
             if (!existingCodes.contains(code)) {
-                industriesToSave.add(Industry.builder().code(code).name(null).build());
+                String name = INDUSTRY_NAME_MAP.getOrDefault(code, null);
+                industriesToSave.add(Industry.builder().code(code).name(name).build());
+            }
+        }
+
+        // 기존 산업의 이름이 없는 경우 업데이트
+        List<Industry> industriesToUpdate = new ArrayList<>();
+        for (Industry industry : existingIndustries) {
+            if (industry.getName() == null || industry.getName().isEmpty()) {
+                String name = INDUSTRY_NAME_MAP.get(industry.getCode());
+                if (name != null) {
+                    industry.updateName(name);
+                    industriesToUpdate.add(industry);
+                }
             }
         }
 
         if (!industriesToSave.isEmpty()) {
             industryRepository.saveAll(industriesToSave);
             log.info("{}개의 신규 산업 코드를 저장했습니다.", industriesToSave.size());
+        }
+
+        if (!industriesToUpdate.isEmpty()) {
+            industryRepository.saveAll(industriesToUpdate);
+            log.info("{}개의 기존 산업 코드의 이름을 업데이트했습니다.", industriesToUpdate.size());
         }
     }
 
