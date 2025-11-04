@@ -7,6 +7,7 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+import grit.stockIt.global.common.BaseEntity;
 
 @Entity
 @Table(name = "member")
