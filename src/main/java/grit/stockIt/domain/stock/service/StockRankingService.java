@@ -73,15 +73,13 @@ public class StockRankingService {
 
     /**
      * 업종별 인기 종목 조회 (거래대금 기준) - 각 업종별 최대 5개까지 반환
+     * 거래대금 상위 종목에서 실제로 나타나는 업종을 동적으로 감지하여 반환
      * @param totalLimit 전체 조회할 종목 수 (한투 API 최대 30개 제한)
-     * @param industryCodes 조회할 업종 코드 리스트
      * @return 업종별 인기 종목 리스트 (각 업종 최대 5개)
      */
-    public Mono<List<IndustryStockRankingDto>> getPopularStocksByIndustry(
-            int totalLimit,
-            List<String> industryCodes) {
+    public Mono<List<IndustryStockRankingDto>> getPopularStocksByIndustry(int totalLimit) {
         
-        log.info("업종별 인기 종목 조회 시작 - 전체: {}개, 업종별 최대 5개", totalLimit);
+        log.info("업종별 인기 종목 조회 시작 - 전체: {}개, 업종별 최대 5개 (동적 감지)", totalLimit);
         
         return getAmountTopStocksFiltered(totalLimit)
                 .map(allStocks -> {
@@ -96,7 +94,7 @@ public class StockRankingService {
                     Map<String, Stock> stockMap = stockEntities.stream()
                             .collect(Collectors.toMap(Stock::getCode, stock -> stock));
                     
-                    // 업종 코드별로 그룹화
+                    // 업종 코드별로 그룹화 (거래대금 합계 계산)
                     Map<String, List<StockRankingDto>> stocksByIndustry = allStocks.stream()
                             .filter(stock -> {
                                 Stock stockEntity = stockMap.get(stock.stockCode());
@@ -109,8 +107,26 @@ public class StockRankingService {
                                     }
                             ));
                     
+                    // UNKNOWN 제외
+                    stocksByIndustry.remove("UNKNOWN");
+                    
+                    // 업종별 거래대금 합계 계산 후 정렬 (상위 업종 우선)
+                    List<String> sortedIndustryCodes = stocksByIndustry.entrySet().stream()
+                            .sorted((e1, e2) -> {
+                                // 각 업종의 거래대금 합계 계산
+                                long sum1 = e1.getValue().stream()
+                                        .mapToLong(StockRankingDto::amount)
+                                        .sum();
+                                long sum2 = e2.getValue().stream()
+                                        .mapToLong(StockRankingDto::amount)
+                                        .sum();
+                                return Long.compare(sum2, sum1); // 내림차순
+                            })
+                            .map(Map.Entry::getKey)
+                            .toList();
+                    
                     // 업종 정보 조회
-                    List<Industry> industries = industryRepository.findAllById(industryCodes);
+                    List<Industry> industries = industryRepository.findAllById(sortedIndustryCodes);
                     Map<String, Industry> industryMap = industries.stream()
                             .collect(Collectors.toMap(Industry::getCode, industry -> industry));
                     
@@ -118,8 +134,8 @@ public class StockRankingService {
                     List<IndustryStockRankingDto> result = new ArrayList<>();
                     final int MAX_PER_INDUSTRY = 5;
                     
-                    for (String industryCode : industryCodes) {
-                        List<StockRankingDto> stocks = stocksByIndustry.getOrDefault(industryCode, new ArrayList<>());
+                    for (String industryCode : sortedIndustryCodes) {
+                        List<StockRankingDto> stocks = stocksByIndustry.get(industryCode);
                         
                         // 거래대금 기준 내림차순 정렬 후 최대 5개까지 선택
                         List<StockRankingDto> topStocks = stocks.stream()
@@ -127,7 +143,7 @@ public class StockRankingService {
                                 .limit(MAX_PER_INDUSTRY)
                                 .toList();
                         
-                        // 종목이 있으면 반환 (없어도 빈 배열 반환하지 않음)
+                        // 종목이 있으면 반환
                         if (!topStocks.isEmpty()) {
                             Industry industry = industryMap.get(industryCode);
                             String industryName = industry != null ? industry.getName() : null;
@@ -140,7 +156,7 @@ public class StockRankingService {
                         }
                     }
                     
-                    log.info("업종별 인기 종목 조회 완료 - {}개 업종", result.size());
+                    log.info("업종별 인기 종목 조회 완료 - {}개 업종 (동적 감지)", result.size());
                     return result;
                 })
                 .doOnError(e -> log.error("업종별 인기 종목 조회 중 오류 발생", e))
