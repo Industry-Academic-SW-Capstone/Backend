@@ -1,5 +1,8 @@
 package grit.stockIt.domain.stock.service;
 
+import grit.stockIt.domain.industry.entity.Industry;
+import grit.stockIt.domain.industry.repository.IndustryRepository;
+import grit.stockIt.domain.stock.dto.IndustryStockRankingDto;
 import grit.stockIt.domain.stock.dto.StockRankingDto;
 import grit.stockIt.domain.stock.dto.KisRankingResponseDto;
 import grit.stockIt.domain.stock.dto.KisStockDataDto;
@@ -13,6 +16,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Mono;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -27,6 +31,7 @@ public class StockRankingService {
     private final KisTokenManager kisTokenManager;
     private final KisApiProperties kisApiProperties;
     private final StockRepository stockRepository;
+    private final IndustryRepository industryRepository;
 
     // 거래량 상위 종목 조회 (비동기)
     public Mono<List<StockRankingDto>> getVolumeTopStocks(int limit) {
@@ -71,7 +76,7 @@ public class StockRankingService {
                         .queryParam("FID_COND_SCR_DIV_CODE", "20171")
                         .queryParam("FID_INPUT_ISCD", "0000")
                         .queryParam("FID_DIV_CLS_CODE", "0")
-                        .queryParam("FID_BLNG_CLS_CODE", "3") // 거래대금 순위
+                        .queryParam("FID_BLNG_CLS_CODE", "3") // 거래금액순 (0:평균거래량, 1:거래증가율, 2:평균거래회전율, 3:거래금액순, 4:평균거래금액회전율)
                         .queryParam("FID_TRGT_CLS_CODE", "111111111")
                         .queryParam("FID_TRGT_EXLS_CLS_CODE", "0000000000")
                         .queryParam("FID_INPUT_PRICE_1", "")
@@ -119,6 +124,83 @@ public class StockRankingService {
         return getAmountTopStocks(limit)
                 .map(allStocks -> filterStocksInDatabase(allStocks, limit));
     }
+
+    /**
+     * 업종별 인기 종목 조회 (거래대금 기준) - 각 업종별 최대 5개까지 반환
+     * @param totalLimit 전체 조회할 종목 수 (한투 API 최대 30개 제한)
+     * @param industryCodes 조회할 업종 코드 리스트
+     * @return 업종별 인기 종목 리스트 (각 업종 최대 5개)
+     */
+    public Mono<List<IndustryStockRankingDto>> getPopularStocksByIndustry(
+            int totalLimit,
+            List<String> industryCodes) {
+        
+        log.info("업종별 인기 종목 조회 시작 - 전체: {}개, 업종별 최대 5개", totalLimit);
+        
+        return getAmountTopStocksFiltered(totalLimit)
+                .map(allStocks -> {
+                    // 종목 코드 리스트 추출
+                    List<String> stockCodeList = allStocks.stream()
+                            .map(StockRankingDto::stockCode)
+                            .filter(code -> code != null && !code.isEmpty())
+                            .toList();
+                    
+                    // DB에서 일괄 조회 (N+1 문제 방지)
+                    List<Stock> stockEntities = stockRepository.findByCodeIn(stockCodeList);
+                    Map<String, Stock> stockMap = stockEntities.stream()
+                            .collect(Collectors.toMap(Stock::getCode, stock -> stock));
+                    
+                    // 업종 코드별로 그룹화
+                    Map<String, List<StockRankingDto>> stocksByIndustry = allStocks.stream()
+                            .filter(stock -> {
+                                Stock stockEntity = stockMap.get(stock.stockCode());
+                                return stockEntity != null && stockEntity.getIndustryCode() != null;
+                            })
+                            .collect(Collectors.groupingBy(
+                                    stock -> {
+                                        Stock stockEntity = stockMap.get(stock.stockCode());
+                                        return stockEntity != null ? stockEntity.getIndustryCode() : "UNKNOWN";
+                                    }
+                            ));
+                    
+                    // 업종 정보 조회
+                    List<Industry> industries = industryRepository.findAllById(industryCodes);
+                    Map<String, Industry> industryMap = industries.stream()
+                            .collect(Collectors.toMap(Industry::getCode, industry -> industry));
+                    
+                    // 업종별로 정렬 후 최대 5개까지 선택
+                    List<IndustryStockRankingDto> result = new ArrayList<>();
+                    final int MAX_PER_INDUSTRY = 5;
+                    
+                    for (String industryCode : industryCodes) {
+                        List<StockRankingDto> stocks = stocksByIndustry.getOrDefault(industryCode, new ArrayList<>());
+                        
+                        // 거래대금 기준 내림차순 정렬 후 최대 5개까지 선택
+                        List<StockRankingDto> topStocks = stocks.stream()
+                                .sorted((a, b) -> Long.compare(b.amount(), a.amount()))
+                                .limit(MAX_PER_INDUSTRY)
+                                .toList();
+                        
+                        // 종목이 있으면 반환 (없어도 빈 배열 반환하지 않음)
+                        if (!topStocks.isEmpty()) {
+                            Industry industry = industryMap.get(industryCode);
+                            String industryName = industry != null ? industry.getName() : null;
+                            
+                            result.add(new IndustryStockRankingDto(
+                                    industryCode,
+                                    industryName,
+                                    topStocks
+                            ));
+                        }
+                    }
+                    
+                    log.info("업종별 인기 종목 조회 완료 - {}개 업종", result.size());
+                    return result;
+                })
+                .doOnError(e -> log.error("업종별 인기 종목 조회 중 오류 발생", e))
+                .onErrorResume(e -> Mono.error(new RuntimeException("업종별 인기 종목 조회 실패", e)));
+    }
+
 
     // 데이터베이스에 있는 종목만 필터링 (marketType을 DB에서 조회)
     private List<StockRankingDto> filterStocksInDatabase(List<StockRankingDto> stocks, int limit) {
