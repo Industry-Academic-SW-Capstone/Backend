@@ -33,38 +33,6 @@ public class StockRankingService {
     private final StockRepository stockRepository;
     private final IndustryRepository industryRepository;
 
-    // 거래량 상위 종목 조회 (비동기)
-    public Mono<List<StockRankingDto>> getVolumeTopStocks(int limit) {
-        String accessToken = kisTokenManager.getAccessToken();
-
-        return webClient.get()
-                .uri(uriBuilder -> uriBuilder
-                        .path("/uapi/domestic-stock/v1/quotations/volume-rank")
-                        .queryParam("FID_COND_MRKT_DIV_CODE", "J")
-                        .queryParam("FID_COND_SCR_DIV_CODE", "20171")
-                        .queryParam("FID_INPUT_ISCD", "0000")
-                        .queryParam("FID_DIV_CLS_CODE", "0")
-                        .queryParam("FID_BLNG_CLS_CODE", "0")
-                        .queryParam("FID_TRGT_CLS_CODE", "111111111")
-                        .queryParam("FID_TRGT_EXLS_CLS_CODE", "0000000000")
-                        .queryParam("FID_INPUT_PRICE_1", "")
-                        .queryParam("FID_INPUT_PRICE_2", "")
-                        .queryParam("FID_VOL_CNT", "")
-                        .queryParam("FID_INPUT_DATE_1", "")
-                        .build())
-                .header("content-type", "application/json; charset=utf-8")
-                .header("authorization", "Bearer " + accessToken)
-                .header("appkey", kisApiProperties.appkey())
-                .header("appsecret", kisApiProperties.appsecret())
-                .header("tr_id", "FHPST01710000")
-                .header("custtype", "P")
-                .retrieve()
-                .bodyToMono(KisRankingResponseDto.class)
-                .map(response -> parseVolumeRankingResponse(response, limit))
-                .doOnError(e -> log.error("거래량 상위 종목 조회 중 오류 발생", e))
-                .onErrorResume(e -> Mono.error(new RuntimeException("거래량 상위 종목 조회 실패", e)));
-    }
-
     // 거래대금 상위 종목 조회 (비동기)
     public Mono<List<StockRankingDto>> getAmountTopStocks(int limit) {
         String accessToken = kisTokenManager.getAccessToken();
@@ -95,28 +63,6 @@ public class StockRankingService {
                 .map(response -> parseAmountRankingResponse(response, limit))
                 .doOnError(e -> log.error("거래대금 상위 종목 조회 중 오류 발생", e))
                 .onErrorResume(e -> Mono.error(new RuntimeException("거래대금 상위 종목 조회 실패", e)));
-    }
-
-    // 거래량 상위 종목의 주식코드만 반환 (웹소켓 구독용) - DB에 있는 종목만 (비동기)
-    public Mono<List<String>> getVolumeTopStockCodes(int limit) {
-        return getVolumeTopStocksFiltered(limit)
-                .map(stocks -> stocks.stream()
-                        .map(StockRankingDto::stockCode)
-                        .toList());
-    }
-
-    // 거래대금 상위 종목의 주식코드만 반환 (웹소켓 구독용) - DB에 있는 종목만 (비동기)
-    public Mono<List<String>> getAmountTopStockCodes(int limit) {
-        return getAmountTopStocksFiltered(limit)
-                .map(stocks -> stocks.stream()
-                        .map(StockRankingDto::stockCode)
-                        .toList());
-    }
-
-    // 거래량 상위 종목 조회 (DB에 있는 종목만 필터링) (비동기)
-    public Mono<List<StockRankingDto>> getVolumeTopStocksFiltered(int limit) {
-        return getVolumeTopStocks(limit)
-                .map(allStocks -> filterStocksInDatabase(allStocks, limit));
     }
 
     // 거래대금 상위 종목 조회 (DB에 있는 종목만 필터링) (비동기)
@@ -242,30 +188,6 @@ public class StockRankingService {
                 })
                 .limit(limit)
                 .toList();
-    }
-
-    /**
-     * 거래량 순위 응답 파싱 (DTO 사용)
-     */
-    private List<StockRankingDto> parseVolumeRankingResponse(KisRankingResponseDto response, int limit) {
-        try {
-            log.info("API 응답 코드: {}, 메시지: {}", response.rtCd(), response.msg1());
-
-            // output이 List인지 Map인지 확인하여 처리
-            List<KisStockDataDto> stockDataList = parseOutputData(response.output());
-
-            log.info("파싱된 데이터 개수: {}", stockDataList.size());
-
-            return stockDataList.stream()
-                    .limit(limit)
-                    .map(this::mapKisDataToStockRankingDto)
-                    .toList();
-
-        } catch (Exception e) {
-            log.error("거래량 순위 응답 파싱 중 오류 발생", e);
-            log.error("응답 내용: {}", response);
-            throw new RuntimeException("응답 파싱 실패", e);
-        }
     }
 
     /**
