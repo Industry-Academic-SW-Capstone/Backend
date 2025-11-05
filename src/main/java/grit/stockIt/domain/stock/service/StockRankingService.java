@@ -1,5 +1,8 @@
 package grit.stockIt.domain.stock.service;
 
+import grit.stockIt.domain.industry.entity.Industry;
+import grit.stockIt.domain.industry.repository.IndustryRepository;
+import grit.stockIt.domain.stock.dto.IndustryStockRankingDto;
 import grit.stockIt.domain.stock.dto.StockRankingDto;
 import grit.stockIt.domain.stock.dto.KisRankingResponseDto;
 import grit.stockIt.domain.stock.dto.KisStockDataDto;
@@ -13,6 +16,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Mono;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -27,38 +31,7 @@ public class StockRankingService {
     private final KisTokenManager kisTokenManager;
     private final KisApiProperties kisApiProperties;
     private final StockRepository stockRepository;
-
-    // 거래량 상위 종목 조회 (비동기)
-    public Mono<List<StockRankingDto>> getVolumeTopStocks(int limit) {
-        String accessToken = kisTokenManager.getAccessToken();
-
-        return webClient.get()
-                .uri(uriBuilder -> uriBuilder
-                        .path("/uapi/domestic-stock/v1/quotations/volume-rank")
-                        .queryParam("FID_COND_MRKT_DIV_CODE", "J")
-                        .queryParam("FID_COND_SCR_DIV_CODE", "20171")
-                        .queryParam("FID_INPUT_ISCD", "0000")
-                        .queryParam("FID_DIV_CLS_CODE", "0")
-                        .queryParam("FID_BLNG_CLS_CODE", "0")
-                        .queryParam("FID_TRGT_CLS_CODE", "111111111")
-                        .queryParam("FID_TRGT_EXLS_CLS_CODE", "0000000000")
-                        .queryParam("FID_INPUT_PRICE_1", "")
-                        .queryParam("FID_INPUT_PRICE_2", "")
-                        .queryParam("FID_VOL_CNT", "")
-                        .queryParam("FID_INPUT_DATE_1", "")
-                        .build())
-                .header("content-type", "application/json; charset=utf-8")
-                .header("authorization", "Bearer " + accessToken)
-                .header("appkey", kisApiProperties.appkey())
-                .header("appsecret", kisApiProperties.appsecret())
-                .header("tr_id", "FHPST01710000")
-                .header("custtype", "P")
-                .retrieve()
-                .bodyToMono(KisRankingResponseDto.class)
-                .map(response -> parseVolumeRankingResponse(response, limit))
-                .doOnError(e -> log.error("거래량 상위 종목 조회 중 오류 발생", e))
-                .onErrorResume(e -> Mono.error(new RuntimeException("거래량 상위 종목 조회 실패", e)));
-    }
+    private final IndustryRepository industryRepository;
 
     // 거래대금 상위 종목 조회 (비동기)
     public Mono<List<StockRankingDto>> getAmountTopStocks(int limit) {
@@ -71,7 +44,7 @@ public class StockRankingService {
                         .queryParam("FID_COND_SCR_DIV_CODE", "20171")
                         .queryParam("FID_INPUT_ISCD", "0000")
                         .queryParam("FID_DIV_CLS_CODE", "0")
-                        .queryParam("FID_BLNG_CLS_CODE", "3") // 거래대금 순위
+                        .queryParam("FID_BLNG_CLS_CODE", "3") // 거래금액순 (0:평균거래량, 1:거래증가율, 2:평균거래회전율, 3:거래금액순, 4:평균거래금액회전율)
                         .queryParam("FID_TRGT_CLS_CODE", "111111111")
                         .queryParam("FID_TRGT_EXLS_CLS_CODE", "0000000000")
                         .queryParam("FID_INPUT_PRICE_1", "")
@@ -92,33 +65,104 @@ public class StockRankingService {
                 .onErrorResume(e -> Mono.error(new RuntimeException("거래대금 상위 종목 조회 실패", e)));
     }
 
-    // 거래량 상위 종목의 주식코드만 반환 (웹소켓 구독용) - DB에 있는 종목만 (비동기)
-    public Mono<List<String>> getVolumeTopStockCodes(int limit) {
-        return getVolumeTopStocksFiltered(limit)
-                .map(stocks -> stocks.stream()
-                        .map(StockRankingDto::stockCode)
-                        .toList());
-    }
-
-    // 거래대금 상위 종목의 주식코드만 반환 (웹소켓 구독용) - DB에 있는 종목만 (비동기)
-    public Mono<List<String>> getAmountTopStockCodes(int limit) {
-        return getAmountTopStocksFiltered(limit)
-                .map(stocks -> stocks.stream()
-                        .map(StockRankingDto::stockCode)
-                        .toList());
-    }
-
-    // 거래량 상위 종목 조회 (DB에 있는 종목만 필터링) (비동기)
-    public Mono<List<StockRankingDto>> getVolumeTopStocksFiltered(int limit) {
-        return getVolumeTopStocks(limit)
-                .map(allStocks -> filterStocksInDatabase(allStocks, limit));
-    }
-
     // 거래대금 상위 종목 조회 (DB에 있는 종목만 필터링) (비동기)
     public Mono<List<StockRankingDto>> getAmountTopStocksFiltered(int limit) {
         return getAmountTopStocks(limit)
                 .map(allStocks -> filterStocksInDatabase(allStocks, limit));
     }
+
+    /**
+     * 업종별 인기 종목 조회 (거래대금 기준) - 각 업종별 최대 5개까지 반환
+     * 거래대금 상위 종목에서 실제로 나타나는 업종을 동적으로 감지하여 반환
+     * @param totalLimit 전체 조회할 종목 수 (한투 API 최대 30개 제한)
+     * @return 업종별 인기 종목 리스트 (각 업종 최대 5개)
+     */
+    public Mono<List<IndustryStockRankingDto>> getPopularStocksByIndustry(int totalLimit) {
+        
+        log.info("업종별 인기 종목 조회 시작 - 전체: {}개, 업종별 최대 5개 (동적 감지)", totalLimit);
+        
+        return getAmountTopStocksFiltered(totalLimit)
+                .map(allStocks -> {
+                    // 종목 코드 리스트 추출
+                    List<String> stockCodeList = allStocks.stream()
+                            .map(StockRankingDto::stockCode)
+                            .filter(code -> code != null && !code.isEmpty())
+                            .toList();
+                    
+                    // DB에서 일괄 조회 (N+1 문제 방지)
+                    List<Stock> stockEntities = stockRepository.findByCodeIn(stockCodeList);
+                    Map<String, Stock> stockMap = stockEntities.stream()
+                            .collect(Collectors.toMap(Stock::getCode, stock -> stock));
+                    
+                    // 업종 코드별로 그룹화 (거래대금 합계 계산)
+                    Map<String, List<StockRankingDto>> stocksByIndustry = allStocks.stream()
+                            .filter(stock -> {
+                                Stock stockEntity = stockMap.get(stock.stockCode());
+                                return stockEntity != null && stockEntity.getIndustryCode() != null;
+                            })
+                            .collect(Collectors.groupingBy(
+                                    stock -> {
+                                        Stock stockEntity = stockMap.get(stock.stockCode());
+                                        return stockEntity != null ? stockEntity.getIndustryCode() : "UNKNOWN";
+                                    }
+                            ));
+                    
+                    // UNKNOWN 제외
+                    stocksByIndustry.remove("UNKNOWN");
+                    
+                    // 업종별 거래대금 합계 계산 후 정렬 (상위 업종 우선)
+                    List<String> sortedIndustryCodes = stocksByIndustry.entrySet().stream()
+                            .sorted((e1, e2) -> {
+                                // 각 업종의 거래대금 합계 계산
+                                long sum1 = e1.getValue().stream()
+                                        .mapToLong(StockRankingDto::amount)
+                                        .sum();
+                                long sum2 = e2.getValue().stream()
+                                        .mapToLong(StockRankingDto::amount)
+                                        .sum();
+                                return Long.compare(sum2, sum1); // 내림차순
+                            })
+                            .map(Map.Entry::getKey)
+                            .toList();
+                    
+                    // 업종 정보 조회
+                    List<Industry> industries = industryRepository.findAllById(sortedIndustryCodes);
+                    Map<String, Industry> industryMap = industries.stream()
+                            .collect(Collectors.toMap(Industry::getCode, industry -> industry));
+                    
+                    // 업종별로 정렬 후 최대 5개까지 선택
+                    List<IndustryStockRankingDto> result = new ArrayList<>();
+                    final int MAX_PER_INDUSTRY = 5;
+                    
+                    for (String industryCode : sortedIndustryCodes) {
+                        List<StockRankingDto> stocks = stocksByIndustry.get(industryCode);
+                        
+                        // 거래대금 기준 내림차순 정렬 후 최대 5개까지 선택
+                        List<StockRankingDto> topStocks = stocks.stream()
+                                .sorted((a, b) -> Long.compare(b.amount(), a.amount()))
+                                .limit(MAX_PER_INDUSTRY)
+                                .toList();
+                        
+                        // 종목이 있으면 반환
+                        if (!topStocks.isEmpty()) {
+                            Industry industry = industryMap.get(industryCode);
+                            String industryName = industry != null ? industry.getName() : null;
+                            
+                            result.add(new IndustryStockRankingDto(
+                                    industryCode,
+                                    industryName,
+                                    topStocks
+                            ));
+                        }
+                    }
+                    
+                    log.info("업종별 인기 종목 조회 완료 - {}개 업종 (동적 감지)", result.size());
+                    return result;
+                })
+                .doOnError(e -> log.error("업종별 인기 종목 조회 중 오류 발생", e))
+                .onErrorResume(e -> Mono.error(new RuntimeException("업종별 인기 종목 조회 실패", e)));
+    }
+
 
     // 데이터베이스에 있는 종목만 필터링 (marketType을 DB에서 조회)
     private List<StockRankingDto> filterStocksInDatabase(List<StockRankingDto> stocks, int limit) {
@@ -160,30 +204,6 @@ public class StockRankingService {
                 })
                 .limit(limit)
                 .toList();
-    }
-
-    /**
-     * 거래량 순위 응답 파싱 (DTO 사용)
-     */
-    private List<StockRankingDto> parseVolumeRankingResponse(KisRankingResponseDto response, int limit) {
-        try {
-            log.info("API 응답 코드: {}, 메시지: {}", response.rtCd(), response.msg1());
-
-            // output이 List인지 Map인지 확인하여 처리
-            List<KisStockDataDto> stockDataList = parseOutputData(response.output());
-
-            log.info("파싱된 데이터 개수: {}", stockDataList.size());
-
-            return stockDataList.stream()
-                    .limit(limit)
-                    .map(this::mapKisDataToStockRankingDto)
-                    .toList();
-
-        } catch (Exception e) {
-            log.error("거래량 순위 응답 파싱 중 오류 발생", e);
-            log.error("응답 내용: {}", response);
-            throw new RuntimeException("응답 파싱 실패", e);
-        }
     }
 
     /**
