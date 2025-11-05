@@ -48,8 +48,8 @@ public class SecurityConfig {
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
         
-        // 허용할 오리진 설정 (모든 오리진 허용 - 개발용)
-        configuration.setAllowedOrigins(List.of("*"));
+        // 허용할 오리진 설정 (패턴 사용 - withCredentials와 함께 사용 가능)
+        configuration.setAllowedOriginPatterns(List.of("*"));
         
         // 허용할 HTTP 메서드
         configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"));
@@ -57,8 +57,8 @@ public class SecurityConfig {
         // 허용할 헤더
         configuration.setAllowedHeaders(List.of("*"));
         
-        // 인증 정보 허용
-        configuration.setAllowCredentials(false);
+        // 인증 정보 허용 (WebSocket에서 withCredentials 사용 시 필요)
+        configuration.setAllowCredentials(true);
         
         // Preflight 요청의 캐시 시간
         configuration.setMaxAge(3600L);
