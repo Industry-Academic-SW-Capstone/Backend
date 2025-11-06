@@ -8,12 +8,15 @@ import grit.stockIt.global.auth.KisTokenManager;
 import grit.stockIt.global.config.KisApiProperties;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
@@ -37,11 +40,22 @@ public class StockChartService {
     private final KisTokenManager kisTokenManager;
     private final KisApiProperties kisApiProperties;
     private final ObjectMapper objectMapper;
+    private final StringRedisTemplate redisTemplate;
 
     private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ofPattern("yyyyMMdd");
+    
+    // Redis 캐시 키 prefix
+    private static final String CACHE_KEY_PREFIX = "stock:chart:";
+    
+    // 기간별 캐시 TTL 설정
+    private static final Duration CACHE_TTL_1DAY = Duration.ofMinutes(1);      // 1분봉: 1분
+    private static final Duration CACHE_TTL_1WEEK = Duration.ofMinutes(5);     // 10분봉: 5분
+    private static final Duration CACHE_TTL_3MONTH = Duration.ofMinutes(30);  // 일봉: 30분
+    private static final Duration CACHE_TTL_1YEAR = Duration.ofHours(1);       // 주봉: 1시간
+    private static final Duration CACHE_TTL_5YEAR = Duration.ofHours(12);     // 월봉: 12시간
 
     /**
-     * 주식 차트 데이터 조회
+     * 주식 차트 데이터 조회 (Redis 캐싱 적용)
      * @param stockCode 종목코드 (6자리)
      * @param periodType 기간 타입 (1day/1week/3month/1year/5year)
      * @return 차트 데이터 리스트
@@ -50,8 +64,62 @@ public class StockChartService {
             String stockCode,
             String periodType
     ) {
-        log.info("주식 차트 데이터 조회 요청: {} - periodType={}", stockCode, periodType);
-
+        String normalizedType = periodType.toLowerCase();
+        String cacheKey = CACHE_KEY_PREFIX + stockCode + ":" + normalizedType;
+        
+        // Redis에서 캐시 확인
+        String cachedData = redisTemplate.opsForValue().get(cacheKey);
+        if (cachedData != null) {
+            try {
+                List<StockChartDto> chartData = objectMapper.readValue(
+                        cachedData,
+                        new TypeReference<List<StockChartDto>>() {}
+                );
+                log.info("차트 데이터 캐시 히트: {} - {} ({}개 데이터)", stockCode, periodType, chartData.size());
+                return Mono.just(chartData);
+            } catch (Exception e) {
+                log.warn("캐시 데이터 파싱 실패, API 호출로 대체: {}", cacheKey, e);
+            }
+        }
+        
+        // 캐시에 없으면 API 호출
+        log.info("차트 데이터 API 호출: {} - {}", stockCode, periodType);
+        return fetchStockChartFromApi(stockCode, normalizedType)
+                .doOnNext(chartData -> {
+                    // API 호출 성공 시 Redis에 캐시 저장
+                    try {
+                        String jsonData = objectMapper.writeValueAsString(chartData);
+                        Duration ttl = getCacheTtl(normalizedType);
+                        redisTemplate.opsForValue().set(cacheKey, jsonData, ttl);
+                        log.info("차트 데이터 API 호출 완료 및 캐시 저장: {} - {} ({}개 데이터, TTL: {})", 
+                                stockCode, periodType, chartData.size(), ttl);
+                    } catch (Exception e) {
+                        log.warn("캐시 저장 실패 (계속 진행): {}", cacheKey, e);
+                    }
+                });
+    }
+    
+    /**
+     * 기간 타입에 따른 캐시 TTL 반환
+     */
+    private Duration getCacheTtl(String periodType) {
+        return switch (periodType) {
+            case "1day", "day" -> CACHE_TTL_1DAY;
+            case "1week", "week" -> CACHE_TTL_1WEEK;
+            case "3month" -> CACHE_TTL_3MONTH;
+            case "1year", "year" -> CACHE_TTL_1YEAR;
+            case "5year" -> CACHE_TTL_5YEAR;
+            default -> CACHE_TTL_3MONTH; // 기본값
+        };
+    }
+    
+    /**
+     * KIS API에서 차트 데이터 조회 (캐싱 없이)
+     */
+    private Mono<List<StockChartDto>> fetchStockChartFromApi(
+            String stockCode,
+            String periodType
+    ) {
         String normalizedType = periodType.toLowerCase();
         
         // 1일 - 1분 간격 (390개)
