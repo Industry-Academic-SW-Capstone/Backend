@@ -7,6 +7,7 @@ import org.springframework.context.annotation.Primary;
 
 @Getter
 @Setter
+
 @ConfigurationProperties(prefix = "kakao")
 @Primary
 public class KakaoOAuthProperties {

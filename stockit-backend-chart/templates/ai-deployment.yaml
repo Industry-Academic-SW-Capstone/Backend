@@ -1,0 +1,29 @@
+# stockit-backend-chart/templates/ai-deployment.yaml
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "stockit-backend-chart.fullname" . }}-{{ .Values.aiServer.name }}
+  labels:
+    {{- include "stockit-backend-chart.labels" . | nindent 4 }}
+    app.kubernetes.io/component: {{ .Values.aiServer.name }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "stockit-backend-chart.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: {{ .Values.aiServer.name }}
+  template:
+    metadata:
+      labels:
+        {{- include "stockit-backend-chart.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: {{ .Values.aiServer.name }}
+    spec:
+      containers:
+        - name: {{ .Values.aiServer.name }}
+          image: "{{ .Values.aiServer.image.repository }}:{{ .Values.aiServer.image.tag }}"
+          imagePullPolicy: {{ .Values.aiServer.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.aiServer.service.port }}
+          # TODO: GPU/TPU 자원 요청 설정 추가 예정

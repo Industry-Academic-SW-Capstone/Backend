@@ -11,5 +11,5 @@ spec:
     - name: wget
       image: busybox
       command: ['wget']
-      args: ['{{ include "stockit-backend-chart.fullname" . }}:{{ .Values.service.port }}']
+      args: ['{{ include "stockit-backend-chart.fullname" . }}:{{ .Values.backend.service.port }}']
   restartPolicy: Never
