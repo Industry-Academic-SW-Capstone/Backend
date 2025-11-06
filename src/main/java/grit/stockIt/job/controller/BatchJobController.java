@@ -1,6 +1,8 @@
 package grit.stockIt.job.controller;
 
 import grit.stockIt.job.service.MasterFileUpdateService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
@@ -8,14 +10,23 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+/**
+ * 배치 작업 컨트롤러
+ */
 @Slf4j
 @RestController
-@RequestMapping("/api/batch-jobs") // 배치 작업 관련 API 기본 경로
+@RequestMapping("/api/batch-jobs")
+@Tag(name = "jobs", description = "배치 작업 관련 API")
 @RequiredArgsConstructor
 public class BatchJobController {
 
     private final MasterFileUpdateService masterFileUpdateService;
 
+    /**
+     * 마스터 파일 업데이트 작업 수동 실행
+     * @return 작업 실행 결과 메시지
+     */
+    @Operation(summary = "마스터 파일 업데이트", description = "KOSPI/KOSDAQ 종목 마스터 파일을 수동으로 업데이트합니다")
     @PostMapping("/update-master-files")
     public ResponseEntity<String> triggerMasterFileUpdate() {
         log.info("마스터 파일 업데이트 작업 수동 실행 요청 수신.");

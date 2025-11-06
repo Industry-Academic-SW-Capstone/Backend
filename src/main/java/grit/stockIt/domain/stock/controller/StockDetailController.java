@@ -2,6 +2,7 @@ package grit.stockIt.domain.stock.controller;
 
 import grit.stockIt.domain.stock.dto.StockDetailDto;
 import grit.stockIt.domain.stock.service.StockDetailService;
+import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -25,6 +26,7 @@ public class StockDetailController {
      * @param stockCode 종목코드 (6자리)
      * @return 주식 상세 정보 (현재가, 시가총액, PER 등)
      */
+    @Operation(summary = "주식 상세 정보 조회", description = "종목코드로 주식의 현재가, 시가총액, PER, EPS, PBR 등 상세 정보를 조회합니다")
     @GetMapping("/{stockCode}")
     public Mono<StockDetailDto> getStockDetail(@PathVariable String stockCode) {
         log.info("주식 상세 정보 조회 요청: {}", stockCode);
