@@ -5,6 +5,7 @@ import lombok.*;
 import grit.stockIt.domain.member.entity.Member;
 import grit.stockIt.domain.contest.entity.Contest;
 import grit.stockIt.global.common.BaseEntity; // 추가
+import java.math.BigDecimal;
 
 @Entity
 @Table(name = "account")
@@ -27,4 +28,7 @@ public class Account extends BaseEntity {
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "contest_id", nullable = false)
     private Contest contest;
+
+    @Column(name = "cash", nullable = false, precision = 19, scale = 2)
+    private BigDecimal cash = BigDecimal.ZERO;
 }
