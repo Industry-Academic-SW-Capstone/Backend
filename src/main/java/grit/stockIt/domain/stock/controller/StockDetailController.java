@@ -62,14 +62,9 @@ public class StockDetailController {
             @PathVariable String stockCode,
             @RequestParam String periodType
     ) {
-        log.info("주식 차트 데이터 조회 요청: {} - periodType={}", stockCode, periodType);
-
         return stockChartService.getStockChart(stockCode, periodType)
-                .doOnSuccess(charts ->
-                    log.info("주식 차트 데이터 조회 완료: {} - {}개 데이터", stockCode, charts.size())
-                )
                 .doOnError(error ->
-                    log.error("주식 차트 데이터 조회 중 오류 발생: {}", stockCode, error)
+                    log.error("주식 차트 데이터 조회 중 오류 발생: {} - {}", stockCode, periodType, error)
                 );
     }
 }
