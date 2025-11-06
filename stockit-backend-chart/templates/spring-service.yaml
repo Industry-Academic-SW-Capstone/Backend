@@ -1,0 +1,19 @@
+# templates/spring-service.yaml (예시)
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "stockit-backend-chart.fullname" . }}-spring-service
+  labels:
+    {{- include "stockit-backend-chart.labels" . | nindent 4 }}
+    app.kubernetes.io/component: spring-backend
+spec:
+  # 기본적으로 내부 클러스터 통신을 위해 ClusterIP를 사용합니다.
+  type: LoadBalancer
+  ports:
+    - port: 8080 # Service Port (클러스터 내부에서 접근할 포트)
+      targetPort: 8080 # Container Port (Spring 앱이 실제로 떠 있는 포트)
+      protocol: TCP
+      name: http
+  selector:
+    {{- include "stockit-backend-chart.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: spring-backend # spring-deployment.yaml의 label과 일치해야 함
