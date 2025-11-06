@@ -30,7 +30,11 @@ public class KakaoAuthController {
     @GetMapping("/callback")
     public CompletableFuture<ResponseEntity<KakaoLoginResponse>> kakaoCallback(@RequestParam String code) {
         return kakaoAuthService.login(code)
-                .thenApply(ResponseEntity::ok);
+                .thenApply(ResponseEntity::ok)
+                .exceptionally(ex -> {
+                    log.error("카카오 로그인 처리 중 예외 발생: {}", ex.toString(), ex);
+                    return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+                });
     }
 
     @Operation(summary = "카카오 회원가입 완료", description = "신규 회원 가입 완료 처리")
