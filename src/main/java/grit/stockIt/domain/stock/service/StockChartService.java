@@ -17,10 +17,13 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import java.time.Duration;
+import java.time.DayOfWeek;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -65,9 +68,9 @@ public class StockChartService {
             String periodType
     ) {
         String normalizedType = periodType.toLowerCase();
+
         String cacheKey = CACHE_KEY_PREFIX + stockCode + ":" + normalizedType;
-        
-        // Redis에서 캐시 확인
+
         String cachedData = redisTemplate.opsForValue().get(cacheKey);
         if (cachedData != null) {
             try {
@@ -81,17 +84,15 @@ public class StockChartService {
                 log.warn("캐시 데이터 파싱 실패, API 호출로 대체: {}", cacheKey, e);
             }
         }
-        
-        // 캐시에 없으면 API 호출
+
         log.info("차트 데이터 API 호출: {} - {}", stockCode, periodType);
         return fetchStockChartFromApi(stockCode, normalizedType)
                 .doOnNext(chartData -> {
-                    // API 호출 성공 시 Redis에 캐시 저장
                     try {
                         String jsonData = objectMapper.writeValueAsString(chartData);
                         Duration ttl = getCacheTtl(normalizedType);
                         redisTemplate.opsForValue().set(cacheKey, jsonData, ttl);
-                        log.info("차트 데이터 API 호출 완료 및 캐시 저장: {} - {} ({}개 데이터, TTL: {})", 
+                        log.info("차트 데이터 API 호출 완료 및 캐시 저장: {} - {} ({}개 데이터, TTL: {})",
                                 stockCode, periodType, chartData.size(), ttl);
                     } catch (Exception e) {
                         log.warn("캐시 저장 실패 (계속 진행): {}", cacheKey, e);
@@ -134,23 +135,31 @@ public class StockChartService {
                     .onErrorResume(e -> Mono.error(new RuntimeException("주식 분봉 데이터 조회 실패: " + stockCode, e)));
         }
         
-        // 1주 - 10분 간격 (1주일 전부터 현재까지, 10분 간격)
+        // 1주 - 10분 간격 (최근 5영업일, 10분 간격)
         if ("1week".equals(normalizedType) || "week".equals(normalizedType)) {
-            return getMinuteChartDataForWeek(stockCode, 10) // 10분 간격
+            final int minuteInterval = 10;
+            return getMinuteChartDataForWeek(stockCode, minuteInterval)
                     .map(chartDataList -> {
-                        // 10분 간격으로 필터링 (첫 번째 데이터부터 10분마다)
                         List<StockChartDto> result = new ArrayList<>();
-                        LocalTime lastTime = null;
+                        LocalDateTime lastDateTime = null;
+
                         for (KisMinuteChartDataDto kisData : chartDataList) {
+                            LocalDate currentDate = parseDate(kisData.date());
                             LocalTime currentTime = parseTime(kisData.time());
-                            if (currentTime == null) continue;
-                            
-                            if (lastTime == null || 
-                                currentTime.isAfter(lastTime.plusMinutes(9))) { // 10분 이상 차이
+                            if (currentDate == null || currentTime == null) {
+                                continue;
+                            }
+
+                            LocalDateTime currentDateTime = LocalDateTime.of(currentDate, currentTime);
+
+                            if (lastDateTime == null
+                                    || !currentDateTime.toLocalDate().equals(lastDateTime.toLocalDate())
+                                    || currentDateTime.isAfter(lastDateTime.plusMinutes(minuteInterval - 1L))) {
                                 result.add(mapMinuteToStockChartDto(stockCode, periodType, kisData));
-                                lastTime = currentTime;
+                                lastDateTime = currentDateTime;
                             }
                         }
+
                         return result;
                     })
                     .doOnError(e -> log.error("주식 분봉 데이터 조회 중 오류 발생: {}", stockCode, e))
@@ -365,6 +374,105 @@ public class StockChartService {
     }
 
     /**
+     * 조회 종료일 기준 최근 영업일 목록(주말 제외)
+     */
+    private List<LocalDate> getRecentBusinessDays(LocalDate endDate, int count) {
+        List<LocalDate> result = new ArrayList<>();
+        LocalDate cursor = endDate;
+
+        while (result.size() < count) {
+            DayOfWeek dayOfWeek = cursor.getDayOfWeek();
+            if (dayOfWeek != DayOfWeek.SATURDAY && dayOfWeek != DayOfWeek.SUNDAY) {
+                result.add(cursor);
+            }
+            cursor = cursor.minusDays(1);
+        }
+
+        Collections.reverse(result);
+        return result;
+    }
+
+    /**
+     * 주식 일별 분봉 데이터 조회 (KIS 주식일별분봉조회 API)
+     */
+    private Mono<List<KisMinuteChartDataDto>> getMinuteChartDataFromKisDaily(String stockCode, LocalDate targetDate) {
+        List<String> timeWindows = List.of("153000", "133000", "113000", "093000");
+
+        return Flux.fromIterable(timeWindows)
+                .concatMap(hour -> requestDailyMinuteChunk(stockCode, targetDate, hour))
+                .collectList()
+                .map(listOfLists -> {
+                    List<KisMinuteChartDataDto> merged = new ArrayList<>();
+                    for (List<KisMinuteChartDataDto> part : listOfLists) {
+                        merged.addAll(part);
+                    }
+                    return deduplicateAndSort(merged);
+                });
+    }
+
+    private Mono<List<KisMinuteChartDataDto>> requestDailyMinuteChunk(
+            String stockCode,
+            LocalDate targetDate,
+            String requestHour
+    ) {
+        String accessToken = kisTokenManager.getAccessToken();
+        String dateStr = targetDate.format(DATE_FORMATTER);
+
+        return webClient.get()
+                .uri(uriBuilder -> uriBuilder
+                        .path("/uapi/domestic-stock/v1/quotations/inquire-time-dailychartprice")
+                        .queryParam("FID_COND_MRKT_DIV_CODE", "J")
+                        .queryParam("FID_INPUT_ISCD", stockCode)
+                        .queryParam("FID_INPUT_DATE_1", dateStr)
+                        .queryParam("FID_INPUT_HOUR_1", requestHour)
+                        .queryParam("FID_PW_DATA_INCU_YN", "N")
+                        .queryParam("FID_FAKE_TICK_INCU_YN", "")
+                        .build())
+                .header("content-type", "application/json; charset=utf-8")
+                .header("authorization", "Bearer " + accessToken)
+                .header("appkey", kisApiProperties.appkey())
+                .header("appsecret", kisApiProperties.appsecret())
+                .header("tr_id", "FHKST03010230")
+                .header("custtype", "P")
+                .header("tr_cont", "")
+                .retrieve()
+                .bodyToMono(String.class)
+                .map(rawResponse -> {
+                    try {
+                        return objectMapper.readValue(rawResponse, KisChartResponseDto.class);
+                    } catch (Exception e) {
+                        log.error("KIS API 일별 분봉 응답 파싱 실패. 원본 응답: {}", rawResponse, e);
+                        throw new RuntimeException("KIS API 응답 파싱 실패", e);
+                    }
+                })
+                .map(response -> {
+                    if (response.rtCd() == null || response.rtCd().isBlank()) {
+                        log.warn("KIS 일별 분봉 응답이 비어 있습니다. 날짜: {}, 종목: {}, hour={}", targetDate, stockCode, requestHour);
+                        return List.<KisMinuteChartDataDto>of();
+                    }
+
+                    if (!"0".equals(response.rtCd())) {
+                        log.error("KIS 일별 분봉 API 오류 - 응답 코드: {}, 메시지: {}, msgCd: {}",
+                                response.rtCd(), response.msg1(), response.msgCd());
+                        throw new RuntimeException("KIS API 오류: " + response.msg1() + " (코드: " + response.rtCd() + ")");
+                    }
+
+                    if (response.output2() == null) {
+                        log.warn("KIS 일별 분봉 응답은 성공이지만 output2가 null입니다. 날짜: {}, 종목: {}, hour={}", targetDate, stockCode, requestHour);
+                        return List.<KisMinuteChartDataDto>of();
+                    }
+
+                    List<KisMinuteChartDataDto> parsed = parseMinuteOutputData(response.output2());
+                    String targetDateStr = targetDate.format(DATE_FORMATTER);
+
+                    return parsed.stream()
+                            .filter(item -> targetDateStr.equals(item.date()))
+                            .collect(Collectors.toList());
+                })
+                .doOnError(e -> log.error("주식 일별 분봉 조회 중 오류 발생: {} - {} (hour={})", stockCode, targetDate, requestHour, e));
+    }
+
+    /**
      * 중복 제거 및 시간 순서로 정렬
      */
     private List<KisMinuteChartDataDto> deduplicateAndSort(List<KisMinuteChartDataDto> data) {
@@ -393,9 +501,17 @@ public class StockChartService {
      * 분봉 API는 당일만 조회 가능하므로, 당일 분봉을 조회하고 10분 간격으로 필터링
      */
     private Mono<List<KisMinuteChartDataDto>> getMinuteChartDataForWeek(String stockCode, int minuteInterval) {
-        // 분봉 API는 당일만 조회 가능하므로, 당일 분봉을 1분 간격으로 조회
-        // 10분 간격 필터링은 상위에서 처리
-        return getMinuteChartDataFromKisMultiple(stockCode, 1);
+        List<LocalDate> recentBusinessDays = getRecentBusinessDays(LocalDate.now(), 5);
+
+        if (recentBusinessDays.isEmpty()) {
+            return Mono.just(List.of());
+        }
+
+        return Flux.fromIterable(recentBusinessDays)
+                .concatMap(date -> getMinuteChartDataFromKisDaily(stockCode, date)
+                        .flatMapMany(list -> Flux.fromIterable(list)))
+                .collectList()
+                .map(this::deduplicateAndSort);
     }
 
     /**
