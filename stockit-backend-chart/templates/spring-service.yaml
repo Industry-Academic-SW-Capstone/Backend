@@ -6,6 +6,9 @@ metadata:
   labels:
     {{- include "stockit-backend-chart.labels" . | nindent 4 }}
     app.kubernetes.io/component: spring-backend
+  annotations:
+    cloud.google.com/backend-config: >
+      {{ printf "{\"ports\": {\"http\": \"%s-backendconfig\"}}" (include "stockit-backend-chart.fullname" .) }}
 spec:
   # 기본적으로 내부 클러스터 통신을 위해 ClusterIP를 사용합니다.
   type: LoadBalancer

@@ -62,3 +62,4 @@ spec:
               port: {{ .Values.backend.service.port }}
             initialDelaySeconds: {{ .Values.backend.probe.initialDelaySeconds }}
             periodSeconds: {{ .Values.backend.probe.periodSeconds }}
+            timeoutSeconds: {{ default 1 .Values.backend.probe.timeoutSeconds }}
