@@ -11,17 +11,17 @@ global:
 backend:
   name: spring-backend
   image:
-    repository: stockit-backend
-    tag: latest
-    pullPolicy: IfNotPresent
+    repository: choij17/stockit-backend
+    tag: "0.1.0"
+    pullPolicy: Always
   service:
     port: 8080
     targetPort: 8080
     type: ClusterIP
   probe:
-    path: /actuator/health
-    initialDelaySeconds: 15
-    periodSeconds: 30
+    path: /swagger-ui.html
+    initialDelaySeconds: 30
+    periodSeconds: 10
   env:
     - name: SPRING_DATASOURCE_URL
       value: "jdbc:postgresql://postgres-db-service:5432/postgres-db"
@@ -30,20 +30,31 @@ backend:
     - name: SPRING_DATASOURCE_PASSWORD
       valueFrom:
         secretKeyRef:
-          name: "{{ include \"stockit-backend-chart.fullname\" . }}-db-secret"
+          name: '{{ include "stockit-backend-chart.fullname" . }}-db-secret'
           key: POSTGRES_PASSWORD
 
 # --- 3. AI Server (Python) Configuration ---
 aiServer:
   name: python-ai-server
   image:
-    repository: stockit-ai-server
-    tag: latest
-    pullPolicy: IfNotPresent
+    repository: choij17/stock-ai-analyze-server
+    tag: "0.1.4"
+    pullPolicy: Always
   service:
-    port: 5000
-    targetPort: 5000
+    port: 8000
+    targetPort: 8000
     type: ClusterIP
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/path: "/metrics"
+    prometheus.io/port: "8000"
+  command:
+    - /usr/local/bin/uvicorn
+    - app.main:app
+    - --host
+    - 0.0.0.0
+    - --port
+    - "8000"
   resources:
     limits:
       cpu: "1000m"
@@ -86,17 +97,19 @@ serviceAccount:
 
 # --- 7. Ingress Configuration ---
 ingress:
-  enabled: false
-  className: "nginx"
-  annotations: {}
+  enabled: true
+  className: "" # GKE 기본 Ingress Controller 사용
+  annotations:
+    kubernetes.io/ingress.global-static-ip-name: "" # 필요시 정적 IP 이름 지정
+    networking.gke.io/load-balancer-type: "External"
   hosts:
-    - host: stockit.local
+    - host: www.stockit.live
       paths:
         - path: /
           pathType: Prefix
           backend:
             service:
-              name: "spring-backend-service"
+              name: stockit-release-stockit-backend-chart-spring-service
               port:
                 number: 8080
   tls: []
