@@ -370,6 +370,11 @@ public class StockChartService {
             }
         }
         
+        String endTimeStr = String.format("%02d%02d%02d", end.getHour(), end.getMinute(), end.getSecond());
+        if (ranges.isEmpty() || !ranges.get(ranges.size() - 1).equals(endTimeStr)) {
+            ranges.add(endTimeStr);
+        }
+
         return ranges;
     }
 
