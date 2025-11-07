@@ -1,5 +1,6 @@
 package grit.stockIt.domain.auth.service;
 
+import grit.stockIt.domain.account.service.AccountService;
 import grit.stockIt.domain.auth.client.KakaoOAuthClient;
 import grit.stockIt.domain.auth.dto.KakaoLoginResponse;
 import grit.stockIt.domain.auth.dto.KakaoSignupResponse;
@@ -17,7 +18,6 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import reactor.core.publisher.Mono;
 
 import java.time.LocalDateTime;
 import java.util.Optional;
@@ -32,6 +32,7 @@ public class KakaoAuthService {
     private final KakaoOAuthClient kakaoOAuthClient;
     private final MemberRepository memberRepository;
     private final JwtService jwtService;
+    private final AccountService accountService;
 
     /**
      * 카카오 로그인 (비동기 처리)
@@ -91,9 +92,12 @@ public class KakaoAuthService {
                     .provider(AuthProvider.KAKAO)
                     .build();
 
-            memberRepository.save(member);
+            Member savedMember = memberRepository.save(member);
 
-            String jwt = jwtService.generateToken(member.getEmail());
+            // 디폴트 계좌 생성 (회원당 1개 보장)
+            accountService.createDefaultAccountForMember(savedMember);
+
+            String jwt = jwtService.generateToken(savedMember.getEmail());
             return JwtToken.builder().accessToken(jwt).build();
 
         } catch (DataIntegrityViolationException e) {

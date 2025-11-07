@@ -7,7 +7,7 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import grit.stockIt.domain.account.entity.Account;
-import grit.stockIt.global.common.BaseEntity; // 추가
+import grit.stockIt.global.common.BaseEntity;
 
 @Entity
 @Table(name = "contest")
@@ -22,6 +22,15 @@ public class Contest extends BaseEntity {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     @Column(name = "contest_id")
     private Long contestId;
+
+    @Column(name = "contest_name", nullable = false, length = 500)
+    private String contestName;
+
+    @Column(name = "is_default", nullable = false)
+    private Boolean isDefault = false;
+
+    @Column(name = "manager_member_id")
+    private Long managerMemberId;
 
     @Column(name = "start_date", nullable = false)
     private LocalDateTime startDate;

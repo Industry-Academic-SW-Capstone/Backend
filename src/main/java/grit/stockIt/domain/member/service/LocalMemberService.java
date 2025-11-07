@@ -1,5 +1,6 @@
 package grit.stockIt.domain.member.service;
 
+import grit.stockIt.domain.account.service.AccountService;
 import grit.stockIt.domain.member.dto.MemberLoginRequest;
 import grit.stockIt.domain.member.dto.MemberResponse;
 import grit.stockIt.domain.member.dto.MemberSignupRequest;
@@ -21,6 +22,7 @@ public class LocalMemberService {
     private final MemberRepository memberRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
+    private final AccountService accountService;
 
     /**
      * 로컬 회원가입 (이메일 기준)
@@ -43,6 +45,10 @@ public class LocalMemberService {
                 .build();
 
         Member savedMember = memberRepository.save(member);
+
+        // 디폴트 계좌 생성 (회원당 1개 보장)
+        accountService.createDefaultAccountForMember(savedMember);
+
         return MemberResponse.from(savedMember);
     }
 
