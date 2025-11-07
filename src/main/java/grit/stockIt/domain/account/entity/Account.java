@@ -1,0 +1,41 @@
+package grit.stockIt.domain.account.entity;
+
+import jakarta.persistence.*;
+import lombok.*;
+import grit.stockIt.domain.member.entity.Member;
+import grit.stockIt.domain.contest.entity.Contest;
+import grit.stockIt.global.common.BaseEntity;
+import java.math.BigDecimal;
+
+@Entity
+@Table(name = "account",
+       uniqueConstraints = @UniqueConstraint(name = "uk_account_member_contest", columnNames = {"member_id", "contest_id"}))
+@Getter
+@Setter
+@NoArgsConstructor
+@AllArgsConstructor
+@Builder
+public class Account extends BaseEntity {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Column(name = "account_id")
+    private Long accountId;
+
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "member_id", nullable = false)
+    private Member member;
+
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "contest_id", nullable = false)
+    private Contest contest;
+
+    @Column(name = "account_name", nullable = false, length = 100)
+    private String accountName;
+
+    @Column(name = "cash", nullable = false, precision = 19, scale = 2)
+    private BigDecimal cash = BigDecimal.ZERO;
+
+    @Column(name = "is_default", nullable = false)
+    private Boolean isDefault = false;
+}

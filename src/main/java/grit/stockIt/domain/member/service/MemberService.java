@@ -1,1 +1,0 @@
-package grit.stockIt.domain.member.service;
