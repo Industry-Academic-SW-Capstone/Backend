@@ -109,7 +109,7 @@ ingress:
   annotations:
     kubernetes.io/ingress.global-static-ip-name: "" # 필요시 정적 IP 이름 지정
     networking.gke.io/load-balancer-type: "External"
-  allowHttp: true
+  allowHttp: false
   managedCertificate:
     enabled: true
     name: ""
