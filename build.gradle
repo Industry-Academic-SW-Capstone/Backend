@@ -73,6 +73,12 @@ dependencies {
 	// STOMP
 	implementation 'org.springframework:spring-messaging'
 
+	// Actuator
+	implementation 'org.springframework.boot:spring-boot-starter-actuator'
+
+	// Prometheus metrics
+	implementation 'io.micrometer:micrometer-registry-prometheus'
+
 }
 
 tasks.named('test') {

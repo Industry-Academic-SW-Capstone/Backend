@@ -12,7 +12,7 @@ backend:
   name: spring-backend
   image:
     repository: choij17/stockit-backend
-    tag: "0.1.0"
+    tag: "0.1.2"
     pullPolicy: Always
   service:
     port: 8080
@@ -35,6 +35,7 @@ backend:
 
 # --- 3. AI Server (Python) Configuration ---
 aiServer:
+  enabled: false # stock-analyze-deployment가 별도로 배포되어 있으므로 비활성화
   name: python-ai-server
   image:
     repository: choij17/stock-ai-analyze-server

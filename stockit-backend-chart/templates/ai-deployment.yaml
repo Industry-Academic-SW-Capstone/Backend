@@ -1,5 +1,5 @@
 # stockit-backend-chart/templates/ai-deployment.yaml
-
+{{- if .Values.aiServer.enabled }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -37,3 +37,4 @@ spec:
           resources:
             {{- toYaml .Values.aiServer.resources | nindent 12 }}
           {{- end }}
+{{- end }}
