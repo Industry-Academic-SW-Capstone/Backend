@@ -7,6 +7,8 @@ import grit.stockIt.domain.contest.entity.Contest;
 import grit.stockIt.domain.contest.repository.ContestRepository;
 import grit.stockIt.domain.member.entity.Member;
 import grit.stockIt.domain.member.repository.MemberRepository;
+import grit.stockIt.global.exception.BadRequestException;
+import grit.stockIt.global.exception.ForbiddenException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -30,7 +32,7 @@ public class ContestService {
     @Transactional
     public ContestResponse createContest(ContestCreateRequest request, String userEmail) {
         Member member = memberRepository.findByEmail(userEmail)
-                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 회원입니다."));
+                .orElseThrow(() -> new BadRequestException("존재하지 않는 회원입니다."));
         
         Contest contest = Contest.builder()
                 .contestName(request.getContestName())
@@ -68,7 +70,7 @@ public class ContestService {
      */
     public ContestResponse getContest(Long contestId) {
         Contest contest = contestRepository.findById(contestId)
-                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 대회입니다."));
+                .orElseThrow(() -> new BadRequestException("존재하지 않는 대회입니다."));
         return ContestResponse.from(contest);
     }
 
@@ -78,55 +80,23 @@ public class ContestService {
     @Transactional
     public ContestResponse updateContest(Long contestId, ContestUpdateRequest request, String userEmail) {
         Member member = memberRepository.findByEmail(userEmail)
-                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 회원입니다."));
+                .orElseThrow(() -> new BadRequestException("존재하지 않는 회원입니다."));
         
         Contest contest = contestRepository.findById(contestId)
-                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 대회입니다."));
+                .orElseThrow(() -> new BadRequestException("존재하지 않는 대회입니다."));
 
         // 기본 대회는 수정 불가
         if (contest.getIsDefault()) {
-            throw new IllegalArgumentException("기본 대회는 수정할 수 없습니다.");
+            throw new BadRequestException("기본 대회는 수정할 수 없습니다.");
         }
 
         // 권한 검증: 방장만 수정 가능
         if (!contest.getManagerMemberId().equals(member.getMemberId())) {
-            throw new IllegalArgumentException("대회를 수정할 권한이 없습니다.");
+            throw new ForbiddenException("대회를 수정할 권한이 없습니다.");
         }
 
-        // 필드별 업데이트 (null이 아닌 경우만)
-        if (request.getContestName() != null) {
-            contest.setContestName(request.getContestName());
-        }
-        if (request.getStartDate() != null) {
-            contest.setStartDate(request.getStartDate());
-        }
-        if (request.getEndDate() != null) {
-            contest.setEndDate(request.getEndDate());
-        }
-        if (request.getSeedMoney() != null) {
-            contest.setSeedMoney(request.getSeedMoney());
-        }
-        if (request.getCommissionRate() != null) {
-            contest.setCommissionRate(request.getCommissionRate());
-        }
-        if (request.getMinMarketCap() != null) {
-            contest.setMinMarketCap(request.getMinMarketCap());
-        }
-        if (request.getMaxMarketCap() != null) {
-            contest.setMaxMarketCap(request.getMaxMarketCap());
-        }
-        if (request.getDailyTradeLimit() != null) {
-            contest.setDailyTradeLimit(request.getDailyTradeLimit());
-        }
-        if (request.getMaxHoldingsCount() != null) {
-            contest.setMaxHoldingsCount(request.getMaxHoldingsCount());
-        }
-        if (request.getBuyCooldownMinutes() != null) {
-            contest.setBuyCooldownMinutes(request.getBuyCooldownMinutes());
-        }
-        if (request.getSellCooldownMinutes() != null) {
-            contest.setSellCooldownMinutes(request.getSellCooldownMinutes());
-        }
+        // 엔티티의 update 메소드 사용
+        contest.update(request);
 
         log.info("Contest updated: id={}, name={}", contestId, contest.getContestName());
         return ContestResponse.from(contest);
@@ -138,19 +108,19 @@ public class ContestService {
     @Transactional
     public void deleteContest(Long contestId, String userEmail) {
         Member member = memberRepository.findByEmail(userEmail)
-                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 회원입니다."));
+                .orElseThrow(() -> new BadRequestException("존재하지 않는 회원입니다."));
         
         Contest contest = contestRepository.findById(contestId)
-                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 대회입니다."));
+                .orElseThrow(() -> new BadRequestException("존재하지 않는 대회입니다."));
 
         // 기본 대회는 삭제 불가
         if (contest.getIsDefault()) {
-            throw new IllegalArgumentException("기본 대회는 삭제할 수 없습니다.");
+            throw new BadRequestException("기본 대회는 삭제할 수 없습니다.");
         }
 
         // 권한 검증: 방장만 삭제 가능
         if (!contest.getManagerMemberId().equals(member.getMemberId())) {
-            throw new IllegalArgumentException("대회를 삭제할 권한이 없습니다.");
+            throw new ForbiddenException("대회를 삭제할 권한이 없습니다.");
         }
 
         // 소프트 삭제: deletedAt 설정
