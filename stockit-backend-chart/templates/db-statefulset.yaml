@@ -1,0 +1,74 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "stockit-backend-chart.fullname" . }}-{{ .Values.db.name }}
+  labels:
+    {{- include "stockit-backend-chart.labels" . | nindent 4 }}
+    app.kubernetes.io/component: {{ .Values.db.name }} # postgres-db
+spec:
+  # StatefulSet은 DB의 고유한 ID와 순서를 보장합니다.
+  # serviceName은 Headless Service (db-service.yaml)의 이름과 일치해야 합니다.
+  serviceName: {{ .Values.db.service.host }}
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "stockit-backend-chart.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: {{ .Values.db.name }}
+  template:
+    metadata:
+      labels:
+        {{- include "stockit-backend-chart.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: {{ .Values.db.name }}
+    spec:
+      containers:
+        - name: {{ .Values.db.name }}
+          image: "{{ .Values.db.image }}:{{ .Values.db.tag }}"
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: {{ .Values.db.service.port }}
+              name: db-port
+
+          # 환경 변수 (ConfigMap과 Secret 참조)
+          envFrom:
+            - configMapRef:
+                name: {{ include "stockit-backend-chart.fullname" . }}-app-configmap
+          env:
+            # POSTGRES_PASSWORD는 Secret에서 가져옴
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "stockit-backend-chart.fullname" . }}-db-secret
+                  key: POSTGRES_PASSWORD
+            # DB 이름과 사용자 이름 (Postgres 공식 이미지 기본 설정)
+            - name: POSTGRES_USER
+              value: {{ .Values.db.name }}
+            - name: POSTGRES_DB
+              value: {{ .Values.db.name }}
+            # PGDATA를 하위 디렉터리로 설정하여 lost+found 문제 해결
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+
+          # 볼륨 마운트: 데이터가 영구적으로 저장될 경로
+          volumeMounts:
+            - name: postgres-data-pv
+              mountPath: /var/lib/postgresql/data # Postgres 공식 이미지의 기본 데이터 경로
+
+          # DB Health Check
+          readinessProbe:
+            exec:
+              # DB 이름과 사용자 이름을 .Values를 참조하도록 수정했습니다.
+              command: ["sh", "-c", "pg_isready -U {{ .Values.db.name }} -d {{ .Values.db.name }}"]
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            timeoutSeconds: 5
+
+  # 영구 볼륨 클레임 템플릿 (PVC) - 데이터 영속성 보장
+  volumeClaimTemplates:
+    - metadata:
+        name: postgres-data-pv
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        storageClassName: {{ .Values.db.persistence.storageClass }}
+        resources:
+          requests:
+            storage: {{ .Values.db.persistence.size }}

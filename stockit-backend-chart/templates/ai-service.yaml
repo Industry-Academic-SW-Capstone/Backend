@@ -1,0 +1,19 @@
+{{- if .Values.aiServer.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "stockit-backend-chart.fullname" . }}-{{ .Values.aiServer.name }}-service
+  labels:
+    {{- include "stockit-backend-chart.labels" . | nindent 4 }}
+    app.kubernetes.io/component: {{ .Values.aiServer.name }}
+spec:
+  type: {{ .Values.aiServer.service.type }} # ClusterIP
+  ports:
+    - port: {{ .Values.aiServer.service.port }}
+      targetPort: {{ .Values.aiServer.service.targetPort }}
+      protocol: TCP
+      name: http
+  selector:
+    {{- include "stockit-backend-chart.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: {{ .Values.aiServer.name }}
+{{- end }}

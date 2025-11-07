@@ -1,0 +1,149 @@
+service:
+  type: ClusterIP
+  port: 8080
+
+# --- 1. Global / Common Settings ---
+global:
+  name: stockit
+  springProfile: dev
+
+# --- 2. Backend (Spring Boot) Configuration ---
+backend:
+  name: spring-backend
+  image:
+    repository: choij17/stockit-backend
+    tag: "0.1.4"
+    pullPolicy: Always
+  service:
+    port: 8080
+    targetPort: 8080
+    type: ClusterIP
+  probe:
+    path: /
+    initialDelaySeconds: 30
+    periodSeconds: 10
+    timeoutSeconds: 3
+  env:
+    # NOTE:
+    #   JWT_SECRET는 Helm 차트에 포함되지 않습니다.
+    #   배포 전에 아래 명령으로 Kubernetes Secret을 직접 생성하세요.
+    #     kubectl create secret generic stockit-secrets --from-literal=JWT_SECRET=<랜덤-값>
+    #   Secret 이름은 templates/spring-deployment.yaml에서 참조하는 `stockit-secrets`와 동일해야 합니다.
+    - name: SPRING_DATASOURCE_URL
+      value: "jdbc:postgresql://postgres-db-service:5432/postgres-db"
+    - name: SPRING_DATASOURCE_USERNAME
+      value: "postgres-db"
+    - name: SPRING_DATASOURCE_PASSWORD
+      valueFrom:
+        secretKeyRef:
+          name: '{{ include "stockit-backend-chart.fullname" . }}-db-secret'
+          key: POSTGRES_PASSWORD
+
+# --- 3. AI Server (Python) Configuration ---
+aiServer:
+  enabled: false # stock-analyze-deployment가 별도로 배포되어 있으므로 비활성화
+  name: python-ai-server
+  image:
+    repository: choij17/stock-ai-analyze-server
+    tag: "0.1.4"
+    pullPolicy: Always
+  service:
+    port: 8000
+    targetPort: 8000
+    type: ClusterIP
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/path: "/metrics"
+    prometheus.io/port: "8000"
+  command:
+    - /usr/local/bin/uvicorn
+    - app.main:app
+    - --host
+    - 0.0.0.0
+    - --port
+    - "8000"
+  resources:
+    limits:
+      cpu: "1000m"
+      memory: "2048Mi"
+    requests:
+      cpu: "500m"
+      memory: "1024Mi"
+
+# --- 4. Database (PostgreSQL) Configuration ---
+db:
+  name: postgres-db
+  image: postgres
+  tag: "15"
+  service:
+    port: 5432
+    targetPort: 5432
+    host: postgres-db-service
+  persistence:
+    enabled: true
+    storageClass: ""
+    size: 5Gi
+
+# --- 5. Cache (Redis) Configuration ---
+redis:
+  name: stockit-redis
+  image: redis
+  tag: "7"
+  service:
+    port: 6379
+    targetPort: 6379
+    host: redis-service
+  persistence:
+    enabled: true
+    size: 1Gi
+
+# --- 6. Service Account Configuration ---
+serviceAccount:
+  create: true
+  name: ""
+
+# --- 7. Ingress Configuration ---
+ingress:
+  enabled: true
+  className: "" # GKE 기본 Ingress Controller 사용
+  annotations:
+    kubernetes.io/ingress.global-static-ip-name: "" # 필요시 정적 IP 이름 지정
+    networking.gke.io/load-balancer-type: "External"
+  allowHttp: true
+  managedCertificate:
+    enabled: true
+    name: ""
+    domains:
+      - www.stockit.live
+  hosts:
+    - host: www.stockit.live
+      paths:
+        - path: /
+          pathType: Prefix
+          backend:
+            service:
+              port:
+                number: 8080
+  tls: []
+
+# --- 8. HTTPRoute Configuration ---
+httpRoute:
+  enabled: false
+  name: stockit-httproute
+  host: stockit.local
+  serviceName: spring-backend-service
+  servicePort: 8080
+
+# --- 9. Autoscaling (HPA) Configuration ---
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 3
+  targetCPUUtilizationPercentage: 80
+  targetMemoryUtilizationPercentage: 80
+
+# --- 10. Monitoring / PDB Configuration ---
+serviceMonitor:
+  enabled: false
+pdb:
+  enabled: false
