@@ -24,6 +24,11 @@ backend:
     periodSeconds: 10
     timeoutSeconds: 3
   env:
+    # NOTE:
+    #   JWT_SECRET는 Helm 차트에 포함되지 않습니다.
+    #   배포 전에 아래 명령으로 Kubernetes Secret을 직접 생성하세요.
+    #     kubectl create secret generic stockit-secrets --from-literal=JWT_SECRET=<랜덤-값>
+    #   Secret 이름은 templates/spring-deployment.yaml에서 참조하는 `stockit-secrets`와 동일해야 합니다.
     - name: SPRING_DATASOURCE_URL
       value: "jdbc:postgresql://postgres-db-service:5432/postgres-db"
     - name: SPRING_DATASOURCE_USERNAME
@@ -104,6 +109,12 @@ ingress:
   annotations:
     kubernetes.io/ingress.global-static-ip-name: "" # 필요시 정적 IP 이름 지정
     networking.gke.io/load-balancer-type: "External"
+  allowHttp: true
+  managedCertificate:
+    enabled: true
+    name: ""
+    domains:
+      - www.stockit.live
   hosts:
     - host: www.stockit.live
       paths:
@@ -111,7 +122,6 @@ ingress:
           pathType: Prefix
           backend:
             service:
-              name: stockit-release-stockit-backend-chart-spring-service
               port:
                 number: 8080
   tls: []

@@ -60,3 +60,14 @@ Create the name of the service account to use
 {{- default "default" .Values.serviceAccount.name }}
 {{- end }}
 {{- end }}
+
+{{/*
+Derive ManagedCertificate resource name
+*/}}
+{{- define "stockit-backend-chart.managedCertificateName" -}}
+{{- if .Values.ingress.managedCertificate.name }}
+{{- .Values.ingress.managedCertificate.name | trunc 63 | trimSuffix "-" }}
+{{- else }}
+{{- printf "%s-managed-cert" (include "stockit-backend-chart.fullname" .) | trunc 63 | trimSuffix "-" }}
+{{- end }}
+{{- end }}

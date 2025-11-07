@@ -5,9 +5,21 @@ metadata:
   name: {{ include "stockit-backend-chart.fullname" . }}
   labels:
     {{- include "stockit-backend-chart.labels" . | nindent 4 }}
-  {{- with .Values.ingress.annotations }}
+  {{- $annotations := .Values.ingress.annotations | default (dict) }}
+  {{- $managedCertEnabled := and .Values.ingress.managedCertificate.enabled (gt (len (.Values.ingress.managedCertificate.domains | default (list))) 0) }}
+  {{- $allowHttpKey := "kubernetes.io/ingress.allow-http" }}
+  {{- $managedCertKey := "networking.gke.io/managed-certificates" }}
+  {{- if or (gt (len $annotations) 0) (and (not (hasKey $annotations $allowHttpKey)) (ne .Values.ingress.allowHttp nil)) (and $managedCertEnabled (not (hasKey $annotations $managedCertKey))) }}
   annotations:
-    {{- toYaml . | nindent 4 }}
+    {{- range $key, $value := $annotations }}
+    {{ $key }}: {{ $value | quote }}
+    {{- end }}
+    {{- if and (not (hasKey $annotations $allowHttpKey)) (ne .Values.ingress.allowHttp nil) }}
+    {{ $allowHttpKey }}: {{ ternary "true" "false" .Values.ingress.allowHttp | quote }}
+    {{- end }}
+    {{- if and $managedCertEnabled (not (hasKey $annotations $managedCertKey)) }}
+    {{ $managedCertKey }}: {{ include "stockit-backend-chart.managedCertificateName" . | quote }}
+    {{- end }}
   {{- end }}
 spec:
   {{- with .Values.ingress.className }}
@@ -35,9 +47,13 @@ spec:
             {{- end }}
             backend:
               service:
-                name: {{ if .backend.service.name }}{{ .backend.service.name }}{{ else }}{{ include "stockit-backend-chart.fullname" $ }}-spring-service{{ end }}
+                {{- $defaultServiceName := printf "%s-spring-service" (include "stockit-backend-chart.fullname" $) }}
+                {{- $serviceName := default $defaultServiceName (and .backend .backend.service .backend.service.name) }}
+                name: {{ $serviceName }}
                 port:
-                  number: {{ if .backend.service.port.number }}{{ .backend.service.port.number }}{{ else }}{{ $.Values.backend.service.port }}{{ end }}
+                  {{- $defaultServicePort := $.Values.backend.service.port }}
+                  {{- $servicePort := default $defaultServicePort (and .backend .backend.service .backend.service.port .backend.service.port.number) }}
+                  number: {{ $servicePort }}
           {{- end }}
     {{- end }}
 {{- end }}
