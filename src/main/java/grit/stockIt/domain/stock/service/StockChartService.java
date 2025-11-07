@@ -441,37 +441,51 @@ public class StockChartService {
                 .header("tr_cont", "")
                 .retrieve()
                 .bodyToMono(String.class)
-                .map(rawResponse -> {
-                    try {
-                        return objectMapper.readValue(rawResponse, KisChartResponseDto.class);
-                    } catch (Exception e) {
-                        log.error("KIS API 일별 분봉 응답 파싱 실패. 원본 응답: {}", rawResponse, e);
-                        throw new RuntimeException("KIS API 응답 파싱 실패", e);
+                .flatMap(rawResponse -> {
+                    if (rawResponse == null || rawResponse.isBlank()) {
+                        log.warn("KIS 일별 분봉 원본 응답이 비어 있습니다. 날짜: {}, 종목: {}, hour={}", targetDate, stockCode, requestHour);
+                        return Mono.just(List.<KisMinuteChartDataDto>of());
                     }
-                })
-                .map(response -> {
+
+                    String trimmed = rawResponse.trim();
+                    if (trimmed.startsWith("<")) {
+                        log.error("KIS 일별 분봉 응답이 HTML입니다. 인증/세션 이슈 가능. 날짜: {}, 종목: {}, hour={}, 응답: {}",
+                                targetDate, stockCode, requestHour, trimmed);
+                        return Mono.just(List.<KisMinuteChartDataDto>of());
+                    }
+
+                    final KisChartResponseDto response;
+                    try {
+                        response = objectMapper.readValue(trimmed, KisChartResponseDto.class);
+                    } catch (Exception e) {
+                        log.error("KIS API 일별 분봉 응답 파싱 실패. 원본 응답: {}", trimmed, e);
+                        return Mono.error(new RuntimeException("KIS API 응답 파싱 실패", e));
+                    }
+
                     if (response.rtCd() == null || response.rtCd().isBlank()) {
                         log.warn("KIS 일별 분봉 응답이 비어 있습니다. 날짜: {}, 종목: {}, hour={}", targetDate, stockCode, requestHour);
-                        return List.<KisMinuteChartDataDto>of();
+                        return Mono.just(List.<KisMinuteChartDataDto>of());
                     }
 
                     if (!"0".equals(response.rtCd())) {
                         log.error("KIS 일별 분봉 API 오류 - 응답 코드: {}, 메시지: {}, msgCd: {}",
                                 response.rtCd(), response.msg1(), response.msgCd());
-                        throw new RuntimeException("KIS API 오류: " + response.msg1() + " (코드: " + response.rtCd() + ")");
+                        return Mono.error(new RuntimeException("KIS API 오류: " + response.msg1() + " (코드: " + response.rtCd() + ")"));
                     }
 
                     if (response.output2() == null) {
                         log.warn("KIS 일별 분봉 응답은 성공이지만 output2가 null입니다. 날짜: {}, 종목: {}, hour={}", targetDate, stockCode, requestHour);
-                        return List.<KisMinuteChartDataDto>of();
+                        return Mono.just(List.<KisMinuteChartDataDto>of());
                     }
 
                     List<KisMinuteChartDataDto> parsed = parseMinuteOutputData(response.output2());
                     String targetDateStr = targetDate.format(DATE_FORMATTER);
 
-                    return parsed.stream()
+                    List<KisMinuteChartDataDto> filtered = parsed.stream()
                             .filter(item -> targetDateStr.equals(item.date()))
                             .collect(Collectors.toList());
+
+                    return Mono.just(filtered);
                 })
                 .doOnError(e -> log.error("주식 일별 분봉 조회 중 오류 발생: {} - {} (hour={})", stockCode, targetDate, requestHour, e));
     }
@@ -512,8 +526,20 @@ public class StockChartService {
         }
 
         return Flux.fromIterable(recentBusinessDays)
-                .concatMap(date -> getMinuteChartDataFromKisDaily(stockCode, date)
-                        .flatMapMany(list -> Flux.fromIterable(list)))
+                .index()
+                .concatMap(tuple -> {
+                    long index = tuple.getT1();
+                    LocalDate date = tuple.getT2();
+
+                    Flux<KisMinuteChartDataDto> dailyFlux = getMinuteChartDataFromKisDaily(stockCode, date)
+                            .flatMapMany(list -> Flux.fromIterable(list));
+
+                    // 가운데 지점(두 번째 인덱스)에서만 1초 지연 적용
+                    if (index == 2) {
+                        return Mono.delay(Duration.ofSeconds(1)).thenMany(dailyFlux);
+                    }
+                    return dailyFlux;
+                })
                 .collectList()
                 .map(this::deduplicateAndSort);
     }
