@@ -11,7 +11,7 @@ metadata:
       {{ printf "{\"ports\": {\"http\": \"%s-backendconfig\"}}" (include "stockit-backend-chart.fullname" .) }}
 spec:
   # 기본적으로 내부 클러스터 통신을 위해 ClusterIP를 사용합니다.
-  type: LoadBalancer
+  type: {{ .Values.backend.service.type }}
   ports:
     - port: 8080 # Service Port (클러스터 내부에서 접근할 포트)
       targetPort: 8080 # Container Port (Spring 앱이 실제로 떠 있는 포트)
