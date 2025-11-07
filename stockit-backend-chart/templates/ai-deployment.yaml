@@ -18,6 +18,10 @@ spec:
       labels:
         {{- include "stockit-backend-chart.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/component: {{ .Values.aiServer.name }}
+      {{- with .Values.aiServer.annotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
     spec:
       containers:
         - name: {{ .Values.aiServer.name }}
@@ -26,4 +30,10 @@ spec:
           ports:
             - name: http
               containerPort: {{ .Values.aiServer.service.port }}
-          # TODO: GPU/TPU 자원 요청 설정 추가 예정
+          {{- if .Values.aiServer.command }}
+          command: {{- toYaml .Values.aiServer.command | nindent 12 }}
+          {{- end }}
+          {{- if .Values.aiServer.resources }}
+          resources:
+            {{- toYaml .Values.aiServer.resources | nindent 12 }}
+          {{- end }}

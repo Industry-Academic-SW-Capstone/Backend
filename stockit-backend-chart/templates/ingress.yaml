@@ -35,9 +35,9 @@ spec:
             {{- end }}
             backend:
               service:
-                name: {{ include "stockit-backend-chart.fullname" $ }}
+                name: {{ if .backend.service.name }}{{ .backend.service.name }}{{ else }}{{ include "stockit-backend-chart.fullname" $ }}-spring-service{{ end }}
                 port:
-                  number: {{ $.Values.service.port }}
+                  number: {{ if .backend.service.port.number }}{{ .backend.service.port.number }}{{ else }}{{ $.Values.backend.service.port }}{{ end }}
           {{- end }}
     {{- end }}
 {{- end }}

@@ -44,6 +44,9 @@ spec:
               value: {{ .Values.db.name }}
             - name: POSTGRES_DB
               value: {{ .Values.db.name }}
+            # PGDATA를 하위 디렉터리로 설정하여 lost+found 문제 해결
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
 
           # 볼륨 마운트: 데이터가 영구적으로 저장될 경로
           volumeMounts:
