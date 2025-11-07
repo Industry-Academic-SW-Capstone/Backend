@@ -4,8 +4,6 @@ import grit.stockIt.domain.contest.dto.ContestCreateRequest;
 import grit.stockIt.domain.contest.dto.ContestResponse;
 import grit.stockIt.domain.contest.dto.ContestUpdateRequest;
 import grit.stockIt.domain.contest.service.ContestService;
-import grit.stockIt.domain.member.entity.Member;
-import grit.stockIt.domain.member.repository.MemberRepository;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
@@ -29,7 +27,6 @@ import java.util.List;
 public class ContestController {
 
     private final ContestService contestService;
-    private final MemberRepository memberRepository;
 
     @Operation(
             summary = "대회 생성", 
@@ -41,31 +38,12 @@ public class ContestController {
             @Valid @RequestBody ContestCreateRequest request,
             @Parameter(hidden = true) @AuthenticationPrincipal UserDetails userDetails) {
         
-        log.info("===== 대회 생성 요청 시작 =====");
-        log.info("Request 객체: {}", request);
-        log.info("contestName: {}", request.getContestName());
-        log.info("startDate: {}", request.getStartDate());
-        log.info("endDate: {}", request.getEndDate());
-        log.info("seedMoney: {}", request.getSeedMoney());
-        log.info("commissionRate: {}", request.getCommissionRate());
-        log.info("minMarketCap: {}", request.getMinMarketCap());
-        log.info("maxMarketCap: {}", request.getMaxMarketCap());
-        log.info("dailyTradeLimit: {}", request.getDailyTradeLimit());
-        log.info("maxHoldingsCount: {}", request.getMaxHoldingsCount());
-        log.info("buyCooldownMinutes: {}", request.getBuyCooldownMinutes());
-        log.info("sellCooldownMinutes: {}", request.getSellCooldownMinutes());
-        log.info("UserDetails: {}", userDetails);
-        log.info("===== 대회 생성 요청 로그 끝 =====");
-        
         if (userDetails == null) {
-            log.warn("❌ 인증되지 않은 요청 - JWT 토큰이 없습니다.");
+            log.warn("인증되지 않은 요청 - JWT 토큰이 없습니다.");
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
         }
         
-        Member member = memberRepository.findByEmail(userDetails.getUsername())
-                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 회원입니다."));
-        
-        ContestResponse response = contestService.createContest(request, member.getMemberId());
+        ContestResponse response = contestService.createContest(request, userDetails.getUsername());
         return ResponseEntity.status(HttpStatus.CREATED).body(response);
     }
 
@@ -102,10 +80,7 @@ public class ContestController {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
         }
         
-        Member member = memberRepository.findByEmail(userDetails.getUsername())
-                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 회원입니다."));
-        
-        ContestResponse response = contestService.updateContest(contestId, request, member.getMemberId());
+        ContestResponse response = contestService.updateContest(contestId, request, userDetails.getUsername());
         return ResponseEntity.ok(response);
     }
 
@@ -124,10 +99,7 @@ public class ContestController {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
         }
         
-        Member member = memberRepository.findByEmail(userDetails.getUsername())
-                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 회원입니다."));
-        
-        contestService.deleteContest(contestId, member.getMemberId());
+        contestService.deleteContest(contestId, userDetails.getUsername());
         return ResponseEntity.noContent().build();
     }
 }
