@@ -78,22 +78,21 @@ public class StockChartService {
                         cachedData,
                         new TypeReference<List<StockChartDto>>() {}
                 );
-                log.info("차트 데이터 캐시 히트: {} - {} ({}개 데이터)", stockCode, periodType, chartData.size());
+                log.info("차트 데이터 캐시 히트: key={} ({}, {}개)", cacheKey, periodType, chartData.size());
                 return Mono.just(chartData);
             } catch (Exception e) {
                 log.warn("캐시 데이터 파싱 실패, API 호출로 대체: {}", cacheKey, e);
             }
         }
 
-        log.info("차트 데이터 API 호출: {} - {}", stockCode, periodType);
         return fetchStockChartFromApi(stockCode, normalizedType)
                 .doOnNext(chartData -> {
                     try {
                         String jsonData = objectMapper.writeValueAsString(chartData);
                         Duration ttl = getCacheTtl(normalizedType);
                         redisTemplate.opsForValue().set(cacheKey, jsonData, ttl);
-                        log.info("차트 데이터 API 호출 완료 및 캐시 저장: {} - {} ({}개 데이터, TTL: {})",
-                                stockCode, periodType, chartData.size(), ttl);
+                        log.info("차트 데이터 캐시 저장: key={} ({}, {}개, TTL={}s)",
+                                cacheKey, periodType, chartData.size(), ttl.toSeconds());
                     } catch (Exception e) {
                         log.warn("캐시 저장 실패 (계속 진행): {}", cacheKey, e);
                     }
@@ -519,19 +518,6 @@ public class StockChartService {
                 .map(this::deduplicateAndSort);
     }
 
-    /**
-     * KIS API에서 분봉 데이터 조회 (특정 시간부터 30분)
-     * @param stockCode 종목코드
-     * @param startTime 시작 시간 (HHMMSS 형식)
-     * @param minuteInterval 분봉 간격 (1분 또는 10분) - KIS API 파라미터에 추가 필요
-     */
-    private Mono<List<KisMinuteChartDataDto>> getMinuteChartDataFromKis(String stockCode, String startTime) {
-        return getMinuteChartDataFromKis(stockCode, startTime, 1); // 기본값 1분
-    }
-
-    /**
-     * KIS API에서 분봉 데이터 조회 (특정 시간부터, 분봉 간격 지정)
-     */
     private Mono<List<KisMinuteChartDataDto>> getMinuteChartDataFromKis(String stockCode, String startTime, int minuteInterval) {
         String accessToken = kisTokenManager.getAccessToken();
         // FID_INPUT_HOUR_1: 조회 시작 시간 (HHMMSS 형식, 빈 값이면 전체)
@@ -580,48 +566,6 @@ public class StockChartService {
                     return parseMinuteOutputData(response.output2());
                 })
                 .doOnError(e -> log.error("KIS API 분봉 데이터 조회 중 오류 발생", e));
-    }
-
-    /**
-     * 기간 타입을 KIS API 코드로 매핑
-     */
-    private String mapPeriodTypeToKisCode(String periodType) {
-        return switch (periodType.toLowerCase()) {
-            case "day" -> "D";   // 일봉
-            case "week" -> "W";  // 주봉
-            case "month" -> "M"; // 월봉
-            case "year" -> "Y";  // 년봉
-            default -> throw new IllegalArgumentException("Invalid period type: " + periodType);
-        };
-    }
-
-    /**
-     * 시작일자 계산 (기본값 사용)
-     */
-    private LocalDate calculateStartDate(String periodType, LocalDate endDate) {
-        int defaultCount = getDefaultCount(periodType);
-
-        // 기간 타입에 따라 계산
-        return switch (periodType.toLowerCase()) {
-            case "day" -> endDate.minusDays(defaultCount);
-            case "week" -> endDate.minusWeeks(defaultCount);
-            case "month" -> endDate.minusMonths(defaultCount);
-            case "year" -> endDate.minusYears(defaultCount);
-            default -> throw new IllegalArgumentException("Invalid period type: " + periodType);
-        };
-    }
-
-    /**
-     * 기간 타입별 기본 조회 개수
-     */
-    private int getDefaultCount(String periodType) {
-        return switch (periodType.toLowerCase()) {
-            case "day" -> 30;   // 최근 30일
-            case "week" -> 12;  // 최근 12주
-            case "month" -> 12; // 최근 12개월
-            case "year" -> 5;   // 최근 5년
-            default -> 30;
-        };
     }
 
     /**
