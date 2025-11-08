@@ -2,15 +2,21 @@
 
 ## 배포 전 준비 사항
 
-- **JWT 시크릿 생성**
+- **필수 시크릿 생성**
 
-  - Helm 차트에는 JWT 시크릿 키를 포함하지 않습니다.
+  - Helm 차트에는 민감한 정보를 포함하지 않습니다.
   - 클러스터에 배포하기 전에 아래 명령으로 시크릿을 직접 생성하세요.
     ```bash
     kubectl create secret generic stockit-secrets \
-      --from-literal=JWT_SECRET=<랜덤-값>
+      --from-literal=JWT_SECRET=<랜덤-값> \
+      --from-literal=KIS_API_APPKEY=<한국투자증권-앱키> \
+      --from-literal=KIS_API_APPSECRET=<한국투자증권-앱시크릿>
     ```
-  - `<랜덤-값>`은 충분히 긴 난수/문자열로 교체하고, 절대 버전 관리 저장소에 커밋하지 마세요.
+  - 각 값 설명:
+    - `JWT_SECRET`: 충분히 긴 난수/문자열 (JWT 토큰 서명용)
+    - `KIS_API_APPKEY`: 한국투자증권 Open API 앱키
+    - `KIS_API_APPSECRET`: 한국투자증권 Open API 앱시크릿
+  - 절대 버전 관리 저장소에 커밋하지 마세요.
   - 시크릿 이름 `stockit-secrets`는 애플리케이션 배포 시 그대로 사용됩니다.
 
 - **기타 시크릿**
