@@ -19,13 +19,13 @@ import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
-@Transactional(readOnly = true)
 public class MissionService {
     private final MissionRepository missionRepository;
     private final UserMissionRepository userMissionRepository;
     private final UserRepository userRepository;
     private final RewardService rewardService;
 
+    @Transactional
     public MissionResponse getMissions(Long userId) {
         User user = findUser(userId);
         List<UserMission> userMissions = userMissionRepository.findByUser(user);
@@ -93,6 +93,7 @@ public class MissionService {
 
 
 
+    @Transactional
     private void createMissingUserMissions(User user, List<UserMission> existingMissions, List<Mission> availableMissions) {
         availableMissions.stream()
                 .filter(mission -> existingMissions.stream()

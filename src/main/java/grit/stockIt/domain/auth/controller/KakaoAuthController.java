@@ -58,4 +58,10 @@ public class KakaoAuthController {
         return kakaoAuthService.logout(email)
                 .thenApply(v -> ResponseEntity.ok("로그아웃되었습니다."));
     }
+
+    // IllegalArgumentException 핸들러 추가
+    @ExceptionHandler(IllegalArgumentException.class)
+    public ResponseEntity<String> handleIllegalArgument(IllegalArgumentException ex) {
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(ex.getMessage());
+    }
 }

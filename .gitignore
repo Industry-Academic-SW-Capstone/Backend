@@ -41,3 +41,4 @@ out/
 logs/
 *.log
 *.log.*
+CICD_SETUP_GUIDE.md
