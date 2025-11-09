@@ -74,8 +74,8 @@ jobs:
             # develop 브랜치: develop-커밋SHA
             TAG="develop-${{ github.sha }}"
           else
-            # feature 브랜치: 브랜치명-커밋SHA
-            BRANCH_NAME=$(echo "${{ github.ref }}" | sed 's/refs\/heads\///' | tr '/' '-')
+            # feature 브랜치: 브랜치명-커밋SHA (특수문자 제거)
+            BRANCH_NAME=$(echo "${{ github.ref }}" | sed 's/refs\/heads\///' | sed 's/[^a-zA-Z0-9._-]/-/g')
             TAG="${BRANCH_NAME}-${{ github.sha }}"
           fi
           echo "tag=${TAG:0:50}" >> $GITHUB_OUTPUT
@@ -140,6 +140,7 @@ jobs:
             TAG="develop-${{ github.sha }}"
           fi
           echo "tag=${TAG:0:50}" >> $GITHUB_OUTPUT
+          echo "Generated tag: ${TAG:0:50}"
 
       - name: Update Helm values with new image tag
         run: |
