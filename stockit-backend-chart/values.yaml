@@ -12,7 +12,7 @@ backend:
   name: spring-backend
   image:
     repository: choij17/stockit-backend
-    tag: "0.1.8-amd64"
+    tag: "0.1.6-amd64"
     pullPolicy: Always
   service:
     port: 8080
