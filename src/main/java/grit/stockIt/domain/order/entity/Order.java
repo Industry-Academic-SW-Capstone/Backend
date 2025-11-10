@@ -23,7 +23,7 @@ import java.math.BigDecimal;
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 @Entity
-@Table(name = "trade_order")
+@Table(name = "order")
 public class Order extends BaseEntity {
 
     @Id
