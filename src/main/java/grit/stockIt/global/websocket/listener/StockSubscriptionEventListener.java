@@ -54,12 +54,11 @@ public class StockSubscriptionEventListener {
         
         // 새로운 구독인 경우에만 처리
         if (isNewSubscription) {
-            // 구독자 수 증가
+            boolean alreadyActive = subscriptionManager.hasActiveReason(stockCode);
             int count = subscriptionManager.incrementSubscribers(stockCode);
-            
-            // 첫 구독자면 KIS에 구독 요청
-            if (count == 1) {
-                log.info("종목 {} 첫 구독. KIS 구독 시작", stockCode);
+            if (!alreadyActive) {
+                log.info("종목 {} 실시간 구독 시작 (viewer 기반). 현재 viewerCount={}, orderCount={}",
+                        stockCode, count, subscriptionManager.getOrderReferenceCount(stockCode));
                 subscribeToKis(stockCode);
             }
         }
@@ -92,11 +91,10 @@ public class StockSubscriptionEventListener {
         log.info("종목 {} 구독 해제 (세션: {})", stockCode, sessionId);
         
         // 구독자 수 감소
-        int count = subscriptionManager.decrementSubscribers(stockCode);
+        subscriptionManager.decrementSubscribers(stockCode);
         
-        // 마지막 구독자였으면 KIS 구독 해제
-        if (count == 0) {
-            log.info("종목 {} 마지막 구독자 해제. KIS 구독 해제", stockCode);
+        if (!subscriptionManager.hasActiveReason(stockCode)) {
+            log.info("종목 {} 실시간 구독 해제 (viewer 기준 해제 후 참조 없음)", stockCode);
             unsubscribeFromKis(stockCode);
         }
     }
@@ -114,11 +112,10 @@ public class StockSubscriptionEventListener {
         
         subscribedStocks.forEach(stockCode -> {
             // 구독자 수 감소
-            int count = subscriptionManager.decrementSubscribers(stockCode);
+            subscriptionManager.decrementSubscribers(stockCode);
             
-            // 마지막 구독자였으면 KIS 구독 해제
-            if (count == 0) {
-                log.info("종목 {} 마지막 구독자 해제. KIS 구독 해제", stockCode);
+            if (!subscriptionManager.hasActiveReason(stockCode)) {
+                log.info("종목 {} 실시간 구독 해제 (세션 종료 후 참조 없음)", stockCode);
                 unsubscribeFromKis(stockCode);
             }
         });

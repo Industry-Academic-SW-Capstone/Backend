@@ -1,6 +1,9 @@
 package grit.stockIt.global.websocket.client;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import grit.stockIt.domain.matching.dto.LimitOrderFillEvent;
+import grit.stockIt.domain.matching.service.LimitOrderEventPublisher;
+import grit.stockIt.domain.order.entity.OrderMethod;
 import grit.stockIt.domain.stock.dto.StockPriceUpdateDto;
 import grit.stockIt.global.auth.KisTokenManager;
 import grit.stockIt.global.websocket.dto.KisWebSocketRequest;
@@ -16,9 +19,16 @@ import org.springframework.web.socket.WebSocketSession;
 import org.springframework.web.socket.client.standard.StandardWebSocketClient;
 import org.springframework.web.socket.handler.TextWebSocketHandler;
 
+import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.LocalTime;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -35,6 +45,7 @@ public class KisWebSocketClient extends TextWebSocketHandler {
     private final SimpMessagingTemplate messagingTemplate;
     private final ObjectMapper objectMapper;
     private final WebSocketSubscriptionManager subscriptionManager;
+    private final LimitOrderEventPublisher limitOrderEventPublisher;
     
     private WebSocketSession kisSession;
     private final Set<String> subscribedStocks = Collections.synchronizedSet(new HashSet<>());
@@ -52,9 +63,14 @@ public class KisWebSocketClient extends TextWebSocketHandler {
     private static final int FIELD_INDEX_CHANGE_SIGN = 3;   // 전일대비부호
     private static final int FIELD_INDEX_CHANGE_AMOUNT = 4; // 전일대비
     private static final int FIELD_INDEX_CHANGE_RATE = 5;   // 전일대비율
+    private static final int FIELD_INDEX_CNTG_VOL = 12;     // 체결 거래량
     private static final int FIELD_INDEX_VOLUME = 13;       // 누적거래량
+    private static final int FIELD_INDEX_TRADE_DIRECTION = 21; // 체결구분
+    private static final int FIELD_INDEX_BIZ_DATE = 33;        // 영업일자
     
     private static final String KIS_WS_URL = "ws://ops.koreainvestment.com:21000";
+    private static final DateTimeFormatter DATE_FORMAT = DateTimeFormatter.BASIC_ISO_DATE;
+    private static final DateTimeFormatter TIME_FORMAT = DateTimeFormatter.ofPattern("HHmmss");
     
     /**
      * 종목 구독 (연결 없으면 자동 연결)
@@ -268,6 +284,13 @@ public class KisWebSocketClient extends TextWebSocketHandler {
             // dataFields[12]: CNTG_VOL: 체결량
             String volume = dataFields.length > FIELD_INDEX_VOLUME ? 
                     dataFields[FIELD_INDEX_VOLUME] : "0";  // ACML_VOL: 누적거래량
+            String tradeVolume = dataFields.length > FIELD_INDEX_CNTG_VOL ?
+                    dataFields[FIELD_INDEX_CNTG_VOL] : "0"; // CNTG_VOL
+            String tradeDirection = dataFields.length > FIELD_INDEX_TRADE_DIRECTION ?
+                    dataFields[FIELD_INDEX_TRADE_DIRECTION] : null;
+            String tradeTime = dataFields.length > 1 ? dataFields[1] : null;
+            String businessDate = dataFields.length > FIELD_INDEX_BIZ_DATE ?
+                    dataFields[FIELD_INDEX_BIZ_DATE] : null;
             
             // DTO 변환
             StockPriceUpdateDto updateDto = StockPriceUpdateDto.from(
@@ -288,6 +311,15 @@ public class KisWebSocketClient extends TextWebSocketHandler {
             
             log.debug("시세 업데이트 전송: {} - {}원 ({})", 
                     updateDto.stockCode(), updateDto.currentPrice(), updateDto.changeSign());
+
+            publishLimitOrderEvent(
+                    stockCode,
+                    currentPrice,
+                    tradeVolume,
+                    tradeDirection,
+                    tradeTime,
+                    businessDate
+            );
             
         } catch (Exception e) {
             log.error("실시간 데이터 파싱 실패: {}", payload, e);
@@ -468,6 +500,76 @@ public class KisWebSocketClient extends TextWebSocketHandler {
             return Long.parseLong(value.trim());
         } catch (NumberFormatException e) {
             return 0L;
+        }
+    }
+
+    private BigDecimal parseBigDecimal(String value) {
+        if (value == null || value.trim().isEmpty()) {
+            return BigDecimal.ZERO;
+        }
+        try {
+            return new BigDecimal(value.trim());
+        } catch (NumberFormatException e) {
+            return BigDecimal.ZERO;
+        }
+    }
+
+    private void publishLimitOrderEvent(String stockCode,
+                                        String priceStr,
+                                        String quantityStr,
+                                        String tradeDirection,
+                                        String tradeTime,
+                                        String businessDate) {
+        OrderMethod takerMethod = resolveOrderMethod(tradeDirection);
+        if (takerMethod == null) {
+            return;
+        }
+
+        int quantity = parseIntValue(quantityStr);
+        if (quantity <= 0) {
+            return;
+        }
+
+        BigDecimal price = parseBigDecimal(priceStr);
+        if (price.compareTo(BigDecimal.ZERO) <= 0) {
+            return;
+        }
+
+        long eventTimestamp = resolveEventTimestamp(businessDate, tradeTime);
+        LimitOrderFillEvent event = new LimitOrderFillEvent(
+                UUID.randomUUID().toString(),
+                takerMethod,
+                price,
+                quantity,
+                eventTimestamp
+        );
+
+        limitOrderEventPublisher.publish(stockCode, event);
+    }
+
+    private OrderMethod resolveOrderMethod(String tradeDirection) {
+        if (tradeDirection == null) {
+            return null;
+        }
+        return switch (tradeDirection.trim()) {
+            case "1" -> OrderMethod.BUY;
+            case "5" -> OrderMethod.SELL;
+            default -> null;
+        };
+    }
+
+    private long resolveEventTimestamp(String businessDate, String tradeTime) {
+        try {
+            LocalDate date = businessDate != null && !businessDate.isBlank()
+                    ? LocalDate.parse(businessDate.trim(), DATE_FORMAT)
+                    : LocalDate.now();
+            LocalTime time = tradeTime != null && !tradeTime.isBlank()
+                    ? LocalTime.parse(tradeTime.trim(), TIME_FORMAT)
+                    : LocalTime.now();
+            LocalDateTime dateTime = LocalDateTime.of(date, time);
+            return dateTime.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli();
+        } catch (Exception e) {
+            return System.currentTimeMillis();
         }
     }
 }
