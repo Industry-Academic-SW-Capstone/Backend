@@ -13,11 +13,14 @@ import grit.stockIt.domain.order.repository.OrderRepository;
 import grit.stockIt.domain.stock.entity.Stock;
 import grit.stockIt.domain.stock.repository.StockRepository;
 import grit.stockIt.global.exception.BadRequestException;
+import grit.stockIt.global.exception.ForbiddenException;
 import grit.stockIt.global.websocket.manager.OrderSubscriptionCoordinator;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 
 @Slf4j
 @Service
@@ -37,6 +40,8 @@ public class OrderService {
     public OrderResponse createLimitOrder(LimitOrderCreateRequest request) {
         Account account = accountRepository.findById(request.accountId())
                 .orElseThrow(() -> new BadRequestException("계좌를 찾을 수 없습니다."));
+
+        ensureAccountOwner(account);
 
         Stock stock = stockRepository.findById(request.stockCode())
                 .orElseThrow(() -> new BadRequestException("존재하지 않는 종목입니다."));
@@ -70,6 +75,8 @@ public class OrderService {
         Order order = orderRepository.findById(orderId)
                 .orElseThrow(() -> new BadRequestException("주문을 찾을 수 없습니다."));
 
+        ensureAccountOwner(order.getAccount());
+
         if (order.getStatus() == OrderStatus.CANCELLED) {
             throw new BadRequestException("이미 취소된 주문입니다.");
         }
@@ -93,7 +100,24 @@ public class OrderService {
     public OrderResponse getOrder(Long orderId) {
         Order order = orderRepository.findById(orderId)
                 .orElseThrow(() -> new BadRequestException("주문을 찾을 수 없습니다."));
+        ensureAccountOwner(order.getAccount());
         return OrderResponse.from(order);
+    }
+
+    private void ensureAccountOwner(Account account) {
+        String memberEmail = getAuthenticatedEmail();
+        if (!account.getMember().getEmail().equals(memberEmail)) {
+            throw new ForbiddenException("해당 계좌에 대한 권한이 없습니다.");
+        }
+    }
+
+    private String getAuthenticatedEmail() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication == null || !authentication.isAuthenticated()
+                || "anonymousUser".equals(authentication.getPrincipal())) {
+            throw new ForbiddenException("로그인이 필요합니다.");
+        }
+        return authentication.getName();
     }
 }
 
