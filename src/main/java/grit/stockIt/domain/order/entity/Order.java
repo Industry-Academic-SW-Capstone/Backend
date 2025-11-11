@@ -92,6 +92,16 @@ public class Order extends BaseEntity {
         this.status = OrderStatus.CANCELLED;
     }
 
+    public boolean canMatchAgainstPrice(BigDecimal matchPrice, OrderMethod takerMethod) {
+        if (matchPrice == null) {
+            return false;
+        }
+        if (takerMethod == OrderMethod.BUY) {
+            return OrderMethod.SELL.equals(this.orderMethod) && matchPrice.compareTo(this.price) >= 0;
+        }
+        return OrderMethod.BUY.equals(this.orderMethod) && matchPrice.compareTo(this.price) <= 0;
+    }
+
     public void applyFill(int fillQuantity) {
         if (fillQuantity <= 0) {
             throw new IllegalArgumentException("체결 수량은 0보다 커야 합니다.");
