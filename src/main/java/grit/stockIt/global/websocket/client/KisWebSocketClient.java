@@ -1,16 +1,16 @@
 package grit.stockIt.global.websocket.client;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import grit.stockIt.domain.matching.dto.LimitOrderFillEvent;
-import grit.stockIt.domain.matching.service.LimitOrderEventPublisher;
 import grit.stockIt.domain.order.entity.OrderMethod;
 import grit.stockIt.domain.stock.dto.StockPriceUpdateDto;
 import grit.stockIt.global.auth.KisTokenManager;
 import grit.stockIt.global.websocket.dto.KisWebSocketRequest;
 import grit.stockIt.global.websocket.dto.KisWebSocketResponse;
 import grit.stockIt.global.websocket.manager.WebSocketSubscriptionManager;
+import grit.stockIt.domain.matching.event.LimitOrderFillEventMessage;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Component;
 import org.springframework.web.socket.CloseStatus;
@@ -45,7 +45,7 @@ public class KisWebSocketClient extends TextWebSocketHandler {
     private final SimpMessagingTemplate messagingTemplate;
     private final ObjectMapper objectMapper;
     private final WebSocketSubscriptionManager subscriptionManager;
-    private final LimitOrderEventPublisher limitOrderEventPublisher;
+    private final ApplicationEventPublisher applicationEventPublisher;
     
     private WebSocketSession kisSession;
     private final Set<String> subscribedStocks = Collections.synchronizedSet(new HashSet<>());
@@ -536,15 +536,15 @@ public class KisWebSocketClient extends TextWebSocketHandler {
         }
 
         long eventTimestamp = resolveEventTimestamp(businessDate, tradeTime);
-        LimitOrderFillEvent event = new LimitOrderFillEvent(
+        LimitOrderFillEventMessage eventMessage = new LimitOrderFillEventMessage(
+                stockCode,
                 UUID.randomUUID().toString(),
                 takerMethod,
                 price,
                 quantity,
                 eventTimestamp
         );
-
-        limitOrderEventPublisher.publish(stockCode, event);
+        applicationEventPublisher.publishEvent(eventMessage);
     }
 
     private OrderMethod resolveOrderMethod(String tradeDirection) {

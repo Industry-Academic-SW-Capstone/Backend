@@ -2,8 +2,10 @@ package grit.stockIt.domain.matching.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import grit.stockIt.domain.matching.dto.LimitOrderFillEvent;
+import grit.stockIt.domain.matching.event.LimitOrderFillEventMessage;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.event.EventListener;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
@@ -18,7 +20,19 @@ public class LimitOrderEventPublisher {
     private final ObjectMapper objectMapper;
     private final LimitOrderMatchingService limitOrderMatchingService;
 
-    public void publish(String stockCode, LimitOrderFillEvent event) {
+    @EventListener
+    public void handleLimitOrderFill(LimitOrderFillEventMessage message) {
+        LimitOrderFillEvent event = new LimitOrderFillEvent(
+                message.eventId(),
+                message.orderMethod(),
+                message.price(),
+                message.quantity(),
+                message.eventTimestamp()
+        );
+        publish(message.stockCode(), event);
+    }
+
+    private void publish(String stockCode, LimitOrderFillEvent event) {
         try {
             String queueKey = queueKey(stockCode);
             String payload = objectMapper.writeValueAsString(event);
