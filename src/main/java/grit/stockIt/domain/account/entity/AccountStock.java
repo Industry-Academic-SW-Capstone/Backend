@@ -87,8 +87,9 @@ public class AccountStock extends BaseEntity {
 
     public void decreaseQuantity(int reduceQuantity) {
         ensurePositiveQuantity(reduceQuantity, "차감 수량");
-        if (reduceQuantity > this.quantity) {
-            throw new IllegalStateException("보유 수량보다 많은 수량을 차감할 수 없습니다.");
+        int availableQuantity = getAvailableQuantity();
+        if (reduceQuantity > availableQuantity) {
+            throw new IllegalStateException("사용 가능한 수량보다 많은 수량을 차감할 수 없습니다.");
         }
         this.quantity -= reduceQuantity;
         if (this.quantity == 0) {
