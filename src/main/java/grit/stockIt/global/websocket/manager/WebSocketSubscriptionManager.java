@@ -147,7 +147,10 @@ public class WebSocketSubscriptionManager {
      * 현재 구독 중인 모든 종목 코드
      */
     public Set<String> getAllSubscribedStocks() {
-        return viewerCounts.keySet();
+        Set<String> allStocks = ConcurrentHashMap.newKeySet();
+        allStocks.addAll(viewerCounts.keySet());
+        allStocks.addAll(orderReferenceCounts.keySet());
+        return allStocks;
     }
     
     /**
