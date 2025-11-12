@@ -10,6 +10,7 @@ import grit.stockIt.domain.order.entity.Order;
 import grit.stockIt.domain.order.entity.OrderMethod;
 import grit.stockIt.domain.order.entity.OrderStatus;
 import grit.stockIt.domain.order.repository.OrderRepository;
+import grit.stockIt.domain.order.repository.OrderHoldRepository;
 import grit.stockIt.global.websocket.manager.OrderSubscriptionCoordinator;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -20,6 +21,7 @@ import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -54,6 +56,7 @@ public class LimitOrderMatchingService {
     private final OrderRepository orderRepository;
     private final RedisOrderBookRepository redisOrderBookRepository;
     private final OrderSubscriptionCoordinator orderSubscriptionCoordinator;
+    private final OrderHoldRepository orderHoldRepository;
 
     @Value("${matching.limit-lock-ttl-seconds:5}")
     private long lockTtlSeconds;
@@ -164,9 +167,10 @@ public class LimitOrderMatchingService {
             try {
                 order.applyFill(command.fillQuantity());
                 executions.add(executionService.record(order, event.price(), command.fillQuantity()));
+                handleAccountOnFill(order, event.price(), command.fillQuantity());
                 updatedOrders.add(order);
                 if (order.getRemainingQuantity() <= 0) {
-                    orderSubscriptionCoordinator.unregisterLimitOrder(order.getStock().getCode());
+                    finalizeFilledOrder(order);
                 }
             } catch (IllegalArgumentException ex) {
                 log.error("주문 체결 처리 중 오류 발생. orderId={} fillQuantity={}", orderId, command.fillQuantity(), ex);
@@ -201,6 +205,38 @@ public class LimitOrderMatchingService {
     }
 
     private record FillCommand(OrderBookEntry entry, int fillQuantity) {
+    }
+
+    private void handleAccountOnFill(Order order, BigDecimal price, int fillQuantity) {
+        if (order.getOrderMethod() != OrderMethod.BUY) {
+            return;
+        }
+
+        BigDecimal fillAmount = price.multiply(BigDecimal.valueOf(fillQuantity));
+        order.getAccount().decreaseCash(fillAmount);
+        orderHoldRepository.findById(order.getOrderId())
+                .ifPresentOrElse(
+                        hold -> {
+                            order.getAccount().decreaseHoldAmount(fillAmount);
+                            hold.decreaseHoldAmount(fillAmount);
+                        },
+                        () -> log.warn("OrderHold를 찾을 수 없습니다. orderId={}", order.getOrderId())
+                );
+    }
+
+    // 주문 체결 완료 후 주문 해제 처리
+    private void finalizeFilledOrder(Order order) {
+        orderSubscriptionCoordinator.unregisterLimitOrder(order.getStock().getCode());
+        orderHoldRepository.findById(order.getOrderId())
+                .ifPresent(hold -> {
+                    BigDecimal remaining = hold.getHoldAmount();
+                    if (remaining.signum() > 0) {
+                        order.getAccount().decreaseHoldAmount(remaining); // 남은 주문 금액 처리
+                        hold.release();
+                    } else {
+                        hold.release();
+                    }
+                });
     }
 
     private LimitOrderFillEvent fetchNextFillEvent(String queueKey) {
