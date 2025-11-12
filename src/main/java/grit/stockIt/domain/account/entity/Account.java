@@ -33,9 +33,43 @@ public class Account extends BaseEntity {
     @Column(name = "account_name", nullable = false, length = 100)
     private String accountName;
 
+    @Builder.Default
     @Column(name = "cash", nullable = false, precision = 19, scale = 2)
     private BigDecimal cash = BigDecimal.ZERO;
 
+    @Builder.Default
+    @Column(name = "hold_amount", nullable = false, precision = 19, scale = 2, columnDefinition = "numeric(19,2) default 0")
+    private BigDecimal holdAmount = BigDecimal.ZERO;
+
+    @Builder.Default
     @Column(name = "is_default", nullable = false)
     private Boolean isDefault = false;
+
+    public BigDecimal getAvailableCash() {
+        return cash.subtract(holdAmount);
+    }
+
+    public void increaseHoldAmount(BigDecimal amount) {
+        if (amount == null || amount.signum() <= 0) {
+            throw new IllegalArgumentException("홀딩 금액은 0보다 커야 합니다.");
+        }
+        this.holdAmount = this.holdAmount.add(amount);
+    }
+
+    public void decreaseHoldAmount(BigDecimal amount) {
+        if (amount == null || amount.signum() <= 0) {
+            throw new IllegalArgumentException("감소 금액은 0보다 커야 합니다.");
+        }
+        if (amount.compareTo(this.holdAmount) > 0) {
+            throw new IllegalStateException("홀딩 금액보다 큰 금액을 감소시킬 수 없습니다.");
+        }
+        this.holdAmount = this.holdAmount.subtract(amount);
+    }
+
+    public void decreaseCash(BigDecimal amount) {
+        if (amount == null || amount.signum() <= 0) {
+            throw new IllegalArgumentException("차감 금액은 0보다 커야 합니다.");
+        }
+        this.cash = this.cash.subtract(amount);
+    }
 }
