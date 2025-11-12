@@ -1,6 +1,8 @@
 package grit.stockIt.domain.matching.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import grit.stockIt.domain.account.entity.AccountStock;
+import grit.stockIt.domain.account.repository.AccountStockRepository;
 import grit.stockIt.domain.execution.entity.Execution;
 import grit.stockIt.domain.execution.service.ExecutionService;
 import grit.stockIt.domain.matching.dto.LimitOrderFillEvent;
@@ -57,6 +59,7 @@ public class LimitOrderMatchingService {
     private final RedisOrderBookRepository redisOrderBookRepository;
     private final OrderSubscriptionCoordinator orderSubscriptionCoordinator;
     private final OrderHoldRepository orderHoldRepository;
+    private final AccountStockRepository accountStockRepository;
 
     @Value("${matching.limit-lock-ttl-seconds:5}")
     private long lockTtlSeconds;
@@ -219,9 +222,12 @@ public class LimitOrderMatchingService {
                         hold -> {
                             order.getAccount().decreaseHoldAmount(fillAmount);
                             hold.decreaseHoldAmount(fillAmount);
+                            orderHoldRepository.save(hold);
                         },
                         () -> log.warn("OrderHold를 찾을 수 없습니다. orderId={}", order.getOrderId())
                 );
+
+        updateAccountStockOnBuy(order, fillQuantity, price);
     }
 
     // 주문 체결 완료 후 주문 해제 처리
@@ -236,6 +242,19 @@ public class LimitOrderMatchingService {
                     hold.release();
                     orderHoldRepository.save(hold);
                 });
+    }
+
+    private void updateAccountStockOnBuy(Order order, int fillQuantity, BigDecimal price) {
+        accountStockRepository.findByAccountAndStock(order.getAccount(), order.getStock())
+                .ifPresentOrElse(
+                        accountStock -> {
+                            accountStock.increaseQuantity(fillQuantity, price);
+                            accountStockRepository.save(accountStock);
+                        },
+                        () -> accountStockRepository.save(
+                                AccountStock.create(order.getAccount(), order.getStock(), fillQuantity, price)
+                        )
+                );
     }
 
     private LimitOrderFillEvent fetchNextFillEvent(String queueKey) {
