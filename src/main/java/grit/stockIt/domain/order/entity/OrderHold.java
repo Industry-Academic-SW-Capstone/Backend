@@ -62,9 +62,11 @@ public class OrderHold extends BaseEntity {
         if (amount == null || amount.signum() < 0) {
             throw new IllegalArgumentException("감소 금액은 0 이상이어야 합니다.");
         }
+        if (amount.compareTo(this.holdAmount) > 0) {
+            throw new IllegalStateException("홀딩 금액보다 큰 금액을 감소시킬 수 없습니다.");
+        }
         this.holdAmount = this.holdAmount.subtract(amount);
-        if (this.holdAmount.signum() <= 0) {
-            this.holdAmount = BigDecimal.ZERO;
+        if (this.holdAmount.signum() == 0) {
             this.status = OrderHoldStatus.RELEASED;
         }
     }
