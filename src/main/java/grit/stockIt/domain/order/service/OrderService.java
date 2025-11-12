@@ -6,9 +6,11 @@ import grit.stockIt.domain.matching.repository.RedisOrderBookRepository;
 import grit.stockIt.domain.order.dto.LimitOrderCreateRequest;
 import grit.stockIt.domain.order.dto.OrderResponse;
 import grit.stockIt.domain.order.entity.Order;
+import grit.stockIt.domain.order.entity.OrderHold;
 import grit.stockIt.domain.order.entity.OrderMethod;
 import grit.stockIt.domain.order.entity.OrderStatus;
 import grit.stockIt.domain.order.entity.OrderType;
+import grit.stockIt.domain.order.repository.OrderHoldRepository;
 import grit.stockIt.domain.order.repository.OrderRepository;
 import grit.stockIt.domain.stock.entity.Stock;
 import grit.stockIt.domain.stock.repository.StockRepository;
@@ -22,6 +24,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 
+import java.math.BigDecimal;
+import java.util.Optional;
+
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -32,6 +37,7 @@ public class OrderService {
     private final StockRepository stockRepository;
     private final RedisOrderBookRepository redisOrderBookRepository;
     private final OrderSubscriptionCoordinator orderSubscriptionCoordinator;
+    private final OrderHoldRepository orderHoldRepository;
 
     /**
      * 지정가 주문 생성
@@ -59,7 +65,18 @@ public class OrderService {
                 orderMethod
         );
 
+        BigDecimal holdAmount = BigDecimal.ZERO;
+        if (orderMethod == OrderMethod.BUY) {
+            holdAmount = calculateHoldAmount(order); // 주문 금액 계산
+            ensureSufficientCash(account, holdAmount); // 주문 가능 현금 확인
+            account.increaseHoldAmount(holdAmount); // 홀딩 금액 증가
+        }
+
         order = orderRepository.save(order);
+        if (orderMethod == OrderMethod.BUY) {
+            OrderHold orderHold = OrderHold.create(order, account, holdAmount);
+            orderHoldRepository.save(orderHold);
+        }
         redisOrderBookRepository.addOrder(order);
         orderSubscriptionCoordinator.registerLimitOrder(stock.getCode());
 
@@ -92,6 +109,10 @@ public class OrderService {
             orderSubscriptionCoordinator.unregisterLimitOrder(order.getStock().getCode());
         }
 
+        if (order.getOrderType() == OrderType.LIMIT && order.getOrderMethod() == OrderMethod.BUY) {
+            releaseHold(order);
+        }
+
         log.info("주문 취소 완료: orderId={}", orderId);
         return OrderResponse.from(order);
     }
@@ -102,6 +123,26 @@ public class OrderService {
                 .orElseThrow(() -> new BadRequestException("주문을 찾을 수 없습니다."));
         ensureAccountOwner(order.getAccount());
         return OrderResponse.from(order);
+    }
+
+    private BigDecimal calculateHoldAmount(Order order) {
+        return order.getPrice().multiply(BigDecimal.valueOf(order.getRemainingQuantity()));
+    }
+
+    private void ensureSufficientCash(Account account, BigDecimal holdAmount) {
+        if (account.getAvailableCash().compareTo(holdAmount) < 0) {
+            throw new BadRequestException("주문 가능 현금이 부족합니다.");
+        }
+    }
+
+    private void releaseHold(Order order) {
+        Optional<OrderHold> holdOpt = orderHoldRepository.findById(order.getOrderId());
+        holdOpt.ifPresent(hold -> {
+            Account account = order.getAccount();
+            account.decreaseHoldAmount(hold.getHoldAmount());
+            hold.release();
+            orderHoldRepository.save(hold);
+        });
     }
 
     private void ensureAccountOwner(Account account) {
