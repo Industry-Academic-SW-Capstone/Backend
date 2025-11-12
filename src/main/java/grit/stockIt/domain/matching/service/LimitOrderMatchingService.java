@@ -231,11 +231,10 @@ public class LimitOrderMatchingService {
                 .ifPresent(hold -> {
                     BigDecimal remaining = hold.getHoldAmount();
                     if (remaining.signum() > 0) {
-                        order.getAccount().decreaseHoldAmount(remaining); // 남은 주문 금액 처리
-                        hold.release();
-                    } else {
-                        hold.release();
+                        order.getAccount().decreaseHoldAmount(remaining);
                     }
+                    hold.release();
+                    orderHoldRepository.save(hold);
                 });
     }
 
