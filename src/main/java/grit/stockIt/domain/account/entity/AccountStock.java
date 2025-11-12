@@ -15,8 +15,6 @@ import jakarta.persistence.UniqueConstraint;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
-import org.hibernate.annotations.SQLDelete;
-import org.hibernate.annotations.SQLRestriction;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -29,8 +27,6 @@ import java.math.RoundingMode;
                 name = "uk_account_stock_account_stock",
                 columnNames = {"account_id", "stock_code"}
         ))
-@SQLDelete(sql = "UPDATE account_stock SET updated_at = NOW(), deleted_at = NOW() WHERE account_stock_id = ?")
-@SQLRestriction("deleted_at IS NULL")
 public class AccountStock extends BaseEntity {
 
     @Id
@@ -94,7 +90,6 @@ public class AccountStock extends BaseEntity {
         }
         this.quantity -= reduceQuantity;
         if (this.quantity == 0) {
-            softDelete();
             this.averagePrice = BigDecimal.ZERO;
         }
     }
@@ -113,15 +108,6 @@ public class AccountStock extends BaseEntity {
             throw new IllegalStateException("홀딩된 수량보다 많은 수량을 해제할 수 없습니다.");
         }
         this.holdQuantity -= reduceQuantity;
-    }
-
-    public void reactivate(int newQuantity, BigDecimal newPrice) {
-        ensurePositiveQuantity(newQuantity, "재활성화 수량");
-        ensurePositivePrice(newPrice);
-        restore();
-        this.quantity = newQuantity;
-        this.holdQuantity = 0;
-        this.averagePrice = newPrice;
     }
 
     private void ensurePositiveQuantity(int value, String fieldName) {
