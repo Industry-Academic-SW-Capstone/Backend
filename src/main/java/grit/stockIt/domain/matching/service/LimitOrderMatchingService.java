@@ -251,9 +251,17 @@ public class LimitOrderMatchingService {
                             accountStock.increaseQuantity(fillQuantity, price);
                             accountStockRepository.save(accountStock);
                         },
-                        () -> accountStockRepository.save(
-                                AccountStock.create(order.getAccount(), order.getStock(), fillQuantity, price)
-                        )
+                        () -> accountStockRepository.findAnyByAccountIdAndStockCode(
+                                        order.getAccount().getAccountId(),
+                                        order.getStock().getCode()
+                                )
+                                .map(existing -> {
+                                    existing.reactivate(fillQuantity, price);
+                                    return accountStockRepository.save(existing);
+                                })
+                                .orElseGet(() -> accountStockRepository.save(
+                                        AccountStock.create(order.getAccount(), order.getStock(), fillQuantity, price)
+                                ))
                 );
     }
 

@@ -15,6 +15,8 @@ import jakarta.persistence.UniqueConstraint;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+import org.hibernate.annotations.SQLDelete;
+import org.hibernate.annotations.SQLRestriction;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -27,6 +29,8 @@ import java.math.RoundingMode;
                 name = "uk_account_stock_account_stock",
                 columnNames = {"account_id", "stock_code"}
         ))
+@SQLDelete(sql = "UPDATE account_stock SET updated_at = NOW(), deleted_at = NOW() WHERE account_stock_id = ?")
+@SQLRestriction("deleted_at IS NULL")
 public class AccountStock extends BaseEntity {
 
     @Id
@@ -50,9 +54,6 @@ public class AccountStock extends BaseEntity {
 
     @Column(name = "average_price", precision = 19, scale = 2, nullable = false)
     private BigDecimal averagePrice;
-
-    @Column(name = "is_deleted", nullable = false)
-    private boolean deleted = false;
 
     private AccountStock(Account account, Stock stock, int initialQuantity, BigDecimal initialPrice) {
         validateAccount(account);
@@ -93,6 +94,7 @@ public class AccountStock extends BaseEntity {
         }
         this.quantity -= reduceQuantity;
         if (this.quantity == 0) {
+            softDelete();
             this.averagePrice = BigDecimal.ZERO;
         }
     }
@@ -113,8 +115,13 @@ public class AccountStock extends BaseEntity {
         this.holdQuantity -= reduceQuantity;
     }
 
-    public void markDeleted() {
-        this.deleted = true;
+    public void reactivate(int newQuantity, BigDecimal newPrice) {
+        ensurePositiveQuantity(newQuantity, "재활성화 수량");
+        ensurePositivePrice(newPrice);
+        restore();
+        this.quantity = newQuantity;
+        this.holdQuantity = 0;
+        this.averagePrice = newPrice;
     }
 
     private void ensurePositiveQuantity(int value, String fieldName) {
