@@ -1,6 +1,7 @@
 package grit.stockIt.domain.order.controller;
 
 import grit.stockIt.domain.order.dto.LimitOrderCreateRequest;
+import grit.stockIt.domain.order.dto.MarketOrderCreateRequest;
 import grit.stockIt.domain.order.dto.OrderResponse;
 import grit.stockIt.domain.order.service.OrderService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -28,6 +29,12 @@ public class OrderController {
     @PostMapping("/limit")
     public OrderResponse createLimitOrder(@Valid @RequestBody LimitOrderCreateRequest request) {
         return orderService.createLimitOrder(request);
+    }
+
+    @Operation(summary = "시장가 주문 생성", description = "시장가 매수/매도 주문을 등록합니다.")
+    @PostMapping("/market")
+    public OrderResponse createMarketOrder(@Valid @RequestBody MarketOrderCreateRequest request) {
+        return orderService.createMarketOrder(request);
     }
 
     @Operation(summary = "주문 취소", description = "미체결 주문을 취소합니다.")
