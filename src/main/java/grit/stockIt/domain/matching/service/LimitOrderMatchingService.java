@@ -11,7 +11,6 @@ import grit.stockIt.domain.matching.dto.OrderBookEntry;
 import grit.stockIt.domain.order.entity.Order;
 import grit.stockIt.domain.order.entity.OrderMethod;
 import grit.stockIt.domain.order.entity.OrderStatus;
-import grit.stockIt.domain.order.entity.OrderType;
 import grit.stockIt.domain.order.repository.OrderRepository;
 import grit.stockIt.domain.order.repository.OrderHoldRepository;
 import grit.stockIt.global.websocket.manager.OrderSubscriptionCoordinator;
@@ -150,6 +149,7 @@ public class LimitOrderMatchingService {
 
         List<Execution> executions = new ArrayList<>();
         List<Order> updatedOrders = new ArrayList<>();
+        int cancelledQuantity = 0;
 
         for (Long orderId : filledOrderIds) {
             Order order = orderMap.get(orderId);
@@ -165,6 +165,16 @@ public class LimitOrderMatchingService {
             if (!isActive(order)) {
                 redisOrderBookRepository.removeOrder(orderId, stockCode, order.getOrderMethod());
                 orderSubscriptionCoordinator.unregisterLimitOrder(stockCode);
+                continue;
+            }
+
+            BigDecimal fillAmount = event.price().multiply(BigDecimal.valueOf(command.fillQuantity()));
+            if (order.getOrderMethod() == OrderMethod.BUY && !hasSufficientCashForFill(order, fillAmount)) {
+                log.warn("계좌 현금 부족으로 주문을 취소합니다. orderId={} accountId={} required={} cash={}",
+                        orderId, order.getAccount().getAccountId(), fillAmount, order.getAccount().getCash());
+                cancelDueToInsufficientFunds(order, stockCode);
+                updatedOrders.add(order);
+                cancelledQuantity += command.fillQuantity();
                 continue;
             }
 
@@ -185,6 +195,10 @@ public class LimitOrderMatchingService {
 
         if (!updatedOrders.isEmpty()) {
             orderRepository.saveAll(updatedOrders);
+        }
+
+        if (cancelledQuantity > 0) {
+            enqueueResidualEvent(stockCode, event, cancelledQuantity);
         }
 
         if (remainingQuantity > 0) {
@@ -217,17 +231,12 @@ public class LimitOrderMatchingService {
 
         if (order.getOrderMethod() == OrderMethod.BUY) {
             order.getAccount().decreaseCash(fillAmount);
-            if (order.getOrderType() == OrderType.LIMIT) {
-                orderHoldRepository.findById(order.getOrderId())
-                        .ifPresentOrElse(
-                                hold -> {
-                                    order.getAccount().decreaseHoldAmount(fillAmount);
-                                    hold.decreaseHoldAmount(fillAmount);
-                                    orderHoldRepository.save(hold);
-                                },
-                                () -> log.warn("OrderHold를 찾을 수 없습니다. orderId={}", order.getOrderId())
-                        );
-            }
+            orderHoldRepository.findById(order.getOrderId())
+                    .ifPresent(hold -> {
+                        order.getAccount().decreaseHoldAmount(fillAmount);
+                        hold.decreaseHoldAmount(fillAmount);
+                        orderHoldRepository.save(hold);
+                    });
             updateAccountStockOnBuy(order, fillQuantity, price);
             return;
         }
@@ -244,6 +253,45 @@ public class LimitOrderMatchingService {
                             () -> log.warn("AccountStock을 찾을 수 없습니다. orderId={} accountId={} stockCode={}",
                                     order.getOrderId(), order.getAccount().getAccountId(), order.getStock().getCode())
                     );
+        }
+    }
+
+    private boolean hasSufficientCashForFill(Order order, BigDecimal fillAmount) {
+        return order.getAccount().getCash().compareTo(fillAmount) >= 0;
+    }
+
+    private void cancelDueToInsufficientFunds(Order order, String stockCode) {
+        order.markCancelled();
+        redisOrderBookRepository.removeOrder(order.getOrderId(), stockCode, order.getOrderMethod());
+        orderSubscriptionCoordinator.unregisterLimitOrder(stockCode);
+        orderHoldRepository.findById(order.getOrderId())
+                .ifPresent(hold -> {
+                    BigDecimal remaining = hold.getHoldAmount();
+                    if (remaining.signum() > 0) {
+                        order.getAccount().decreaseHoldAmount(remaining);
+                    }
+                    hold.release();
+                    orderHoldRepository.save(hold);
+                });
+    }
+
+    // 잔여 체결 이벤트 재큐잉
+    private void enqueueResidualEvent(String stockCode, LimitOrderFillEvent sourceEvent, int quantity) {
+        if (quantity <= 0) {
+            return;
+        }
+        LimitOrderFillEvent residualEvent = new LimitOrderFillEvent(
+                UUID.randomUUID().toString(),
+                sourceEvent.orderMethod(),
+                sourceEvent.price(),
+                quantity,
+                sourceEvent.eventTimestamp()
+        );
+        try {
+            String payload = objectMapper.writeValueAsString(residualEvent);
+            redisTemplate.opsForList().leftPush(buildEventQueueKey(stockCode), payload);
+        } catch (Exception e) {
+            log.error("잔여 체결 이벤트 재큐잉 실패. stockCode={} event={}", stockCode, residualEvent, e);
         }
     }
 
