@@ -32,6 +32,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
+import java.math.RoundingMode;
 
 @Slf4j
 @Service
@@ -168,21 +169,34 @@ public class LimitOrderMatchingService {
                 continue;
             }
 
-            BigDecimal fillAmount = event.price().multiply(BigDecimal.valueOf(command.fillQuantity()));
-            if (order.getOrderMethod() == OrderMethod.BUY && !hasSufficientCashForFill(order, fillAmount)) {
-                log.warn("계좌 현금 부족으로 주문을 취소합니다. orderId={} accountId={} required={} cash={}",
-                        orderId, order.getAccount().getAccountId(), fillAmount, order.getAccount().getCash());
-                cancelDueToInsufficientFunds(order, stockCode);
-                updatedOrders.add(order);
-                cancelledQuantity += command.fillQuantity();
-                continue;
+            int desiredFillQuantity = command.fillQuantity();
+            int actualFillQuantity = desiredFillQuantity;
+            BigDecimal fillPrice = event.price();
+
+            if (order.getOrderMethod() == OrderMethod.BUY) {
+                int affordableQuantity = calculateAffordableQuantity(order, fillPrice, desiredFillQuantity);
+                if (affordableQuantity <= 0) {
+                    log.warn("계좌 현금 부족으로 주문을 취소합니다. orderId={} accountId={} requiredUnitPrice={} cash={}",
+                            orderId, order.getAccount().getAccountId(), fillPrice, order.getAccount().getCash());
+                    cancelDueToInsufficientFunds(order, stockCode);
+                    updatedOrders.add(order);
+                    cancelledQuantity += desiredFillQuantity;
+                    continue;
+                }
+                actualFillQuantity = affordableQuantity;
             }
 
             try {
-                order.applyFill(command.fillQuantity());
-                executions.add(executionService.record(order, event.price(), command.fillQuantity()));
-                handleAccountOnFill(order, event.price(), command.fillQuantity());
+                order.applyFill(actualFillQuantity);
+                executions.add(executionService.record(order, fillPrice, actualFillQuantity));
+                handleAccountOnFill(order, fillPrice, actualFillQuantity);
                 updatedOrders.add(order);
+                if (order.getOrderMethod() == OrderMethod.BUY && actualFillQuantity < desiredFillQuantity) {
+                    int shortfall = desiredFillQuantity - actualFillQuantity;
+                    cancelledQuantity += shortfall;
+                    cancelDueToInsufficientFunds(order, stockCode);
+                    continue;
+                }
                 if (order.getRemainingQuantity() <= 0) {
                     finalizeFilledOrder(order);
                 }
@@ -256,8 +270,20 @@ public class LimitOrderMatchingService {
         }
     }
 
-    private boolean hasSufficientCashForFill(Order order, BigDecimal fillAmount) {
-        return order.getAccount().getCash().compareTo(fillAmount) >= 0;
+    private int calculateAffordableQuantity(Order order, BigDecimal price, int desiredQuantity) {
+        if (price == null || price.signum() <= 0) {
+            return 0;
+        }
+        BigDecimal cash = order.getAccount().getCash();
+        if (cash.compareTo(price) < 0) {
+            return 0;
+        }
+        BigDecimal affordableRaw = cash.divide(price, 0, RoundingMode.FLOOR);
+        if (affordableRaw.compareTo(BigDecimal.ZERO) <= 0) {
+            return 0;
+        }
+        int affordable = affordableRaw.min(BigDecimal.valueOf(desiredQuantity)).intValue();
+        return Math.min(affordable, desiredQuantity);
     }
 
     private void cancelDueToInsufficientFunds(Order order, String stockCode) {
