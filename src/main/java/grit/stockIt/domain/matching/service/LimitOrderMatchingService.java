@@ -11,6 +11,7 @@ import grit.stockIt.domain.matching.dto.OrderBookEntry;
 import grit.stockIt.domain.order.entity.Order;
 import grit.stockIt.domain.order.entity.OrderMethod;
 import grit.stockIt.domain.order.entity.OrderStatus;
+import grit.stockIt.domain.order.entity.OrderType;
 import grit.stockIt.domain.order.repository.OrderRepository;
 import grit.stockIt.domain.order.repository.OrderHoldRepository;
 import grit.stockIt.global.websocket.manager.OrderSubscriptionCoordinator;
@@ -216,15 +217,17 @@ public class LimitOrderMatchingService {
 
         if (order.getOrderMethod() == OrderMethod.BUY) {
             order.getAccount().decreaseCash(fillAmount);
-            orderHoldRepository.findById(order.getOrderId())
-                    .ifPresentOrElse(
-                            hold -> {
-                                order.getAccount().decreaseHoldAmount(fillAmount);
-                                hold.decreaseHoldAmount(fillAmount);
-                                orderHoldRepository.save(hold);
-                            },
-                            () -> log.warn("OrderHold를 찾을 수 없습니다. orderId={}", order.getOrderId())
-                    );
+            if (order.getOrderType() == OrderType.LIMIT) {
+                orderHoldRepository.findById(order.getOrderId())
+                        .ifPresentOrElse(
+                                hold -> {
+                                    order.getAccount().decreaseHoldAmount(fillAmount);
+                                    hold.decreaseHoldAmount(fillAmount);
+                                    orderHoldRepository.save(hold);
+                                },
+                                () -> log.warn("OrderHold를 찾을 수 없습니다. orderId={}", order.getOrderId())
+                        );
+            }
             updateAccountStockOnBuy(order, fillQuantity, price);
             return;
         }
