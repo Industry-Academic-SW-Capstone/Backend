@@ -246,11 +246,11 @@ public class LimitOrderMatchingService {
         if (order.getOrderMethod() == OrderMethod.BUY) {
             order.getAccount().decreaseCash(fillAmount);
             orderHoldRepository.findById(order.getOrderId())
-                    .ifPresent(hold -> {
+                    .ifPresentOrElse(hold -> {
                         order.getAccount().decreaseHoldAmount(fillAmount);
                         hold.decreaseHoldAmount(fillAmount);
                         orderHoldRepository.save(hold);
-                    });
+                    }, () -> log.warn("OrderHold를 찾을 수 없습니다. orderId={}", order.getOrderId()));
             updateAccountStockOnBuy(order, fillQuantity, price);
             return;
         }
