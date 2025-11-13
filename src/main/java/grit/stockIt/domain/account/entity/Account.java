@@ -72,4 +72,11 @@ public class Account extends BaseEntity {
         }
         this.cash = this.cash.subtract(amount);
     }
+
+    public void increaseCash(BigDecimal amount) {
+        if (amount == null || amount.signum() <= 0) {
+            throw new IllegalArgumentException("증가 금액은 0보다 커야 합니다.");
+        }
+        this.cash = this.cash.add(amount);
+    }
 }

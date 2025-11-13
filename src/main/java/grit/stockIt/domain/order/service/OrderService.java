@@ -2,6 +2,8 @@ package grit.stockIt.domain.order.service;
 
 import grit.stockIt.domain.account.entity.Account;
 import grit.stockIt.domain.account.repository.AccountRepository;
+import grit.stockIt.domain.account.entity.AccountStock;
+import grit.stockIt.domain.account.repository.AccountStockRepository;
 import grit.stockIt.domain.matching.repository.RedisOrderBookRepository;
 import grit.stockIt.domain.order.dto.LimitOrderCreateRequest;
 import grit.stockIt.domain.order.dto.OrderResponse;
@@ -38,6 +40,7 @@ public class OrderService {
     private final RedisOrderBookRepository redisOrderBookRepository;
     private final OrderSubscriptionCoordinator orderSubscriptionCoordinator;
     private final OrderHoldRepository orderHoldRepository;
+    private final AccountStockRepository accountStockRepository;
 
     /**
      * 지정가 주문 생성
@@ -70,6 +73,8 @@ public class OrderService {
             holdAmount = calculateHoldAmount(order); // 주문 금액 계산
             ensureSufficientCash(account, holdAmount); // 주문 가능 현금 확인
             account.increaseHoldAmount(holdAmount); // 홀딩 금액 증가
+        } else if (orderMethod == OrderMethod.SELL) {
+            applySellHold(order);
         }
 
         order = orderRepository.save(order);
@@ -109,8 +114,12 @@ public class OrderService {
             orderSubscriptionCoordinator.unregisterLimitOrder(order.getStock().getCode());
         }
 
-        if (order.getOrderType() == OrderType.LIMIT && order.getOrderMethod() == OrderMethod.BUY) {
-            releaseHold(order);
+        if (order.getOrderType() == OrderType.LIMIT) {
+            if (order.getOrderMethod() == OrderMethod.BUY) {
+                releaseBuyHold(order);
+            } else if (order.getOrderMethod() == OrderMethod.SELL) {
+                releaseSellHold(order);
+            }
         }
 
         log.info("주문 취소 완료: orderId={}", orderId);
@@ -135,7 +144,7 @@ public class OrderService {
         }
     }
 
-    private void releaseHold(Order order) {
+    private void releaseBuyHold(Order order) {
         Optional<OrderHold> holdOpt = orderHoldRepository.findById(order.getOrderId());
         holdOpt.ifPresent(hold -> {
             Account account = order.getAccount();
@@ -143,6 +152,25 @@ public class OrderService {
             hold.release();
             orderHoldRepository.save(hold);
         });
+    }
+
+    private void applySellHold(Order order) {
+        AccountStock accountStock = accountStockRepository.findByAccountAndStock(order.getAccount(), order.getStock())
+                .orElseThrow(() -> new BadRequestException("보유 중인 종목이 없습니다."));
+        accountStock.increaseHoldQuantity(order.getRemainingQuantity());
+        accountStockRepository.save(accountStock);
+    }
+
+    private void releaseSellHold(Order order) {
+        int releaseQuantity = order.getRemainingQuantity();
+        if (releaseQuantity <= 0) {
+            return;
+        }
+        accountStockRepository.findByAccountAndStock(order.getAccount(), order.getStock())
+                .ifPresent(accountStock -> {
+                    accountStock.decreaseHoldQuantity(releaseQuantity);
+                    accountStockRepository.save(accountStock);
+                });
     }
 
     private void ensureAccountOwner(Account account) {
