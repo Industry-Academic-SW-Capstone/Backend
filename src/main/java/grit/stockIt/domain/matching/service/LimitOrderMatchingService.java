@@ -210,24 +210,38 @@ public class LimitOrderMatchingService {
     private record FillCommand(OrderBookEntry entry, int fillQuantity) {
     }
 
+    // 주문 체결 처리
     private void handleAccountOnFill(Order order, BigDecimal price, int fillQuantity) {
-        if (order.getOrderMethod() != OrderMethod.BUY) {
+        BigDecimal fillAmount = price.multiply(BigDecimal.valueOf(fillQuantity));
+
+        if (order.getOrderMethod() == OrderMethod.BUY) {
+            order.getAccount().decreaseCash(fillAmount);
+            orderHoldRepository.findById(order.getOrderId())
+                    .ifPresentOrElse(
+                            hold -> {
+                                order.getAccount().decreaseHoldAmount(fillAmount);
+                                hold.decreaseHoldAmount(fillAmount);
+                                orderHoldRepository.save(hold);
+                            },
+                            () -> log.warn("OrderHold를 찾을 수 없습니다. orderId={}", order.getOrderId())
+                    );
+            updateAccountStockOnBuy(order, fillQuantity, price);
             return;
         }
 
-        BigDecimal fillAmount = price.multiply(BigDecimal.valueOf(fillQuantity));
-        order.getAccount().decreaseCash(fillAmount);
-        orderHoldRepository.findById(order.getOrderId())
-                .ifPresentOrElse(
-                        hold -> {
-                            order.getAccount().decreaseHoldAmount(fillAmount);
-                            hold.decreaseHoldAmount(fillAmount);
-                            orderHoldRepository.save(hold);
-                        },
-                        () -> log.warn("OrderHold를 찾을 수 없습니다. orderId={}", order.getOrderId())
-                );
-
-        updateAccountStockOnBuy(order, fillQuantity, price);
+        if (order.getOrderMethod() == OrderMethod.SELL) {
+            order.getAccount().increaseCash(fillAmount);
+            accountStockRepository.findByAccountAndStock(order.getAccount(), order.getStock())
+                    .ifPresentOrElse(
+                            accountStock -> {
+                                accountStock.decreaseHoldQuantity(fillQuantity);
+                                accountStock.decreaseQuantity(fillQuantity);
+                                accountStockRepository.save(accountStock);
+                            },
+                            () -> log.warn("AccountStock을 찾을 수 없습니다. orderId={} accountId={} stockCode={}",
+                                    order.getOrderId(), order.getAccount().getAccountId(), order.getStock().getCode())
+                    );
+        }
     }
 
     // 주문 체결 완료 후 주문 해제 처리
