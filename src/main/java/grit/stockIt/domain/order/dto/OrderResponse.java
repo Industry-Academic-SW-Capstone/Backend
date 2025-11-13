@@ -31,7 +31,7 @@ public record OrderResponse(
                 order.getOrderType(),
                 order.getOrderMethod(),
                 order.getStatus(),
-                order.getPrice(),
+                order.getOrderType() == OrderType.MARKET ? null : order.getPrice(),
                 order.getQuantity(),
                 order.getFilledQuantity(),
                 order.getRemainingQuantity(),

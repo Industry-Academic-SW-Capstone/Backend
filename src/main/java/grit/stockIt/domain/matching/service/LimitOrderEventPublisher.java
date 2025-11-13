@@ -3,6 +3,7 @@ package grit.stockIt.domain.matching.service;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import grit.stockIt.domain.matching.dto.LimitOrderFillEvent;
 import grit.stockIt.domain.matching.event.LimitOrderFillEventMessage;
+import grit.stockIt.domain.matching.repository.RedisMarketDataRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.event.EventListener;
@@ -19,6 +20,7 @@ public class LimitOrderEventPublisher {
     private final StringRedisTemplate redisTemplate;
     private final ObjectMapper objectMapper;
     private final LimitOrderMatchingService limitOrderMatchingService;
+    private final RedisMarketDataRepository redisMarketDataRepository;
 
     @EventListener
     public void handleLimitOrderFill(LimitOrderFillEventMessage message) {
@@ -29,6 +31,7 @@ public class LimitOrderEventPublisher {
                 message.quantity(),
                 message.eventTimestamp()
         );
+        redisMarketDataRepository.updateLastPrice(message.stockCode(), message.price());
         publish(message.stockCode(), event);
     }
 

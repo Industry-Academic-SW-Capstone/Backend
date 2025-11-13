@@ -32,6 +32,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
+import java.math.RoundingMode;
 
 @Slf4j
 @Service
@@ -149,6 +150,7 @@ public class LimitOrderMatchingService {
 
         List<Execution> executions = new ArrayList<>();
         List<Order> updatedOrders = new ArrayList<>();
+        int cancelledQuantity = 0;
 
         for (Long orderId : filledOrderIds) {
             Order order = orderMap.get(orderId);
@@ -167,11 +169,34 @@ public class LimitOrderMatchingService {
                 continue;
             }
 
+            int desiredFillQuantity = command.fillQuantity();
+            int actualFillQuantity = desiredFillQuantity;
+            BigDecimal fillPrice = event.price();
+
+            if (order.getOrderMethod() == OrderMethod.BUY) {
+                int affordableQuantity = calculateAffordableQuantity(order, fillPrice, desiredFillQuantity);
+                if (affordableQuantity <= 0) {
+                    log.warn("계좌 현금 부족으로 주문을 취소합니다. orderId={} accountId={} requiredUnitPrice={} cash={}",
+                            orderId, order.getAccount().getAccountId(), fillPrice, order.getAccount().getCash());
+                    cancelDueToInsufficientFunds(order, stockCode);
+                    updatedOrders.add(order);
+                    cancelledQuantity += desiredFillQuantity;
+                    continue;
+                }
+                actualFillQuantity = affordableQuantity;
+            }
+
             try {
-                order.applyFill(command.fillQuantity());
-                executions.add(executionService.record(order, event.price(), command.fillQuantity()));
-                handleAccountOnFill(order, event.price(), command.fillQuantity());
+                order.applyFill(actualFillQuantity);
+                executions.add(executionService.record(order, fillPrice, actualFillQuantity));
+                handleAccountOnFill(order, fillPrice, actualFillQuantity);
                 updatedOrders.add(order);
+                if (order.getOrderMethod() == OrderMethod.BUY && actualFillQuantity < desiredFillQuantity) {
+                    int shortfall = desiredFillQuantity - actualFillQuantity;
+                    cancelledQuantity += shortfall;
+                    cancelDueToInsufficientFunds(order, stockCode);
+                    continue;
+                }
                 if (order.getRemainingQuantity() <= 0) {
                     finalizeFilledOrder(order);
                 }
@@ -184,6 +209,10 @@ public class LimitOrderMatchingService {
 
         if (!updatedOrders.isEmpty()) {
             orderRepository.saveAll(updatedOrders);
+        }
+
+        if (cancelledQuantity > 0) {
+            enqueueResidualEvent(stockCode, event, cancelledQuantity);
         }
 
         if (remainingQuantity > 0) {
@@ -217,14 +246,11 @@ public class LimitOrderMatchingService {
         if (order.getOrderMethod() == OrderMethod.BUY) {
             order.getAccount().decreaseCash(fillAmount);
             orderHoldRepository.findById(order.getOrderId())
-                    .ifPresentOrElse(
-                            hold -> {
-                                order.getAccount().decreaseHoldAmount(fillAmount);
-                                hold.decreaseHoldAmount(fillAmount);
-                                orderHoldRepository.save(hold);
-                            },
-                            () -> log.warn("OrderHold를 찾을 수 없습니다. orderId={}", order.getOrderId())
-                    );
+                    .ifPresentOrElse(hold -> {
+                        order.getAccount().decreaseHoldAmount(fillAmount);
+                        hold.decreaseHoldAmount(fillAmount);
+                        orderHoldRepository.save(hold);
+                    }, () -> log.warn("OrderHold를 찾을 수 없습니다. orderId={}", order.getOrderId()));
             updateAccountStockOnBuy(order, fillQuantity, price);
             return;
         }
@@ -241,6 +267,57 @@ public class LimitOrderMatchingService {
                             () -> log.warn("AccountStock을 찾을 수 없습니다. orderId={} accountId={} stockCode={}",
                                     order.getOrderId(), order.getAccount().getAccountId(), order.getStock().getCode())
                     );
+        }
+    }
+
+    private int calculateAffordableQuantity(Order order, BigDecimal price, int desiredQuantity) {
+        if (price == null || price.signum() <= 0) {
+            return 0;
+        }
+        BigDecimal cash = order.getAccount().getCash();
+        if (cash.compareTo(price) < 0) {
+            return 0;
+        }
+        BigDecimal affordableRaw = cash.divide(price, 0, RoundingMode.FLOOR);
+        if (affordableRaw.compareTo(BigDecimal.ZERO) <= 0) {
+            return 0;
+        }
+        int affordable = affordableRaw.min(BigDecimal.valueOf(desiredQuantity)).intValue();
+        return Math.min(affordable, desiredQuantity);
+    }
+
+    private void cancelDueToInsufficientFunds(Order order, String stockCode) {
+        order.markCancelled();
+        redisOrderBookRepository.removeOrder(order.getOrderId(), stockCode, order.getOrderMethod());
+        orderSubscriptionCoordinator.unregisterLimitOrder(stockCode);
+        orderHoldRepository.findById(order.getOrderId())
+                .ifPresent(hold -> {
+                    BigDecimal remaining = hold.getHoldAmount();
+                    if (remaining.signum() > 0) {
+                        order.getAccount().decreaseHoldAmount(remaining);
+                    }
+                    hold.release();
+                    orderHoldRepository.save(hold);
+                });
+    }
+
+    // 잔여 체결 이벤트 재큐잉
+    private void enqueueResidualEvent(String stockCode, LimitOrderFillEvent sourceEvent, int quantity) {
+        if (quantity <= 0) {
+            return;
+        }
+        LimitOrderFillEvent residualEvent = new LimitOrderFillEvent(
+                UUID.randomUUID().toString(),
+                sourceEvent.orderMethod(),
+                sourceEvent.price(),
+                quantity,
+                sourceEvent.eventTimestamp()
+        );
+        try {
+            String payload = objectMapper.writeValueAsString(residualEvent);
+            redisTemplate.opsForList().leftPush(buildEventQueueKey(stockCode), payload);
+        } catch (Exception e) {
+            log.error("잔여 체결 이벤트 재큐잉 실패. stockCode={} event={}", stockCode, residualEvent, e);
         }
     }
 

@@ -26,6 +26,9 @@ import java.math.BigDecimal;
 @Table(name = "trade_order")
 public class Order extends BaseEntity {
 
+    private static final BigDecimal MARKET_BUY_SENTINEL_PRICE = new BigDecimal("999999999"); // 시장가 매수 우선순위 최고값
+    private static final BigDecimal MARKET_SELL_SENTINEL_PRICE = new BigDecimal("0.01"); // 시장가 매도 우선순위 최저값
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     @Column(name = "order_id")
@@ -79,9 +82,12 @@ public class Order extends BaseEntity {
 
     // 정적 팩토리 메서드 (시장가)
     public static Order createMarketOrder(Account account, Stock stock, int quantity, OrderMethod orderMethod) {
-
-        return new Order(account, stock, BigDecimal.ZERO, ensurePositive(quantity, "주문 수량"), OrderType.MARKET, orderMethod);
-
+        // 시장가 매수/매도 시 우선순위 최고값/최저값 설정
+        BigDecimal price = switch (orderMethod) {
+            case BUY -> MARKET_BUY_SENTINEL_PRICE;
+            case SELL -> MARKET_SELL_SENTINEL_PRICE;
+        };
+        return new Order(account, stock, price, ensurePositive(quantity, "주문 수량"), OrderType.MARKET, orderMethod);
     }
 
     public void markPending() {
