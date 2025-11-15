@@ -57,6 +57,9 @@ kakao:
   redirect-uri: ${KAKAO_REDIRECT_URI:http://localhost:8080/api/auth/kakao/callback}
   admin-key: ${KAKAO_ADMIN_KEY:}
 
+firebase:
+  credentials-base64: ${FIREBASE_CREDENTIALS_BASE64:}
+
 jwt:
   secret: ${JWT_SECRET:mySecretKey123456789012345678901234567890}
   expiration: ${JWT_EXPIRATION:86400000}
