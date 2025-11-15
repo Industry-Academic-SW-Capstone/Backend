@@ -22,8 +22,3 @@ spring:
         highlight_sql: true
         format_sql: true
         dialect: org.hibernate.dialect.PostgreSQLDialect
-
-# 개발/시연용: 애플리케이션 시작 시 마스터파일 업데이트를 한 번 실행하려면 true로 설정
-# 실행 후에는 반드시 false로 변경하세요.
-app:
-  run-master-update-on-startup: true
