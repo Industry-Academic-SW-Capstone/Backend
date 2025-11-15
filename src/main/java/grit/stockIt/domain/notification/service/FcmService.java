@@ -5,11 +5,9 @@ import com.google.firebase.messaging.FirebaseMessagingException;
 import com.google.firebase.messaging.MessagingErrorCode;
 import com.google.firebase.messaging.Message;
 import com.google.firebase.messaging.Notification;
-import grit.stockIt.domain.member.repository.MemberRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Map;
 
@@ -20,7 +18,7 @@ import java.util.Map;
 public class FcmService {
 
     private final FirebaseMessaging firebaseMessaging;
-    private final MemberRepository memberRepository;
+    private final FcmTokenService fcmTokenService;
 
     public boolean sendExecutionNotification(String fcmToken, String stockName, String orderMethod, Integer quantity, String price, Map<String, String> data) {
         String action = "매수".equals(orderMethod) ? "매수" : "매도";
@@ -67,10 +65,9 @@ public class FcmService {
                     "UNREGISTERED".equals(errorCodeName)) {
                     log.warn("FCM 토큰이 무효합니다. 토큰 삭제 처리: token={}, errorCode={}", fcmToken, errorCode);
                     try {
-                        handleInvalidToken(fcmToken);
+                        fcmTokenService.handleInvalidToken(fcmToken); // 무효한 FCM 토큰 삭제 처리
                     } catch (Exception ex) {
                         log.error("FCM 토큰 삭제 처리 중 오류 발생: token={}", fcmToken, ex);
-                        // 토큰 삭제 실패가 알림 전송 실패에 영향을 주지 않도록 예외는 무시
                     }
                 }
             }
@@ -112,10 +109,9 @@ public class FcmService {
                     "UNREGISTERED".equals(errorCodeName)) {
                     log.warn("FCM 토큰이 무효합니다. 토큰 삭제 처리: token={}, errorCode={}", fcmToken, errorCode);
                     try {
-                        handleInvalidToken(fcmToken);
+                        fcmTokenService.handleInvalidToken(fcmToken);
                     } catch (Exception ex) {
                         log.error("FCM 토큰 삭제 처리 중 오류 발생: token={}", fcmToken, ex);
-                        // 토큰 삭제 실패가 알림 전송 실패에 영향을 주지 않도록 예외는 무시
                     }
                 }
             }
@@ -125,16 +121,6 @@ public class FcmService {
             log.error("FCM 데이터 메시지 전송 중 예상치 못한 오류 발생: token={}", fcmToken, e);
             return false;
         }
-    }
-
-    // 무효한 FCM 토큰 삭제 처리
-    @Transactional
-    public void handleInvalidToken(String fcmToken) {
-        memberRepository.findByFcmToken(fcmToken)
-                .ifPresent(member -> {
-                    member.removeFcmToken();
-                    log.info("무효한 FCM 토큰 삭제 완료: memberId={}, token={}", member.getMemberId(), fcmToken);
-                });
     }
 }
 
