@@ -42,6 +42,15 @@ public class Member extends BaseEntity {
     @JoinColumn(name = "kakaotoken_id")
     private KakaoToken kakaoToken;
 
+    // FCM 토큰 관련 필드
+    @Column(name = "fcm_token", length = 1000)
+    private String fcmToken;
+
+    // 알림 설정 필드
+    @Column(name = "execution_notification_enabled", nullable = false)
+    @Builder.Default
+    private boolean executionNotificationEnabled = true;
+
     /**
      * 카카오 토큰 업데이트 또는 생성
      */
@@ -50,5 +59,30 @@ public class Member extends BaseEntity {
         if (kakaoToken != null) {
             kakaoToken.setMember(this);  // 양방향 관계 설정
         }
+    }
+
+    public void updateFcmToken(String fcmToken) {
+        this.fcmToken = fcmToken;
+    }
+
+    public void removeFcmToken() {
+        this.fcmToken = null;
+    }
+
+    public boolean hasFcmToken() {
+        return fcmToken != null && !fcmToken.isBlank();
+    }
+
+    // 체결 알림 설정 메서드
+    public void enableExecutionNotification() {
+        this.executionNotificationEnabled = true;
+    }
+
+    public void disableExecutionNotification() {
+        this.executionNotificationEnabled = false;
+    }
+
+    public boolean isExecutionNotificationEnabled() {
+        return executionNotificationEnabled;
     }
 }
