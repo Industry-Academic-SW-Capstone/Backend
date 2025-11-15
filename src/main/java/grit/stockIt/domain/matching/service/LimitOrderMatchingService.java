@@ -13,10 +13,12 @@ import grit.stockIt.domain.order.entity.OrderMethod;
 import grit.stockIt.domain.order.entity.OrderStatus;
 import grit.stockIt.domain.order.repository.OrderRepository;
 import grit.stockIt.domain.order.repository.OrderHoldRepository;
+import grit.stockIt.domain.notification.event.ExecutionFilledEvent;
 import grit.stockIt.global.websocket.manager.OrderSubscriptionCoordinator;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataAccessException;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
@@ -61,6 +63,7 @@ public class LimitOrderMatchingService {
     private final OrderSubscriptionCoordinator orderSubscriptionCoordinator;
     private final OrderHoldRepository orderHoldRepository;
     private final AccountStockRepository accountStockRepository;
+    private final ApplicationEventPublisher eventPublisher;
 
     @Value("${matching.limit-lock-ttl-seconds:5}")
     private long lockTtlSeconds;
@@ -188,9 +191,13 @@ public class LimitOrderMatchingService {
 
             try {
                 order.applyFill(actualFillQuantity);
-                executions.add(executionService.record(order, fillPrice, actualFillQuantity));
+                Execution execution = executionService.record(order, fillPrice, actualFillQuantity); // 체결 저장
+                executions.add(execution);
                 handleAccountOnFill(order, fillPrice, actualFillQuantity);
                 updatedOrders.add(order);
+                
+                // 체결 완료 이벤트 발행 (Event-Driven 아키텍처)
+                publishExecutionFilledEvent(execution, order, stockCode);
                 if (order.getOrderMethod() == OrderMethod.BUY && actualFillQuantity < desiredFillQuantity) {
                     int shortfall = desiredFillQuantity - actualFillQuantity;
                     cancelledQuantity += shortfall;
@@ -384,6 +391,32 @@ public class LimitOrderMatchingService {
 
     private String buildLockKey(String stockCode) {
         return LIMIT_LOCK_KEY_PATTERN.formatted(stockCode);
+    }
+
+    /**
+     * 체결 완료 이벤트 발행
+     * Event-Driven 아키텍처: ExecutionNotificationService와 완전히 분리
+     */
+    private void publishExecutionFilledEvent(Execution execution, Order order, String stockCode) {
+        try {
+            ExecutionFilledEvent event = new ExecutionFilledEvent(
+                    execution.getExecutionId(),
+                    order.getOrderId(),
+                    order.getAccount().getAccountId(),
+                    order.getAccount().getMember().getMemberId(),  // Member ID 추가
+                    stockCode,
+                    execution.getStock().getName(),
+                    execution.getPrice(),
+                    execution.getQuantity(),
+                    execution.getOrderMethod().name()  // BUY, SELL
+            );
+            
+            // 체결 완료 이벤트 발행
+            eventPublisher.publishEvent(event);
+            log.debug("체결 완료 이벤트 발행: executionId={}, memberId={}", execution.getExecutionId(), event.memberId());
+        } catch (Exception e) {
+            log.error("체결 완료 이벤트 발행 실패: executionId={}", execution.getExecutionId(), e);
+        }
     }
 }
 
