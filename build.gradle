@@ -79,6 +79,9 @@ dependencies {
 	// Prometheus metrics
 	implementation 'io.micrometer:micrometer-registry-prometheus'
 
+	// Firebase Admin SDK for FCM
+	implementation 'com.google.firebase:firebase-admin:9.3.0'
+
 }
 
 tasks.named('test') {
