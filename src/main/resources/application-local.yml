@@ -21,4 +21,4 @@ spring:
       hibernate:
         highlight_sql: true
         format_sql: true
-        dialect: org.hibernate.dialect.PostgreSQLDialectgit
+        dialect: org.hibernate.dialect.PostgreSQLDialect
