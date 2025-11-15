@@ -66,7 +66,12 @@ public class FcmService {
                     "REGISTRATION_TOKEN_NOT_REGISTERED".equals(errorCodeName) ||
                     "UNREGISTERED".equals(errorCodeName)) {
                     log.warn("FCM 토큰이 무효합니다. 토큰 삭제 처리: token={}, errorCode={}", fcmToken, errorCode);
-                    handleInvalidToken(fcmToken);
+                    try {
+                        handleInvalidToken(fcmToken);
+                    } catch (Exception ex) {
+                        log.error("FCM 토큰 삭제 처리 중 오류 발생: token={}", fcmToken, ex);
+                        // 토큰 삭제 실패가 알림 전송 실패에 영향을 주지 않도록 예외는 무시
+                    }
                 }
             }
             
@@ -106,7 +111,12 @@ public class FcmService {
                     "REGISTRATION_TOKEN_NOT_REGISTERED".equals(errorCodeName) ||
                     "UNREGISTERED".equals(errorCodeName)) {
                     log.warn("FCM 토큰이 무효합니다. 토큰 삭제 처리: token={}, errorCode={}", fcmToken, errorCode);
-                    handleInvalidToken(fcmToken);
+                    try {
+                        handleInvalidToken(fcmToken);
+                    } catch (Exception ex) {
+                        log.error("FCM 토큰 삭제 처리 중 오류 발생: token={}", fcmToken, ex);
+                        // 토큰 삭제 실패가 알림 전송 실패에 영향을 주지 않도록 예외는 무시
+                    }
                 }
             }
             
@@ -120,19 +130,11 @@ public class FcmService {
     // 무효한 FCM 토큰 삭제 처리
     @Transactional
     public void handleInvalidToken(String fcmToken) {
-        try {
-            memberRepository.findByFcmToken(fcmToken)
-                    .ifPresentOrElse(
-                            member -> {
-                                member.removeFcmToken();
-                                memberRepository.save(member);
-                                log.info("무효한 FCM 토큰 삭제 완료: memberId={}, token={}", member.getMemberId(), fcmToken);
-                            },
-                            () -> log.debug("FCM 토큰에 해당하는 Member를 찾을 수 없습니다: token={}", fcmToken)
-                    );
-        } catch (Exception e) {
-            log.error("FCM 토큰 삭제 처리 중 오류 발생: token={}", fcmToken, e);
-        }
+        memberRepository.findByFcmToken(fcmToken)
+                .ifPresent(member -> {
+                    member.removeFcmToken();
+                    log.info("무효한 FCM 토큰 삭제 완료: memberId={}, token={}", member.getMemberId(), fcmToken);
+                });
     }
 }
 
