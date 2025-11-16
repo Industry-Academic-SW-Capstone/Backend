@@ -41,7 +41,7 @@ public class StockRankingService {
                 .uri(uriBuilder -> uriBuilder
                         .path("/uapi/domestic-stock/v1/quotations/volume-rank")
                         .queryParam("FID_COND_MRKT_DIV_CODE", "J")
-                        .queryParam("FID_COND_SCR_DIV_CODE", "20171")
+                        .queryParam("FID_COND_SCR_DIV_CODE", "20170")
                         .queryParam("FID_INPUT_ISCD", "0000")
                         .queryParam("FID_DIV_CLS_CODE", "0")
                         .queryParam("FID_BLNG_CLS_CODE", "3") // 거래금액순 (0:평균거래량, 1:거래증가율, 2:평균거래회전율, 3:거래금액순, 4:평균거래금액회전율)
@@ -71,12 +71,50 @@ public class StockRankingService {
                 .map(allStocks -> filterStocksInDatabase(allStocks, limit));
     }
 
-    /**
-     * 업종별 인기 종목 조회 (거래대금 기준) - 각 업종별 최대 5개까지 반환
-     * 거래대금 상위 종목에서 실제로 나타나는 업종을 동적으로 감지하여 반환
-     * @param totalLimit 전체 조회할 종목 수 (한투 API 최대 30개 제한)
-     * @return 업종별 인기 종목 리스트 (각 업종 최대 5개)
-     */
+    // 급등/급락 순위 조회 (비동기)
+    public Mono<List<StockRankingDto>> getFluctuationTopStocks(boolean rise) {
+        String accessToken = kisTokenManager.getAccessToken();
+        String trId = "FHPST01700000"; // 등락 순위 조회 TR ID
+
+        return webClient.get()
+                .uri(uriBuilder -> uriBuilder
+                        .path("/uapi/domestic-stock/v1/ranking/fluctuation")
+                        // 문서 기준 소문자 파라미터 & 기본값 매핑
+                        .queryParam("fid_cond_mrkt_div_code", "J")
+                        .queryParam("fid_cond_scr_div_code", "20170")
+                        .queryParam("fid_input_iscd", "0000")
+                        .queryParam("fid_rank_sort_cls_code", rise ? "0" : "1") // 0:상승율순, 1:하락율순
+                        .queryParam("fid_prc_cls_code", "1") // 종가대비
+                        .queryParam("fid_input_cnt_1", "0") // 0:전체
+                        .queryParam("fid_input_price_1", "")
+                        .queryParam("fid_input_price_2", "")
+                        .queryParam("fid_vol_cnt", "")
+                        .queryParam("fid_trgt_cls_code", "0") // 0:전체
+                        .queryParam("fid_trgt_exls_cls_code", "0") // 0:전체
+                        .queryParam("fid_div_cls_code", "0") // 0:전체
+                        .queryParam("fid_rsfl_rate1", "")
+                        .queryParam("fid_rsfl_rate2", "")
+                        .build())
+                .header("content-type", "application/json; charset=utf-8")
+                .header("authorization", "Bearer " + accessToken)
+                .header("appkey", kisApiProperties.appkey())
+                .header("appsecret", kisApiProperties.appsecret())
+                .header("tr_id", trId)
+                .header("custtype", "P")
+                .retrieve()
+                .bodyToMono(KisRankingResponseDto.class)
+                .map(response -> parseFluctuationRankingResponse(response, 30))
+                .doOnError(e -> log.error("급{} 순위 조회 중 오류 발생", rise ? "등" : "락", e))
+                .onErrorResume(e -> Mono.error(new RuntimeException("급" + (rise ? "등" : "락") + " 순위 조회 실패", e)));
+    }
+
+    // 등락 순위 조회 - DB 필터링 포함
+    public Mono<List<StockRankingDto>> getFluctuationTopStocksFiltered(int limit, boolean rise) {
+        return getFluctuationTopStocks(rise)
+                .map(allStocks -> filterStocksInDatabase(allStocks, 30));
+    }
+
+    // 업종별 인기 종목 조회 
     public Mono<List<IndustryStockRankingDto>> getPopularStocksByIndustry(int totalLimit) {
         
         log.info("업종별 인기 종목 조회 시작 - 전체: {}개, 업종별 최대 5개 (동적 감지)", totalLimit);
@@ -206,9 +244,7 @@ public class StockRankingService {
                 .toList();
     }
 
-    /**
-     * 거래대금 순위 응답 파싱 (DTO 사용)
-     */
+    // 거래대금 순위 응답 파싱 
     private List<StockRankingDto> parseAmountRankingResponse(KisRankingResponseDto response, int limit) {
         try {
             log.info("API 응답 코드: {}, 메시지: {}", response.rtCd(), response.msg1());
@@ -230,9 +266,42 @@ public class StockRankingService {
         }
     }
 
-    /**
-     * output 데이터를 KisStockDataDto 리스트로 변환
-     */
+    // 등락 순위 응답 파싱 (등락 전용: stck_shrn_iscd 강제 사용)
+    private List<StockRankingDto> parseFluctuationRankingResponse(KisRankingResponseDto response, int limit) {
+        try {
+            log.info("API 응답 코드: {}, 메시지: {}", response.rtCd(), response.msg1());
+            List<Map<String, Object>> dataList = extractOutputMapList(response.output());
+            log.info("파싱된 데이터 개수(등락): {}", dataList.size());
+
+            return dataList.stream()
+                    .limit(limit)
+                    .map(this::mapToKisStockDataDtoFluctuation)
+                    .map(this::mapKisDataToStockRankingDto)
+                    .toList();
+        } catch (Exception e) {
+            log.error("등락 순위 응답 파싱 중 오류 발생", e);
+            log.error("응답 내용: {}", response);
+            throw new RuntimeException("응답 파싱 실패(등락)", e);
+        }
+    }
+
+    // output을 List<Map<String, Object>>로 추출 (등락 전용 파서에서 사용)
+    @SuppressWarnings("unchecked")
+    private List<Map<String, Object>> extractOutputMapList(Object output) {
+        if (output instanceof List) {
+            return (List<Map<String, Object>>) output;
+        } else if (output instanceof Map) {
+            Map<String, Object> outputMap = (Map<String, Object>) output;
+            Object data = outputMap.get("data");
+            if (data instanceof List) {
+                return (List<Map<String, Object>>) data;
+            }
+        }
+        log.warn("예상하지 못한 output 구조(등락): {}", output);
+        return List.of();
+    }
+
+    // output 데이터를 KisStockDataDto 리스트로 변환 
     @SuppressWarnings("unchecked")
     private List<KisStockDataDto> parseOutputData(Object output) {
         if (output instanceof List) {
@@ -258,12 +327,17 @@ public class StockRankingService {
         return List.of();
     }
 
-    /**
-     * Map을 KisStockDataDto로 변환
-     */
+    // Map을 KisStockDataDto로 변환 
     private KisStockDataDto mapToKisStockDataDto(Map<String, Object> data) {
+        // 종목코드: 등락 API는 stck_shrn_iscd, 거래대금/거래량 랭킹은 mksc_shrn_iscd를 사용
+        String stockCode = (String) (data.get("mksc_shrn_iscd") != null
+                ? data.get("mksc_shrn_iscd")
+                : data.get("stck_shrn_iscd"));
+        // 거래대금: 등락 API에는 acml_tr_pbmn이 없을 수 있으므로 기본값 "0"
+        String amount = (String) (data.getOrDefault("acml_tr_pbmn", "0"));
+
         return new KisStockDataDto(
-                (String) data.get("mksc_shrn_iscd"),
+                stockCode,
                 (String) data.get("hts_kor_isnm"),
                 (String) data.get("data_rank"),
                 (String) data.get("stck_prpr"),
@@ -271,14 +345,29 @@ public class StockRankingService {
                 (String) data.get("prdy_vrss"),
                 (String) data.get("prdy_ctrt"),
                 (String) data.get("acml_vol"),
-                (String) data.get("acml_tr_pbmn")
+                amount
         );
     }
 
-    /**
-     * KisStockDataDto를 StockRankingDto로 변환 (임시 marketType 사용)
-     * 실제 marketType은 DB에서 조회한 뒤 다시 설정됨
-     */
+    // Map을 KisStockDataDto로 변환 (등락 전용: stck_shrn_iscd 강제 사용)
+    private KisStockDataDto mapToKisStockDataDtoFluctuation(Map<String, Object> data) {
+        String stockCode = (String) data.get("stck_shrn_iscd"); // 등락은 무조건 stck_shrn_iscd
+        String amount = (String) (data.getOrDefault("acml_tr_pbmn", "0")); // 등락 응답엔 보통 없음
+
+        return new KisStockDataDto(
+                stockCode,
+                (String) data.get("hts_kor_isnm"),
+                (String) data.get("data_rank"),
+                (String) data.get("stck_prpr"),
+                (String) data.get("prdy_vrss_sign"),
+                (String) data.get("prdy_vrss"),
+                (String) data.get("prdy_ctrt"),
+                (String) data.get("acml_vol"),
+                amount
+        );
+    }
+
+    // KisStockDataDto를 StockRankingDto로 변환 
     private StockRankingDto mapKisDataToStockRankingDto(KisStockDataDto kisData) {
         return new StockRankingDto(
                 kisData.stockCode(),
@@ -296,9 +385,7 @@ public class StockRankingService {
     }
 
 
-    /**
-     * Object를 Long으로 안전하게 변환
-     */
+    // Object를 Long으로 안전하게 변환 
     private Long parseLongValue(Object value) {
         if (value == null) return 0L;
         if (value instanceof Number) return ((Number) value).longValue();
@@ -312,9 +399,7 @@ public class StockRankingService {
         return 0L;
     }
 
-    /**
-     * String을 Integer로 안전하게 변환
-     */
+    // String을 Integer로 안전하게 변환 
     private Integer parseIntValue(String value) {
         if (value == null || value.trim().isEmpty()) return 0;
         try {
