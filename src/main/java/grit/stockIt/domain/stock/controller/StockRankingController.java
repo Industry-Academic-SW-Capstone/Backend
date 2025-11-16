@@ -39,18 +39,16 @@ public class StockRankingController {
     }
 
     // 급등/급락 순위 조회
-    @Operation(summary = "등락 순위 조회",description = "type 파라미터로 급등(rise)/급락(fall)을 지정하여 상위 30개 종목을 조회합니다.")
+    @Operation(summary = "등락 순위 조회", description = "type 파라미터로 급등(rise)/급락(fall)을 지정하여 상위 30개 종목을 조회합니다.")
     @GetMapping("/fluctuations")
     public Mono<List<StockRankingDto>> getFluctuationTopStocks(@RequestParam(name = "type", defaultValue = "rise") String type) {
-        String normalized = type == null ? "rise" : type.trim().toLowerCase();
-        boolean isRise;
-        if ("rise".equals(normalized)) {
-            isRise = true;
-        } else if ("fall".equals(normalized)) {
-            isRise = false;
-        } else {
+        String normalized = type.trim().toLowerCase();
+
+        if (!"rise".equals(normalized) && !"fall".equals(normalized)) {
             return Mono.error(new IllegalArgumentException("type 파라미터는 rise 또는 fall 이어야 합니다."));
         }
+
+        boolean isRise = "rise".equals(normalized);
 
         log.info("등락 순위 조회 요청 - type: {}", normalized);
 

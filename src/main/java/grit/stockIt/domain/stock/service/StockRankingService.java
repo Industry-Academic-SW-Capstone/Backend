@@ -111,7 +111,7 @@ public class StockRankingService {
     // 등락 순위 조회 - DB 필터링 포함
     public Mono<List<StockRankingDto>> getFluctuationTopStocksFiltered(int limit, boolean rise) {
         return getFluctuationTopStocks(rise)
-                .map(allStocks -> filterStocksInDatabase(allStocks, 30));
+                .map(allStocks -> filterStocksInDatabase(allStocks, limit));
     }
 
     // 업종별 인기 종목 조회 
