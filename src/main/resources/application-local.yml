@@ -22,3 +22,7 @@ spring:
         highlight_sql: true
         format_sql: true
         dialect: org.hibernate.dialect.PostgreSQLDialect
+    defer-datasource-initialization: true # 이 설정 추가
+  sql:
+    init:
+      mode: never # DB 초기화 스크립트(data.sql)를 '항상' 실행

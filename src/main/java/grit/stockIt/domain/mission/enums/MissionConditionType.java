@@ -1,28 +1,35 @@
 package grit.stockIt.domain.mission.enums;
 
-/**
- * 미션 완료 조건 타입
- * (이벤트 리스너가 이 타입을 보고 미션을 갱신할지 판단합니다)
- */
 public enum MissionConditionType {
+    // 1. 기존 거래/로그인 조건 (이 값들도 있어야 합니다)
+    LOGIN_COUNT,                // (101: 출석체크하기)
+    TRADE_COUNT,                // (102, 201, 202: 당일 매수/매도)
+    BUY_COUNT,
+    SELL_COUNT,
+    BUY_AMOUNT,
+    SELL_AMOUNT,
+    PROFIT_RATE,
+    PROFIT_AMOUNT,
+    TOTAL_ASSET,
 
-    // --- 거래(TradeEvent) 관련 ---
-    BUY_COUNT,          // 매수 횟수 (종목 무관)
-    SELL_COUNT,         // 매도 횟수 (종목 무관)
-    TRADE_COUNT,        // 총 거래 횟수 (매수 + 매도)
-    BUY_AMOUNT,         // 총 매수 금액
-    SELL_AMOUNT,        // 총 매도 금액
-    PROFIT_RATE,        // 수익률 달성 (예: 10% 이상)
-    PROFIT_AMOUNT,      // 수익금 달성 (예: 10,000원 이상)
-    HOLDING_PERIOD,     // 주식 보유 기간 (예: 3일 이상 보유 후 매도)
+    // --- ⬇️ [필수] data.sql에 맞게 이 값들 추가 ⬇️ ---
 
-    // --- 계좌(Account) 관련 ---
-    TOTAL_ASSET,        // 총 자산 달성 (예: 2,000,000원)
+    // 2. 교양 미션용
+    VIEW_REPORT,                // (103: 종목 리포트 3개 확인)
+    ANALYZE_PORTFOLIO,          // (104: 포트폴리오 1회 분석)
 
-    // --- 접속/기타 (LoginEvent 등 별도 이벤트 필요) ---
-    LOGIN_COUNT,        // 접속 횟수 (출석 체크용)
+    // 3. 트랙 미션용
+    HOLDING_DAYS,               // (301, 302, 401, 402: 보유 종목 홀딩)
 
-    // --- 미션 완료(MissionCompletionEvent) 관련 (하드코딩 방식에서는 불필요할 수 있음) ---
-    // COMPLETE_DAILY_MISSION_COUNT, // 일일 미션 완료 횟수 (출석 7일 달성용)
-    // COMPLETE_TRACK_COUNT        // 특정 트랙 완료 횟수
+    // 4. 업적 미션용
+    COMPLETE_ALL_TRACKS,        // (901: 모든 성향별 미션 완료)
+    FIRST_PROFIT,               // (902: 최초 수익 실현)
+    PROFIT_RATE_ON_STOCK_TYPE,  // (903: "잡주"로 수익률 100%)
+    DAILY_TRADE_COUNT,          // (904: 하루 50회 거래)
+    HOLD_FOR_DAYS_AND_SELL_PROFIT, // (905: 30일 보유 후 수익 실현)
+    PROFIT_RATE_100,            // (906: 수익률 100% 달성)
+    HOLD_SECTOR_STOCKS,         // (907: 금융 섹터 5종목 보유)
+    LOGIN_STREAK,               // (908: 30일 연속 출석)
+    RANKING_TOP_10,             // (909: 랭킹 Top 10)
+    IPO_PROFIT_RATE_100;        // (910: 신규 상장주 수익률 100%)
 }

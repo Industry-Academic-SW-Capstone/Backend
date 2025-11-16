@@ -192,22 +192,28 @@ public class LimitOrderMatchingService {
             }
 
             try {
-                order.applyFill(actualFillQuantity);
-                Execution execution = executionService.record(order, fillPrice, actualFillQuantity); // 체결 저장
-                executions.add(execution);
-                handleAccountOnFill(order, fillPrice, actualFillQuantity);
+                order.applyFill(command.fillQuantity());
+                executions.add(executionService.record(order, event.price(), command.fillQuantity()));
+                handleAccountOnFill(order, event.price(), command.fillQuantity());
                 updatedOrders.add(order);
-                
-                // 체결 완료 이벤트 발행 (Event-Driven 아키텍처)
-                publishExecutionFilledEvent(execution, order, stockCode);
-                if (order.getOrderMethod() == OrderMethod.BUY && actualFillQuantity < desiredFillQuantity) {
-                    int shortfall = desiredFillQuantity - actualFillQuantity;
-                    cancelledQuantity += shortfall;
-                    cancelDueToInsufficientFunds(order, stockCode);
-                    continue;
-                }
                 if (order.getRemainingQuantity() <= 0) {
                     finalizeFilledOrder(order);
+
+                    try {
+                        TradeCompletionEvent missionEvent = new TradeCompletionEvent(
+                                order.getAccount().getMember().getMemberId(), // Member ID
+                                order.getAccount().getAccountId(),            // Account ID
+                                order.getStock().getCode(),                 // Stock Code
+                                order.getOrderMethod(),                     // BUY or SELL
+                                order.getQuantity(),                        // [수정] '주문의 총 수량'
+                                event.price()                               // 마지막 체결 가격
+                        );
+                        eventPublisher.publishEvent(missionEvent);
+                        log.info("미션 시스템 이벤트 발행 (주문 완료 기준): MemberId={}", missionEvent.getMemberId());
+
+                    } catch (Exception e) {
+                        log.error("미션 이벤트 발행 실패: orderId={}", order.getOrderId(), e);
+                    }
                 }
             } catch (IllegalArgumentException ex) {
                 log.error("주문 체결 처리 중 오류 발생. orderId={} fillQuantity={}", orderId, command.fillQuantity(), ex);
@@ -255,11 +261,14 @@ public class LimitOrderMatchingService {
         if (order.getOrderMethod() == OrderMethod.BUY) {
             order.getAccount().decreaseCash(fillAmount);
             orderHoldRepository.findById(order.getOrderId())
-                    .ifPresentOrElse(hold -> {
-                        order.getAccount().decreaseHoldAmount(fillAmount);
-                        hold.decreaseHoldAmount(fillAmount);
-                        orderHoldRepository.save(hold);
-                    }, () -> log.warn("OrderHold를 찾을 수 없습니다. orderId={}", order.getOrderId()));
+                    .ifPresentOrElse(
+                            hold -> {
+                                order.getAccount().decreaseHoldAmount(fillAmount);
+                                hold.decreaseHoldAmount(fillAmount);
+                                orderHoldRepository.save(hold);
+                            },
+                            () -> log.warn("OrderHold를 찾을 수 없습니다. orderId={}", order.getOrderId())
+                    );
             updateAccountStockOnBuy(order, fillQuantity, price);
             return;
         }
@@ -430,7 +439,7 @@ public class LimitOrderMatchingService {
                     execution.getQuantity(),
                     execution.getOrderMethod().name()  // BUY, SELL
             );
-            
+
             // 체결 완료 이벤트 발행
             eventPublisher.publishEvent(event);
             log.debug("체결 완료 이벤트 발행: executionId={}, memberId={}", execution.getExecutionId(), event.memberId());

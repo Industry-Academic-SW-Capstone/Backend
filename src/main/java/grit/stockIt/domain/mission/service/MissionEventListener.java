@@ -1,7 +1,6 @@
 package grit.stockIt.domain.mission.service;
 
 import grit.stockIt.domain.order.event.TradeCompletionEvent;
-import grit.stockIt.domain.stock.event.TradeEvent; // 1. TradeEvent 임포트
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;

@@ -3,6 +3,7 @@ package grit.stockIt.domain.mission.repository;
 import grit.stockIt.domain.member.entity.Member;
 import grit.stockIt.domain.mission.entity.Mission;
 import grit.stockIt.domain.mission.entity.MissionProgress;
+import grit.stockIt.domain.mission.enums.MissionConditionType;
 import grit.stockIt.domain.mission.enums.MissionStatus;
 import grit.stockIt.domain.mission.enums.MissionTrack;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -16,6 +17,7 @@ import java.util.Optional;
 public interface MissionProgressRepository extends JpaRepository<MissionProgress, Long> {
 
     /**
+     *
      * 특정 회원의 특정 미션 진행도를 조회합니다. (FindOrCreate 로직의 핵심)
      */
     Optional<MissionProgress> findByMemberAndMission(Member member, Mission mission);
@@ -46,4 +48,30 @@ public interface MissionProgressRepository extends JpaRepository<MissionProgress
             "LEFT JOIN FETCH m.reward r " + // 보상은 없을 수도 있으므로 LEFT JOIN
             "WHERE mp.member = :member")
     List<MissionProgress> findByMemberWithMissionAndReward(@Param("member") Member member);
+
+    /**
+     * [신규] N+1 문제 해결 (findDailyAttendanceMission 전용)
+     * 특정 회원의 특정 미션(Track, Type)을 Mission 엔티티와 함께 조회합니다.
+     * 상태(status)와 관계없이 조회합니다.
+     */
+    @Query("SELECT mp FROM MissionProgress mp JOIN FETCH mp.mission m " +
+            "WHERE mp.member = :member " +
+            "AND m.track = :track " +
+            "AND m.conditionType = :conditionType")
+    Optional<MissionProgress> findByMemberAndMissionTypeWithMission(
+            @Param("member") Member member,
+            @Param("track") MissionTrack track,
+            @Param("conditionType") MissionConditionType conditionType
+    );
+
+    /**
+     * [신규] N+1 문제 해결 (updateMissionProgress 전용)
+     * Mission 엔티티를 함께 Fetch Join 합니다.
+     */
+    @Query("SELECT mp FROM MissionProgress mp JOIN FETCH mp.mission " +
+            "WHERE mp.member = :member AND mp.status = :status")
+    List<MissionProgress> findByMemberAndStatusWithMission(
+            @Param("member") Member member,
+            @Param("status") MissionStatus status
+    );
 }
