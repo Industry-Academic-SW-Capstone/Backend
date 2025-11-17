@@ -113,6 +113,16 @@ public class LocalMemberService {
         memberRepository.save(member);
     }
 
+    /**
+     * 이메일이 이미 존재하는지 확인 (회원가입 전 중복 체크 등)
+     * @param email 확인할 이메일
+     * @return 존재하면 true
+     */
+    @Transactional(readOnly = true)
+    public boolean existsByEmail(String email) {
+        return memberRepository.existsByEmail(email);
+    }
+
     // 체결 알림 설정 변경
     @Transactional
     public void updateExecutionNotificationSettings(String email, boolean enabled) {
