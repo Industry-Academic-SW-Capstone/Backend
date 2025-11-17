@@ -82,6 +82,9 @@ dependencies {
 	// Caffeine 캐시
 	implementation 'com.github.ben-manes.caffeine:caffeine:3.1.8'
 
+	// Firebase Admin SDK for FCM
+	implementation 'com.google.firebase:firebase-admin:9.3.0'
+
 }
 
 tasks.named('test') {
