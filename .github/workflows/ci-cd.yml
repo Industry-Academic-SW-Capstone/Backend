@@ -120,9 +120,23 @@ jobs:
 
       - name: Install gke-gcloud-auth-plugin
         run: |
-          gcloud components install gke-gcloud-auth-plugin --quiet
+          # 플러그인 다운로드 및 설치
+          ARCH=$(uname -m | sed 's/x86_64/amd64/')
+          OS=$(uname -s | tr '[:upper:]' '[:lower:]')
+
+          # 최신 버전 플러그인 다운로드 (v1.0.0 이상)
+          curl -LO "https://storage.googleapis.com/gke-gcloud-auth-plugin/releases/v1.0.0/gke-gcloud-auth-plugin-${OS}-${ARCH}" || \
+          curl -LO "https://storage.googleapis.com/gke-gcloud-auth-plugin/releases/latest/gke-gcloud-auth-plugin-${OS}-${ARCH}"
+
+          chmod +x gke-gcloud-auth-plugin-${OS}-${ARCH}
+          sudo mv gke-gcloud-auth-plugin-${OS}-${ARCH} /usr/local/bin/gke-gcloud-auth-plugin
+
+          # 설치 확인
+          gke-gcloud-auth-plugin --version || echo "Plugin installed"
 
       - name: Configure kubectl
+        env:
+          USE_GKE_GCLOUD_AUTH_PLUGIN: True
         run: |
           gcloud container clusters get-credentials ${{ env.GCP_GKE_CLUSTER }} \
             --zone ${{ env.GCP_GKE_ZONE }} \
