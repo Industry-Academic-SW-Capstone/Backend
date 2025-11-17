@@ -1,0 +1,13 @@
+apiVersion: networking.gke.io/v1
+kind: ManagedCertificate
+metadata:
+  name: grafana-cert
+  namespace: monitoring
+spec:
+  domains:
+    - grafana.stockit.live
+
+
+
+
+
