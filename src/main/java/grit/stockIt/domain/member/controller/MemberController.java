@@ -14,6 +14,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;  // 추가
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.validation.FieldError;
@@ -40,6 +41,13 @@ public class MemberController {
     public ResponseEntity<JwtToken> login(@Valid @RequestBody MemberLoginRequest request) {
         JwtToken token = memberService.login(request);
         return ResponseEntity.ok(token);
+    }
+
+    @Operation(summary = "이메일 존재 여부 확인", description = "주어진 이메일이 회원으로 등록되어 있는지 확인합니다.")
+    @GetMapping("/exists")
+    public ResponseEntity<java.util.Map<String, Boolean>> existsByEmail(@RequestParam("email") String email) {
+        boolean exists = memberService.existsByEmail(email);
+        return ResponseEntity.ok(java.util.Collections.singletonMap("exists", exists));
     }
 
     @Operation(summary = "로그아웃", description = "현재 로그인한 사용자를 로그아웃합니다.")
