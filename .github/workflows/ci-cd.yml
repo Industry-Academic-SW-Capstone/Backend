@@ -117,22 +117,8 @@ jobs:
 
       - name: Set up Cloud SDK
         uses: google-github-actions/setup-gcloud@v2
-
-      - name: Install gke-gcloud-auth-plugin
-        run: |
-          # 플러그인 다운로드 및 설치
-          ARCH=$(uname -m | sed 's/x86_64/amd64/')
-          OS=$(uname -s | tr '[:upper:]' '[:lower:]')
-
-          # 최신 버전 플러그인 다운로드 (v1.0.0 이상)
-          curl -LO "https://storage.googleapis.com/gke-gcloud-auth-plugin/releases/v1.0.0/gke-gcloud-auth-plugin-${OS}-${ARCH}" || \
-          curl -LO "https://storage.googleapis.com/gke-gcloud-auth-plugin/releases/latest/gke-gcloud-auth-plugin-${OS}-${ARCH}"
-
-          chmod +x gke-gcloud-auth-plugin-${OS}-${ARCH}
-          sudo mv gke-gcloud-auth-plugin-${OS}-${ARCH} /usr/local/bin/gke-gcloud-auth-plugin
-
-          # 설치 확인
-          gke-gcloud-auth-plugin --version || echo "Plugin installed"
+        with:
+          install_components: "gke-gcloud-auth-plugin"
 
       - name: Configure kubectl
         env:
