@@ -146,11 +146,6 @@ jobs:
           echo "tag=${TAG:0:50}" >> $GITHUB_OUTPUT
           echo "Generated tag: ${TAG:0:50}"
 
-      - name: Update Helm values with new image tag
-        run: |
-          sed -i "s|tag: \".*\"|tag: \"${{ steps.image-tag.outputs.tag }}\"|g" stockit-backend-chart/values.yaml
-          echo "Updated image tag in values.yaml to: ${{ steps.image-tag.outputs.tag }}"
-
       - name: Deploy with Helm
         run: |
           helm upgrade --install ${{ env.HELM_RELEASE_NAME }} ./stockit-backend-chart \
