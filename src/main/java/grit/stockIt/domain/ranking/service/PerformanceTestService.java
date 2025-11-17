@@ -287,7 +287,7 @@ public class PerformanceTestService {
             RankingDto dto = RankingDto.builder()
                     .rank(rank++)
                     .memberId(account.getMember().getMemberId())
-                    .nickname(account.getMember().getNickname())
+                    .nickname(account.getMember().getName())
                     .balance(account.getCash())
                     .returnRate(returnRate)
                     .build();
@@ -306,7 +306,7 @@ public class PerformanceTestService {
             return BigDecimal.ZERO;
         }
 
-        BigDecimal seedMoney = contest.getSeedMoney();
+        BigDecimal seedMoney = BigDecimal.valueOf(contest.getSeedMoney());
         if (seedMoney.compareTo(BigDecimal.ZERO) == 0) {
             return BigDecimal.ZERO;
         }

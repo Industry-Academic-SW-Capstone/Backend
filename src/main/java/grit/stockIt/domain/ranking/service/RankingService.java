@@ -262,7 +262,7 @@ public class RankingService {
             RankingDto dto = RankingDto.builder()
                     .rank(rank++)
                     .memberId(account.getMember().getMemberId())
-                    .nickname(account.getMember().getNickname())
+                    .nickname(account.getMember().getName())
                     .balance(account.getCash())
                     .returnRate(returnRate)
                     .build();
@@ -287,7 +287,7 @@ public class RankingService {
             return BigDecimal.ZERO;
         }
 
-        BigDecimal seedMoney = contest.getSeedMoney();
+        BigDecimal seedMoney = BigDecimal.valueOf(contest.getSeedMoney());
         if (seedMoney.compareTo(BigDecimal.ZERO) == 0) {
             return BigDecimal.ZERO; // 0으로 나누기 방지
         }
