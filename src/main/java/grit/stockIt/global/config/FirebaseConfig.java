@@ -5,6 +5,7 @@ import com.google.firebase.FirebaseApp;
 import com.google.firebase.FirebaseOptions;
 import com.google.firebase.messaging.FirebaseMessaging;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.util.StringUtils;
@@ -16,9 +17,11 @@ import java.util.Base64;
 /**
  * Firebase Admin SDK 초기화 설정
  * Base64로 인코딩된 서비스 계정 키를 사용하여 Firebase Admin SDK를 초기화
+ * firebase.credentials-base64가 설정된 경우에만 활성화됨
  */
 @Slf4j
 @Configuration
+@ConditionalOnProperty(name = "firebase.credentials-base64")
 public class FirebaseConfig {
 
     private final FirebaseProperties firebaseProperties;

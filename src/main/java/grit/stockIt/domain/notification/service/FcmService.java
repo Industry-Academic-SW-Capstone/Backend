@@ -7,13 +7,16 @@ import com.google.firebase.messaging.Message;
 import com.google.firebase.messaging.Notification;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.stereotype.Service;
 
 import java.util.Map;
 
 // Firebase Cloud Messaging을 사용하여 모바일 클라이언트에게 푸시 알림을 전송
+// FirebaseMessaging Bean이 있을 때만 활성화됨
 @Slf4j
 @Service
+@ConditionalOnBean(FirebaseMessaging.class)
 @RequiredArgsConstructor
 public class FcmService {
 

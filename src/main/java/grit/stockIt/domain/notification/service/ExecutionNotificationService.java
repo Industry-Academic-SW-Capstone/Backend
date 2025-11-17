@@ -5,6 +5,7 @@ import grit.stockIt.domain.member.repository.MemberRepository;
 import grit.stockIt.domain.notification.event.ExecutionFilledEvent;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.context.event.EventListener;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
@@ -16,6 +17,7 @@ import java.util.Map;
 
 @Slf4j
 @Service
+@ConditionalOnBean(FcmService.class)
 @RequiredArgsConstructor
 public class ExecutionNotificationService {
 
