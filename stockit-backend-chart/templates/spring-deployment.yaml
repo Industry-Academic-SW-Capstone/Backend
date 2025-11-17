@@ -68,6 +68,15 @@ spec:
                   name: stockit-secrets
                   {{- end }}
                   key: KIS_API_APPSECRET
+            - name: FIREBASE_CREDENTIALS_BASE64
+              valueFrom:
+                secretKeyRef:
+                  {{- with (lookup "v1" "Secret" "default" "stockit-secrets") }}
+                  name: {{ .metadata.name }}
+                  {{- else }}
+                  name: stockit-secrets
+                  {{- end }}
+                  key: FIREBASE_CREDENTIALS_BASE64
 
             # Spring Profile 설정 (values.yaml의 global.springProfile 참조)
             - name: SPRING_PROFILES_ACTIVE
