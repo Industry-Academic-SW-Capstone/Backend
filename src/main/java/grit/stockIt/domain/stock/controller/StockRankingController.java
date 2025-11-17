@@ -12,9 +12,7 @@ import reactor.core.publisher.Mono;
 
 import java.util.List;
 
-/**
- * 주식 순위 정보 조회 컨트롤러
- */
+// 주식 순위 정보 조회 컨트롤러 
 @Slf4j
 @RestController
 @RequestMapping("/api/stocks")
@@ -24,10 +22,7 @@ public class StockRankingController {
 
     private final StockRankingService stockRankingService;
 
-    /**
-     * 거래대금 상위 종목 조회
-     * @return 거래대금 상위 종목 리스트
-     */
+    // 거래대금 상위 종목 조회 
     @Operation(summary = "거래대금 상위 종목 조회", description = "거래대금 기준 상위 30개 종목을 조회합니다")
     @GetMapping("/amount")
     public Mono<List<StockRankingDto>> getAmountTopStocks() {
@@ -43,12 +38,32 @@ public class StockRankingController {
                 );
     }
 
-    /**
-     * 업종별 인기 종목 조회
-     * 거래대금 상위 30개에서 실제로 나타나는 업종을 동적으로 감지하여 반환
-     * 각 업종별 최대 5개까지 반환 (있는 만큼만)
-     * @return 업종별 인기 종목 리스트
-     */
+    // 급등/급락 순위 조회
+    @Operation(summary = "등락 순위 조회", description = "type 파라미터로 급등(rise)/급락(fall)을 지정하여 상위 30개 종목을 조회합니다.")
+    @GetMapping("/fluctuations")
+    public Mono<List<StockRankingDto>> getFluctuationTopStocks(@RequestParam(name = "type", defaultValue = "rise") String type) {
+        String normalized = type.trim().toLowerCase();
+
+        if (!"rise".equals(normalized) && !"fall".equals(normalized)) {
+            return Mono.error(new IllegalArgumentException("type 파라미터는 rise 또는 fall 이어야 합니다."));
+        }
+
+        boolean isRise = "rise".equals(normalized);
+
+        log.info("등락 순위 조회 요청 - type: {}", normalized);
+
+        Mono<List<StockRankingDto>> result = stockRankingService.getFluctuationTopStocksFiltered(30, isRise);
+
+        return result
+                .doOnSuccess(stocks ->
+                        log.info("등락 순위 조회 완료 - type: {}, 반환: {}개", normalized, stocks.size())
+                )
+                .doOnError(error ->
+                        log.error("등락 순위 조회 중 오류 발생 - type: {}", normalized, error)
+                );
+    }
+
+    // 업종별 인기 종목 조회 
     @Operation(summary = "업종별 인기 종목 조회", description = "거래대금 상위 종목을 업종별로 그룹화하여 각 업종 최대 5개 종목을 반환합니다")
     @GetMapping("/industries")
     public Mono<List<IndustryStockRankingDto>> getPopularStocksByIndustry() {

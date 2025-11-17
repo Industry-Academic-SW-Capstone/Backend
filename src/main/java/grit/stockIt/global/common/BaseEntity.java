@@ -36,4 +36,8 @@ public abstract class BaseEntity { // 추상클래스로 함
     public void softDelete() {
         this.deletedAt = LocalDateTime.now();
     }
+
+    public void restore() {
+        this.deletedAt = null;
+    }
 }
