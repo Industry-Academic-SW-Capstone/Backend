@@ -17,6 +17,7 @@ import grit.stockIt.domain.order.repository.OrderHoldRepository;
 import grit.stockIt.domain.order.repository.OrderRepository;
 import grit.stockIt.domain.stock.entity.Stock;
 import grit.stockIt.domain.stock.repository.StockRepository;
+import grit.stockIt.domain.stock.service.StockDetailService;
 import grit.stockIt.global.exception.BadRequestException;
 import grit.stockIt.global.exception.ForbiddenException;
 import grit.stockIt.global.websocket.manager.OrderSubscriptionCoordinator;
@@ -45,6 +46,7 @@ public class OrderService {
     private final OrderHoldRepository orderHoldRepository;
     private final AccountStockRepository accountStockRepository;
     private final RedisMarketDataRepository redisMarketDataRepository;
+    private final StockDetailService stockDetailService;
 
     @Value("${order.market.hold-buffer-rate:0.05}")
     private BigDecimal marketHoldBufferRate;
@@ -190,8 +192,25 @@ public class OrderService {
 
     // 시장가 주문 홀딩 금액 계산
     private BigDecimal calculateMarketHoldAmount(String stockCode, int quantity) {
+        // 1. Redis 캐시에서 먼저 조회
         BigDecimal lastPrice = redisMarketDataRepository.getLastPrice(stockCode)
-                .orElseThrow(() -> new BadRequestException("최근 체결가 정보를 찾을 수 없습니다."));
+                .orElseGet(() -> {
+                    // 2. 캐시에 없으면 KIS API 호출
+                    log.info("캐시에 현재가가 없어 KIS API 호출: stockCode={}", stockCode);
+                    try {
+                        BigDecimal price = stockDetailService.getCurrentPrice(stockCode)
+                                .block(java.time.Duration.ofSeconds(5));
+                        if (price == null || price.signum() <= 0) {
+                            throw new BadRequestException("KIS API에서 현재가를 가져올 수 없습니다.");
+                        }
+                        // KIS API 결과는 StockDetailService에서 이미 Redis에 저장됨
+                        return price;
+                    } catch (Exception e) {
+                        log.error("KIS API 현재가 조회 실패: stockCode={}", stockCode, e);
+                        throw new BadRequestException("최근 체결가 정보를 찾을 수 없습니다.");
+                    }
+                });
+        
         if (lastPrice.signum() <= 0) {
             throw new BadRequestException("최근 체결가가 유효하지 않습니다.");
         }
