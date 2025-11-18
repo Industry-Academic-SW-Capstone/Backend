@@ -15,6 +15,7 @@ import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Mono;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+import java.math.BigDecimal;
 import java.util.Map;
 import java.util.Optional;
 
@@ -32,11 +33,7 @@ public class StockDetailService {
     private final StockRepository stockRepository;
     private final ObjectMapper objectMapper;
 
-    /**
-     * 주식 상세 정보 조회 (KIS API + DB 정보 통합)
-     * @param stockCode 종목코드 (6자리)
-     * @return 주식 상세 정보
-     */
+    // 주식 상세 정보 조회
     public Mono<StockDetailDto> getStockDetail(String stockCode) {
         log.info("주식 상세 정보 조회 요청: {}", stockCode);
         
@@ -63,9 +60,25 @@ public class StockDetailService {
                 .onErrorResume(e -> Mono.error(new RuntimeException("주식 상세 정보 조회 실패: " + stockCode, e)));
     }
 
-    /**
-     * KIS API에서 주식 현재가 시세 조회
-     */
+    // KIS API에서 현재가만 조회
+    public Mono<BigDecimal> getCurrentPrice(String stockCode) {
+        return getStockPriceFromKis(stockCode)
+                .map(kisDetail -> {
+                    String priceStr = kisDetail.currentPrice();
+                    if (priceStr == null || priceStr.trim().isEmpty()) {
+                        throw new RuntimeException("KIS API에서 현재가를 가져올 수 없습니다: " + stockCode);
+                    }
+                    try {
+                        return new BigDecimal(priceStr.trim());
+                    } catch (NumberFormatException e) {
+                        log.error("현재가 파싱 실패: stockCode={}, price={}", stockCode, priceStr, e);
+                        throw new RuntimeException("현재가 파싱 실패: " + stockCode, e);
+                    }
+                })
+                .doOnError(e -> log.error("현재가 조회 실패: stockCode={}", stockCode, e));
+    }
+
+    // KIS API에서 주식 현재가 시세 조회
     private Mono<KisStockDetailDto> getStockPriceFromKis(String stockCode) {
         String accessToken = kisTokenManager.getAccessToken();
         
@@ -100,9 +113,7 @@ public class StockDetailService {
                 .doOnError(e -> log.error("KIS API 주식현재가 시세 조회 중 오류 발생", e));
     }
 
-    /**
-     * KIS API 응답과 DB 정보를 통합하여 StockDetailDto로 변환
-     */
+    // KIS API 응답과 DB 정보를 통합하여 StockDetailDto로 변환
     private StockDetailDto mapToStockDetailDto(
             String stockCode,
             Stock stock,
@@ -129,9 +140,7 @@ public class StockDetailService {
         );
     }
 
-    /**
-     * String을 Integer로 안전하게 변환
-     */
+    // String을 Integer로 안전하게 변환
     private Integer parseIntValue(String value) {
         if (value == null || value.trim().isEmpty()) return 0;
         try {
@@ -142,9 +151,7 @@ public class StockDetailService {
         }
     }
 
-    /**
-     * String을 Long으로 안전하게 변환
-     */
+    // String을 Long으로 안전하게 변환
     private Long parseLongValue(String value) {
         if (value == null || value.trim().isEmpty()) return 0L;
         try {
@@ -155,9 +162,7 @@ public class StockDetailService {
         }
     }
 
-    /**
-     * String을 Double로 안전하게 변환
-     */
+    // String을 Double로 안전하게 변환
     private Double parseDoubleValue(String value) {
         if (value == null || value.trim().isEmpty()) return 0.0;
         try {
@@ -168,9 +173,7 @@ public class StockDetailService {
         }
     }
 
-    /**
-     * output 데이터를 KisStockDetailDto로 변환
-     */
+    // output 데이터를 KisStockDetailDto로 변환
     @SuppressWarnings("unchecked")
     private KisStockDetailDto parseOutputData(Object output) {
         try {
