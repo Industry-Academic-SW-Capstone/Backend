@@ -146,6 +146,28 @@ jobs:
           echo "tag=${TAG:0:50}" >> $GITHUB_OUTPUT
           echo "Generated tag: ${TAG:0:50}"
 
+      - name: Clean up old pods before deployment
+        run: |
+          echo "🧹 배포 전 이전 Pod 정리 중..." && \
+          ALL_PODS=$(kubectl get pods -n ${{ env.HELM_NAMESPACE }} -l app.kubernetes.io/component=spring-backend --sort-by=.metadata.creationTimestamp -o jsonpath='{.items[*].metadata.name}' 2>/dev/null || echo "") && \
+          if [ -n "$ALL_PODS" ]; then
+            POD_COUNT=$(echo "$ALL_PODS" | wc -w) && \
+            if [ "$POD_COUNT" -gt 1 ]; then
+              echo "이전 Pod 발견: $POD_COUNT개" && \
+              OLD_PODS=$(echo "$ALL_PODS" | awk '{for(i=1;i<NF;i++) printf "%s ", $i}') && \
+              echo "이전 Pod 삭제: $OLD_PODS" && \
+              for pod in $OLD_PODS; do
+                kubectl delete pod "$pod" -n ${{ env.HELM_NAMESPACE }} --grace-period=0 --force 2>/dev/null || true
+              done && \
+              echo "⏳ 이전 Pod 삭제 후 5초 대기..." && \
+              sleep 5
+            else
+              echo "정리할 이전 Pod 없음"
+            fi
+          else
+            echo "Pod 없음 (첫 배포)"
+          fi
+
       - name: Deploy with Helm
         run: |
           helm upgrade --install ${{ env.HELM_RELEASE_NAME }} ./stockit-backend-chart \
@@ -158,7 +180,7 @@ jobs:
           echo "⏳ Pod가 Ready 상태가 될 때까지 대기 중..." && \
           kubectl rollout status deployment/${{ env.HELM_RELEASE_NAME }}-stockit-backend-chart-spring-backend \
             --namespace ${{ env.HELM_NAMESPACE }} \
-            --timeout=15m
+            --timeout=10m
 
       - name: Check pod status
         run: |
