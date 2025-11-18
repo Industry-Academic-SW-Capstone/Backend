@@ -6,6 +6,7 @@ import io.swagger.v3.oas.models.info.Info;
 import io.swagger.v3.oas.models.info.License;
 import io.swagger.v3.oas.models.security.SecurityRequirement;
 import io.swagger.v3.oas.models.security.SecurityScheme;
+import io.swagger.v3.oas.models.servers.Server;
 import org.springdoc.core.customizers.GlobalOpenApiCustomizer;
 import org.springdoc.core.models.GroupedOpenApi;
 import org.springframework.context.annotation.Bean;
@@ -13,6 +14,7 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpHeaders;
 
 import java.util.Collections;
+import java.util.List;
 import java.util.Set;
 
 @Configuration
@@ -31,6 +33,11 @@ public class SwaggerConfig {
     @Bean
     public OpenAPI customOpenAPI() {
         return new OpenAPI()
+                .servers(List.of(
+                        new Server().url("/").description("현재 서버 (상대 경로)"),
+                        new Server().url("http://www.stockit.live").description("StockIt 배포 서버"),
+                        new Server().url("http://localhost:8080").description("StockIt 로컬 서버")
+                ))
                 .info(new Info()
                         .title("StockIt API")
                         .version("v1.0")
