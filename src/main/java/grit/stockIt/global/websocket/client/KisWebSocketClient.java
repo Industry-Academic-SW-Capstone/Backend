@@ -2,6 +2,7 @@ package grit.stockIt.global.websocket.client;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import grit.stockIt.domain.order.entity.OrderMethod;
+import grit.stockIt.domain.stock.dto.StockOrderBookDto;
 import grit.stockIt.domain.stock.dto.StockPriceUpdateDto;
 import grit.stockIt.global.auth.KisTokenManager;
 import grit.stockIt.global.websocket.dto.KisWebSocketRequest;
@@ -32,10 +33,7 @@ import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
-/**
- * KIS 웹소켓 클라이언트
- * 한국투자증권 웹소켓 서버와 연결 및 통신 관리
- */
+// KIS 웹소켓 클라이언트
 @Slf4j
 @Component
 @RequiredArgsConstructor
@@ -48,7 +46,8 @@ public class KisWebSocketClient extends TextWebSocketHandler {
     private final ApplicationEventPublisher applicationEventPublisher;
     
     private WebSocketSession kisSession;
-    private final Set<String> subscribedStocks = Collections.synchronizedSet(new HashSet<>());
+    private final Set<String> subscribedStocks = Collections.synchronizedSet(new HashSet<>()); // 체결가 구독 종목
+    private final Set<String> subscribedOrderBooks = Collections.synchronizedSet(new HashSet<>()); // 호가 구독 종목
     
     // 재연결 관련 필드
     private final AtomicBoolean isReconnecting = new AtomicBoolean(false);
@@ -72,9 +71,7 @@ public class KisWebSocketClient extends TextWebSocketHandler {
     private static final DateTimeFormatter DATE_FORMAT = DateTimeFormatter.BASIC_ISO_DATE;
     private static final DateTimeFormatter TIME_FORMAT = DateTimeFormatter.ofPattern("HHmmss");
     
-    /**
-     * 종목 구독 (연결 없으면 자동 연결)
-     */
+    // 종목 구독
     public synchronized void subscribe(String stockCode) {
         try {
             log.info("종목 구독 요청: {}", stockCode);
@@ -97,10 +94,8 @@ public class KisWebSocketClient extends TextWebSocketHandler {
             log.error("종목 구독 실패: {}", stockCode, e);
         }
     }
-    
-    /**
-     * 종목 구독 해제
-     */
+
+   // 종목 구독 해제
     public synchronized void unsubscribe(String stockCode) {
         try {
             if (!subscribedStocks.contains(stockCode)) {
@@ -112,10 +107,11 @@ public class KisWebSocketClient extends TextWebSocketHandler {
             }
             
             subscribedStocks.remove(stockCode);
-            log.info("KIS 구독 해제: {} (남은 {}개)", stockCode, subscribedStocks.size());
+            log.info("KIS 구독 해제: {} (남은 체결가 {}개, 호가 {}개)", 
+                    stockCode, subscribedStocks.size(), subscribedOrderBooks.size());
             
-            // 구독 종목이 없으면 연결 해제
-            if (subscribedStocks.isEmpty()) {
+            // 체결가와 호가 모두 구독 종목이 없으면 연결 해제
+            if (subscribedStocks.isEmpty() && subscribedOrderBooks.isEmpty()) {
                 log.info("구독 종목 없음. KIS 연결 해제");
                 disconnectFromKis();
             }
@@ -125,9 +121,58 @@ public class KisWebSocketClient extends TextWebSocketHandler {
         }
     }
     
-    /**
-     * KIS 웹소켓 연결
-     */
+    // 호가 구독
+    public synchronized void subscribeOrderBook(String stockCode) {
+        try {
+            log.info("호가 구독 요청: {}", stockCode);
+            
+            // 이미 호가 구독 중이면 중복 구독 방지
+            if (subscribedOrderBooks.contains(stockCode)) {
+                log.debug("종목 {} 호가 이미 구독 중 (중복 구독 무시)", stockCode);
+                return;
+            }
+            
+            if (!isConnected()) {
+                log.info("KIS 연결 없음. 연결 시작...");
+                connectToKis();
+            }
+            
+            sendOrderBookSubscribeMessage(stockCode);
+            subscribedOrderBooks.add(stockCode);
+            
+            log.info("KIS 호가 구독 완료: {} (총 {}개)", stockCode, subscribedOrderBooks.size());
+            
+        } catch (Exception e) {
+            log.error("호가 구독 실패: {}", stockCode, e);
+        }
+    }
+    
+    // 호가 구독 해제
+    public synchronized void unsubscribeOrderBook(String stockCode) {
+        try {
+            if (!subscribedOrderBooks.contains(stockCode)) {
+                return;
+            }
+            
+            if (isConnected()) {
+                sendOrderBookUnsubscribeMessage(stockCode);
+            }
+            
+            subscribedOrderBooks.remove(stockCode);
+            log.info("KIS 호가 구독 해제: {} (남은 {}개)", stockCode, subscribedOrderBooks.size());
+            
+            // 체결가와 호가 모두 구독 종목이 없으면 연결 해제
+            if (subscribedStocks.isEmpty() && subscribedOrderBooks.isEmpty()) {
+                log.info("구독 종목 없음. KIS 연결 해제");
+                disconnectFromKis();
+            }
+            
+        } catch (Exception e) {
+            log.error("호가 구독 해제 실패: {}", stockCode, e);
+        }
+    }
+    
+    // KIS 웹소켓 연결
     private void connectToKis() {
         try {
             log.info("KIS 웹소켓 연결 시작");
@@ -142,10 +187,8 @@ public class KisWebSocketClient extends TextWebSocketHandler {
             kisSession = null;
         }
     }
-    
-    /**
-     * 구독 메시지 전송
-     */
+   
+    // 구독 메시지 전송
     private void sendSubscribeMessage(String stockCode) {
         try {
             String approvalKey = kisTokenManager.getApprovalKey();
@@ -160,9 +203,7 @@ public class KisWebSocketClient extends TextWebSocketHandler {
         }
     }
     
-    /**
-     * 구독 해제 메시지 전송
-     */
+    // 구독 해제 메시지 전송
     private void sendUnsubscribeMessage(String stockCode) {
         try {
             String approvalKey = kisTokenManager.getApprovalKey();
@@ -177,9 +218,37 @@ public class KisWebSocketClient extends TextWebSocketHandler {
         }
     }
     
-    /**
-     * KIS로부터 메시지 수신
-     */
+    // 호가 구독 메시지 전송
+    private void sendOrderBookSubscribeMessage(String stockCode) {
+        try {
+            String approvalKey = kisTokenManager.getApprovalKey();
+            KisWebSocketRequest request = KisWebSocketRequest.subscribeOrderBook(approvalKey, stockCode);
+            String json = objectMapper.writeValueAsString(request);
+            
+            kisSession.sendMessage(new TextMessage(json));
+            log.debug("KIS 호가 구독 메시지 전송: {}", stockCode);
+            
+        } catch (Exception e) {
+            log.error("호가 구독 메시지 전송 실패: {}", stockCode, e);
+        }
+    }
+    
+    // 호가 구독 해제 메시지 전송
+    private void sendOrderBookUnsubscribeMessage(String stockCode) {
+        try {
+            String approvalKey = kisTokenManager.getApprovalKey();
+            KisWebSocketRequest request = KisWebSocketRequest.unsubscribeOrderBook(approvalKey, stockCode);
+            String json = objectMapper.writeValueAsString(request);
+            
+            kisSession.sendMessage(new TextMessage(json));
+            log.debug("KIS 호가 구독 해제 메시지 전송: {}", stockCode);
+            
+        } catch (Exception e) {
+            log.error("호가 구독 해제 메시지 전송 실패: {}", stockCode, e);
+        }
+    }
+    
+    // KIS로부터 메시지 수신
     @Override
     protected void handleTextMessage(WebSocketSession session, TextMessage message) {
         try {
@@ -212,36 +281,41 @@ public class KisWebSocketClient extends TextWebSocketHandler {
                 return;
             }
             
-            // DTO 변환
-            var output = response.body().output();
-            StockPriceUpdateDto updateDto = StockPriceUpdateDto.from(
-                    output.stockCode(),
-                    "", // 종목명은 클라이언트가 이미 알고 있음
-                    parseIntValue(output.currentPrice()),
-                    parseIntValue(output.changeAmount()),
-                    output.changeRate(),
-                    output.changeSign(),
-                    parseLongValue(output.volume())
-            );
-            
-            // 클라이언트에게 브로드캐스트
-            messagingTemplate.convertAndSend(
-                    "/topic/stock/" + updateDto.stockCode(),
-                    updateDto
-            );
-            
-            log.debug("시세 업데이트 전송: {} - {}원", updateDto.stockCode(), updateDto.currentPrice());
+            // TR ID로 초기 응답 분기 처리
+            String trId = response.header().trId();
+            if ("H0STCNT0".equals(trId)) {
+                // 체결가 초기 응답 처리
+                var output = response.body().output();
+                StockPriceUpdateDto updateDto = StockPriceUpdateDto.from(
+                        output.stockCode(),
+                        "", // 종목명은 클라이언트가 이미 알고 있음
+                        parseIntValue(output.currentPrice()),
+                        parseIntValue(output.changeAmount()),
+                        output.changeRate(),
+                        output.changeSign(),
+                        parseLongValue(output.volume())
+                );
+                
+                messagingTemplate.convertAndSend(
+                        "/topic/stock/" + updateDto.stockCode(),
+                        updateDto
+                );
+                
+                log.debug("체결가 초기 응답 전송: {} - {}원", updateDto.stockCode(), updateDto.currentPrice());
+            } else if ("H0STASP0".equals(trId)) {
+                // 호가 초기 응답은 JSON 형식이 아닐 수 있음 (파이프 형식으로만 올 수도 있음)
+                // 호가 초기 응답이 JSON으로 오는 경우를 처리하려면 KisWebSocketResponse에 호가 필드 추가 필요
+                log.debug("호가 초기 응답 수신 (현재 JSON 형식 호가 초기 응답 미지원): {}", response.header().trKey());
+            } else {
+                log.warn("알 수 없는 TR ID의 초기 응답: {}", trId);
+            }
             
         } catch (Exception e) {
             log.error("KIS 메시지 처리 실패", e);
         }
     }
     
-    /**
-     * 실시간 데이터 처리 (파이프 구분 형식)
-     * 형식: 0|H0STCNT0|001|005930^103659^103800^2^3300^3.28^...
-     * 파이프(|)로 먼저 구분 후, 실제 데이터는 캐럿(^)으로 구분
-     */
+    // 실시간 데이터 처리
     private void handleRealtimeData(String payload) {
         try {
             // 파이프로 split (메타데이터 구분)
@@ -259,15 +333,32 @@ public class KisWebSocketClient extends TextWebSocketHandler {
                 return;
             }
             
-            // parts[1]: TR ID (H0STCNT0)
+            // parts[1]: TR ID (H0STCNT0 또는 H0STASP0)
             // parts[2]: 데이터 건수 (001, 002 등)
             // parts[3]: 실제 데이터 (캐럿으로 구분)
             
-            // 실제 데이터를 캐럿으로 split
+            String trId = parts[1];
             String[] dataFields = parts[3].split("\\^");
             
+            // TR ID별 분기 처리
+            if ("H0STCNT0".equals(trId)) {
+                handlePriceData(dataFields);
+            } else if ("H0STASP0".equals(trId)) {
+                handleOrderBookData(dataFields);
+            } else {
+                log.warn("알 수 없는 TR ID: {}", trId);
+            }
+            
+        } catch (Exception e) {
+            log.error("실시간 데이터 파싱 실패: {}", payload, e);
+        }
+    }
+   
+    // 체결가 데이터 처리
+    private void handlePriceData(String[] dataFields) {
+        try {
             if (dataFields.length < MIN_REALTIME_DATA_FIELDS) {
-                log.debug("KIS 데이터 필드 부족: {}개 (최소 {}개 필요)", 
+                log.debug("KIS 체결가 데이터 필드 부족: {}개 (최소 {}개 필요)", 
                         dataFields.length, MIN_REALTIME_DATA_FIELDS);
                 return;
             }
@@ -322,13 +413,37 @@ public class KisWebSocketClient extends TextWebSocketHandler {
             );
             
         } catch (Exception e) {
-            log.error("실시간 데이터 파싱 실패: {}", payload, e);
+            log.error("체결가 데이터 파싱 실패", e);
         }
     }
     
-    /**
-     * 연결 종료 처리
-     */
+    // 호가 데이터 처리
+    private void handleOrderBookData(String[] dataFields) {
+        try {
+            if (dataFields.length < 3) {
+                log.debug("KIS 호가 데이터 필드 부족: {}개 (최소 3개 필요)", dataFields.length);
+                return;
+            }
+            
+            StockOrderBookDto orderBookDto = StockOrderBookDto.from(dataFields);
+            
+            // 클라이언트에게 브로드캐스트
+            messagingTemplate.convertAndSend(
+                    "/topic/stock/" + orderBookDto.stockCode() + "/orderbook",
+                    orderBookDto
+            );
+            
+            log.debug("호가 업데이트 전송: {} - 매도1: {}, 매수1: {}", 
+                    orderBookDto.stockCode(),
+                    orderBookDto.askLevels().isEmpty() ? null : orderBookDto.askLevels().get(0).price(),
+                    orderBookDto.bidLevels().isEmpty() ? null : orderBookDto.bidLevels().get(0).price());
+            
+        } catch (Exception e) {
+            log.error("호가 데이터 파싱 실패", e);
+        }
+    }
+    
+    // 연결 종료 처리
     @Override
     public void afterConnectionClosed(WebSocketSession session, CloseStatus status) {
         log.warn("KIS 웹소켓 연결 종료: {} (코드: {}, 이유: {})", 
@@ -336,7 +451,8 @@ public class KisWebSocketClient extends TextWebSocketHandler {
         kisSession = null;
         
         // 구독 목록은 유지 (재연결 시 재구독에 사용)
-        log.info("KIS 연결 종료 - 구독 목록 유지: {} ({}개)", subscribedStocks, subscribedStocks.size());
+        log.info("KIS 연결 종료 - 구독 목록 유지: 체결가 {}개, 호가 {}개", 
+                subscribedStocks.size(), subscribedOrderBooks.size());
         
         // 비정상 종료인 경우에만 자동 재연결 시도
         if (!status.equals(CloseStatus.NORMAL)) {
@@ -345,16 +461,12 @@ public class KisWebSocketClient extends TextWebSocketHandler {
         }
     }
     
-    /**
-     * 연결 상태 확인
-     */
+    // 연결 상태 확인
     public boolean isConnected() {
         return kisSession != null && kisSession.isOpen();
     }
     
-    /**
-     * KIS 웹소켓 연결 해제
-     */
+    // KIS 웹소켓 연결 해제
     private void disconnectFromKis() {
         if (!isConnected()) {
             log.debug("이미 연결 해제됨");
@@ -376,9 +488,7 @@ public class KisWebSocketClient extends TextWebSocketHandler {
         }
     }
     
-    /**
-     * 재연결 예약 (Exponential Backoff)
-     */
+    // 재연결 예약
     private void scheduleReconnect() {
         if (isReconnecting.get()) {
             log.debug("이미 재연결 시도 중");
@@ -406,9 +516,7 @@ public class KisWebSocketClient extends TextWebSocketHandler {
         }, "KIS-Reconnect-Thread").start();
     }
     
-    /**
-     * KIS 서버 재연결
-     */
+    // KIS 서버 재연결
     public synchronized void reconnect() {
         if (isConnected()) {
             log.debug("이미 연결되어 있음 - 재연결 불필요");
@@ -424,6 +532,9 @@ public class KisWebSocketClient extends TextWebSocketHandler {
         try {
             log.info("KIS 서버 재연결 시도 중... ({}/{}회)", 
                     reconnectAttempts.get() + 1, MAX_RECONNECT_ATTEMPTS);
+            
+            // 재연결 시 새로운 웹소켓 세션이 생성되므로 approval key를 새로 발급
+            kisTokenManager.refreshApprovalKey();
             
             connectToKis();
             
@@ -446,39 +557,53 @@ public class KisWebSocketClient extends TextWebSocketHandler {
         }
     }
     
-    /**
-     * 모든 구독 종목 재구독
-     */
+    // 모든 구독 종목 재구독
     private void resubscribeAll() {
         try {
             // WebSocketSubscriptionManager의 구독 목록과 내부 구독 목록을 합침
+            // subscriptionManager에는 연결 끊김 직전에 구독 요청이 있었으나 subscribedStocks에 반영되지 못한 종목도 포함됨
             Set<String> allStocks = new HashSet<>(subscriptionManager.getAllSubscribedStocks());
             allStocks.addAll(subscribedStocks);
             
-            if (allStocks.isEmpty()) {
+            if (allStocks.isEmpty() && subscribedOrderBooks.isEmpty()) {
                 log.info("재구독할 종목 없음");
                 return;
             }
             
-            log.info("종목 재구독 시작: {} ({}개)", allStocks, allStocks.size());
+            log.info("종목 재구독 시작: 체결가 {}개, 호가 {}개", allStocks.size(), subscribedOrderBooks.size());
             
             // 기존 구독 목록 초기화 후 재구독
+            // allStocks를 사용하여 subscriptionManager의 상태까지 포함한 모든 종목 재구독
+            Set<String> stocksToResubscribe = new HashSet<>(allStocks);
+            Set<String> orderBooksToResubscribe = new HashSet<>(subscribedOrderBooks);
             subscribedStocks.clear();
+            subscribedOrderBooks.clear();
             
-            for (String stockCode : allStocks) {
+            // 체결가 재구독
+            for (String stockCode : stocksToResubscribe) {
                 try {
                     sendSubscribeMessage(stockCode);
                     subscribedStocks.add(stockCode);
-                    log.debug("재구독 완료: {}", stockCode);
-                    
-                    // API 부하 방지를 위한 짧은 지연
+                    log.debug("체결가 재구독 완료: {}", stockCode);
                     Thread.sleep(100);
                 } catch (Exception e) {
-                    log.error("종목 재구독 실패: {}", stockCode, e);
+                    log.error("체결가 재구독 실패: {}", stockCode, e);
                 }
             }
             
-            log.info("전체 재구독 완료: {}개", subscribedStocks.size());
+            // 호가 재구독
+            for (String stockCode : orderBooksToResubscribe) {
+                try {
+                    sendOrderBookSubscribeMessage(stockCode);
+                    subscribedOrderBooks.add(stockCode);
+                    log.debug("호가 재구독 완료: {}", stockCode);
+                    Thread.sleep(100);
+                } catch (Exception e) {
+                    log.error("호가 재구독 실패: {}", stockCode, e);
+                }
+            }
+            
+            log.info("전체 재구독 완료: 체결가 {}개, 호가 {}개", subscribedStocks.size(), subscribedOrderBooks.size());
             
         } catch (Exception e) {
             log.error("재구독 프로세스 실패", e);

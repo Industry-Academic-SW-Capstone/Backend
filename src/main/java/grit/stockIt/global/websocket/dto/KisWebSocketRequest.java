@@ -2,10 +2,7 @@ package grit.stockIt.global.websocket.dto;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 
-/**
- * KIS 웹소켓 요청 DTO
- * KIS API 실제 필드명에 맞게 snake_case 사용
- */
+// KIS 웹소켓 요청 DTO
 public record KisWebSocketRequest(
         @JsonProperty("header") Header header,
         @JsonProperty("body") Body body
@@ -37,6 +34,10 @@ public record KisWebSocketRequest(
         public static Input forStock(String stockCode) {
             return new Input("H0STCNT0", stockCode);
         }
+        
+        public static Input forOrderBook(String stockCode) {
+            return new Input("H0STASP0", stockCode);
+        }
     }
     
     public static KisWebSocketRequest subscribe(String approvalKey, String stockCode) {
@@ -46,10 +47,24 @@ public record KisWebSocketRequest(
         );
     }
     
+    public static KisWebSocketRequest subscribeOrderBook(String approvalKey, String stockCode) {
+        return new KisWebSocketRequest(
+                Header.subscribe(approvalKey),
+                new Body(Input.forOrderBook(stockCode))
+        );
+    }
+    
     public static KisWebSocketRequest unsubscribe(String approvalKey, String stockCode) {
         return new KisWebSocketRequest(
                 Header.unsubscribe(approvalKey),
                 new Body(Input.forStock(stockCode))
+        );
+    }
+    
+    public static KisWebSocketRequest unsubscribeOrderBook(String approvalKey, String stockCode) {
+        return new KisWebSocketRequest(
+                Header.unsubscribe(approvalKey),
+                new Body(Input.forOrderBook(stockCode))
         );
     }
 }
