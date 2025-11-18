@@ -8,8 +8,7 @@ import grit.stockIt.domain.mission.enums.MissionStatus;
 import grit.stockIt.domain.mission.enums.MissionTrack;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
-import org.springframework.data.jpa.repository.Query; // 1. 임포트 추가
-import org.springframework.data.repository.query.Param; // 2. 임포트 추가
+import org.springframework.data.repository.query.Param;
 
 import java.util.List;
 import java.util.Optional;

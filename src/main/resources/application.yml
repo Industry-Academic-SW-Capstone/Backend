@@ -16,12 +16,16 @@ spring:
     deserialization:
       fail-on-unknown-properties: false
     default-property-inclusion: non_null
+  jpa:
+    properties:
+      hibernate:
+        default_batch_fetch_size: 100
 
 management:
   endpoints:
     web:
       exposure:
-        include: health,info,prometheus,metrics,.env,configprops
+        include: health,info,prometheus,metrics,env,configprops
       base-path: /actuator
   endpoint:
     prometheus:

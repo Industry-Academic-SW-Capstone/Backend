@@ -1,6 +1,6 @@
 spring:
   config:
-    import: optional:file:..env[.properties]
+    import: optional:file:.env[.properties]
 
   datasource:
     url: ${POSTGRES_URL:jdbc:postgresql://db:5432/database}
@@ -17,3 +17,4 @@ spring:
         highlight_sql: true
         format_sql: true
         dialect: org.hibernate.dialect.PostgreSQLDialect
+        default_batch_fetch_size: 100

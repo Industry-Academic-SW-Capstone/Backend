@@ -286,24 +286,6 @@ public class LimitOrderMatchingService {
                                     order.getOrderId(), order.getAccount().getAccountId(), order.getStock().getCode())
                     );
         }
-
-        // --- ⬇️ [필수] 미션 이벤트를 여기서 발행 ⬇️ ---
-        try {
-            TradeCompletionEvent missionEvent = new TradeCompletionEvent(
-                    order.getAccount().getMember().getMemberId(), // Member ID
-                    order.getAccount().getAccountId(),            // Account ID
-                    order.getStock().getCode(),                 // Stock Code
-                    order.getOrderMethod(),                     // BUY or SELL
-                    fillQuantity,                               // 체결 수량
-                    price                                       // 체결 가격
-            );
-            eventPublisher.publishEvent(missionEvent);
-            log.info("미션 시스템 이벤트 발행: MemberId={}", missionEvent.getMemberId());
-
-        } catch (Exception e) {
-            log.error("미션 이벤트 발행 실패: orderId={}", order.getOrderId(), e);
-            // (미션 실패는 주문 로직에 영향을 주면 안 되므로, 예외를 먹고 로깅만 합니다.)
-        }
     }
 
     private int calculateAffordableQuantity(Order order, BigDecimal price, int desiredQuantity) {
