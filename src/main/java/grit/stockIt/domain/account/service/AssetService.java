@@ -47,7 +47,12 @@ public class AssetService {
 
         if (accountStocks.isEmpty()) {
             log.info("보유종목이 없습니다: accountId={}", accountId);
-            return new AssetResponse(List.of());
+            return new AssetResponse(
+                    account.getCash(),           // totalAssets = 현금만
+                    account.getCash(),           // cash
+                    BigDecimal.ZERO,             // stockValue = 0
+                    List.of()                    // holdings
+            );
         }
 
         // 각 종목의 현재가 조회 (병렬 처리)
@@ -70,8 +75,15 @@ public class AssetService {
                 .collectList()
                 .block();
 
-        log.info("자산 조회 완료: accountId={}, holdingsCount={}", accountId, holdings.size());
-        return new AssetResponse(holdings);
+        // 총 자산 계산
+        BigDecimal totalStockValue = holdings.stream()
+                .map(AssetResponse.HoldingItem::totalValue)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal totalAssets = account.getCash().add(totalStockValue);
+
+        log.info("자산 조회 완료: accountId={}, totalAssets={}, cash={}, stockValue={}, holdingsCount={}", 
+                accountId, totalAssets, account.getCash(), totalStockValue, holdings.size());
+        return new AssetResponse(totalAssets, account.getCash(), totalStockValue, holdings);
     }
 
     // AccountStock을 HoldingItem으로 변환

@@ -5,7 +5,10 @@ import java.util.List;
 
 // 사용자 자산 조회 응답 DTO
 public record AssetResponse(
-        List<HoldingItem> holdings
+        BigDecimal totalAssets,              // 총 자산
+        BigDecimal cash,                      // 현금
+        BigDecimal stockValue,                // 주식 자산
+        List<HoldingItem> holdings           // 보유종목 목록
 ) {
     public record HoldingItem(
             String stockCode,           // 종목 코드
