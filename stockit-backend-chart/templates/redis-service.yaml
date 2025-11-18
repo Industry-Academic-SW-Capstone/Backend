@@ -6,7 +6,7 @@ metadata:
     {{- include "stockit-backend-chart.labels" . | nindent 4 }}
     app.kubernetes.io/component: {{ .Values.redis.name }}
 spec:
-  clusterIP: None
+  type: ClusterIP
   ports:
     - port: {{ .Values.redis.service.port }}
       targetPort: {{ .Values.redis.service.targetPort }}

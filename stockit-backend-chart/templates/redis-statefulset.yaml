@@ -1,12 +1,11 @@
 apiVersion: apps/v1
-kind: StatefulSet
+kind: Deployment
 metadata:
   name: {{ include "stockit-backend-chart.fullname" . }}-{{ .Values.redis.name }}
   labels:
     {{- include "stockit-backend-chart.labels" . | nindent 4 }}
     app.kubernetes.io/component: {{ .Values.redis.name }}
 spec:
-  serviceName: {{ .Values.redis.service.host }}
   replicas: 1
   selector:
     matchLabels:
@@ -45,15 +44,10 @@ spec:
             initialDelaySeconds: 10
             periodSeconds: 30
             timeoutSeconds: 5
-
-  {{- if .Values.redis.persistence.enabled }}
-  volumeClaimTemplates:
-    - metadata:
-        name: redis-data-pv
-      spec:
-        accessModes: ["ReadWriteOnce"]
-        resources:
-          requests:
-            storage: {{ .Values.redis.persistence.size }}
-  {{- end }}
+      {{- if .Values.redis.persistence.enabled }}
+      volumes:
+        - name: redis-data-pv
+          persistentVolumeClaim:
+            claimName: {{ include "stockit-backend-chart.fullname" . }}-redis-pvc
+      {{- end }}
 
