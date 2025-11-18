@@ -87,8 +87,8 @@ db:
 # --- 5. Cache (Redis) Configuration ---
 redis:
   name: stockit-redis
-  image: redis
-  tag: "7"
+  image: docker.io/library/redis
+  tag: "7-alpine"
   service:
     port: 6379
     targetPort: 6379
