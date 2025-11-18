@@ -149,18 +149,25 @@ jobs:
       - name: Clean up old pods before deployment
         run: |
           echo "🧹 배포 전 이전 Pod 정리 중..." && \
-          ALL_PODS=$(kubectl get pods -n ${{ env.HELM_NAMESPACE }} -l app.kubernetes.io/component=spring-backend --sort-by=.metadata.creationTimestamp -o jsonpath='{.items[*].metadata.name}' 2>/dev/null || echo "") && \
+          # 모든 Pod (Running, Terminating 포함) 가져오기
+          ALL_PODS=$(kubectl get pods -n ${{ env.HELM_NAMESPACE }} -l app.kubernetes.io/component=spring-backend --sort-by=.metadata.creationTimestamp -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.metadata.deletionTimestamp}{"\n"}{end}' 2>/dev/null || echo "") && \
           if [ -n "$ALL_PODS" ]; then
-            POD_COUNT=$(echo "$ALL_PODS" | wc -w) && \
-            if [ "$POD_COUNT" -gt 1 ]; then
-              echo "이전 Pod 발견: $POD_COUNT개" && \
-              OLD_PODS=$(echo "$ALL_PODS" | awk '{for(i=1;i<NF;i++) printf "%s ", $i}') && \
-              echo "이전 Pod 삭제: $OLD_PODS" && \
-              for pod in $OLD_PODS; do
-                kubectl delete pod "$pod" -n ${{ env.HELM_NAMESPACE }} --grace-period=0 --force 2>/dev/null || true
+            POD_COUNT=$(echo "$ALL_PODS" | wc -l) && \
+            if [ "$POD_COUNT" -gt 0 ]; then
+              echo "발견된 Pod: $POD_COUNT개" && \
+              echo "$ALL_PODS" | while IFS=$'\t' read -r pod_name deletion_time; do
+                if [ -n "$pod_name" ]; then
+                  echo "Pod 삭제 시도: $pod_name (deletionTimestamp: ${deletion_time:-none})" && \
+                  # finalizers 제거 후 강제 삭제
+                  kubectl patch pod "$pod_name" -n ${{ env.HELM_NAMESPACE }} -p '{"metadata":{"finalizers":[]}}' --type=merge 2>/dev/null || true && \
+                  kubectl delete pod "$pod_name" -n ${{ env.HELM_NAMESPACE }} --grace-period=0 --force 2>/dev/null || true
+                fi
               done && \
-              echo "⏳ 이전 Pod 삭제 후 5초 대기..." && \
-              sleep 5
+              echo "⏳ 이전 Pod 삭제 후 10초 대기..." && \
+              sleep 10 && \
+              # 삭제 확인
+              REMAINING=$(kubectl get pods -n ${{ env.HELM_NAMESPACE }} -l app.kubernetes.io/component=spring-backend --no-headers 2>/dev/null | wc -l || echo "0") && \
+              echo "남은 Pod 수: $REMAINING"
             else
               echo "정리할 이전 Pod 없음"
             fi
@@ -178,9 +185,31 @@ jobs:
       - name: Verify deployment
         run: |
           echo "⏳ Pod가 Ready 상태가 될 때까지 대기 중..." && \
-          kubectl rollout status deployment/${{ env.HELM_RELEASE_NAME }}-stockit-backend-chart-spring-backend \
-            --namespace ${{ env.HELM_NAMESPACE }} \
-            --timeout=10m
+          DEPLOYMENT_NAME="${{ env.HELM_RELEASE_NAME }}-stockit-backend-chart-spring-backend" && \
+          NAMESPACE="${{ env.HELM_NAMESPACE }}" && \
+          # 2분마다 stuck된 Pod 확인 및 삭제 (백그라운드)
+          (
+            for i in {1..5}; do
+              sleep 120 && \
+              echo "🔍 배포 진행 상황 확인 (${i}/5)..." && \
+              # Terminating 상태인 Pod 찾기
+              TERMINATING_PODS=$(kubectl get pods -n $NAMESPACE -l app.kubernetes.io/component=spring-backend -o jsonpath='{range .items[?(@.metadata.deletionTimestamp)]}{.metadata.name}{"\n"}{end}' 2>/dev/null || echo "") && \
+              if [ -n "$TERMINATING_PODS" ]; then
+                echo "⚠️ Terminating 상태 Pod 발견, 강제 삭제 시도..." && \
+                for pod in $TERMINATING_PODS; do
+                  echo "강제 삭제: $pod" && \
+                  kubectl patch pod "$pod" -n $NAMESPACE -p '{"metadata":{"finalizers":[]}}' --type=merge 2>/dev/null || true && \
+                  kubectl delete pod "$pod" -n $NAMESPACE --grace-period=0 --force 2>/dev/null || true
+                done
+              fi
+            done
+          ) & \
+          MONITOR_PID=$! && \
+          # rollout status 대기
+          kubectl rollout status deployment/$DEPLOYMENT_NAME --namespace $NAMESPACE --timeout=10m && \
+          # 모니터링 프로세스 종료
+          kill $MONITOR_PID 2>/dev/null || true && \
+          echo "✅ 배포 완료!"
 
       - name: Check pod status
         run: |
