@@ -75,6 +75,13 @@ public class KisTokenManager {
         return key;
     }
 
+    // Approval Key를 무효화하고 새로 발급받음
+    public String refreshApprovalKey() {
+        log.info("Approval Key 갱신 요청 - 기존 키 무효화 후 새 키 발급");
+        redisTemplate.delete(APPROVAL_KEY_KEY);
+        return fetchNewApprovalKey();
+    }
+
     // KIS 인증 서버에 접속해 새 Approval Key를 발급받고 Redis에 저장
     private String fetchNewApprovalKey() {
         log.info("KIS에서 새 Approval Key를 발급받습니다.");
@@ -82,7 +89,7 @@ public class KisTokenManager {
         Map<String, String> requestBody = Map.of(
                 "grant_type", "client_credentials",
                 "appkey", properties.appkey(),
-                "secretkey", properties.appsecret()  // appsecret이 아니라 secretkey!
+                "secretkey", properties.appsecret()
         );
 
         Mono<Map> responseMono = webClient.post()
