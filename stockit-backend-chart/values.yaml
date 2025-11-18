@@ -19,10 +19,10 @@ backend:
     targetPort: 8080
     type: ClusterIP
   probe:
-    path: /
-    initialDelaySeconds: 30
+    path: /actuator/health
+    initialDelaySeconds: 60
     periodSeconds: 10
-    timeoutSeconds: 3
+    timeoutSeconds: 5
   env:
     # NOTE:
     #   JWT_SECRET는 Helm 차트에 포함되지 않습니다.

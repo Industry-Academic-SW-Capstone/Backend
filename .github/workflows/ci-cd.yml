@@ -151,15 +151,14 @@ jobs:
           helm upgrade --install ${{ env.HELM_RELEASE_NAME }} ./stockit-backend-chart \
             --namespace ${{ env.HELM_NAMESPACE }} \
             --create-namespace \
-            --wait \
-            --timeout 10m \
             --set backend.image.tag="${{ steps.image-tag.outputs.tag }}"
 
       - name: Verify deployment
         run: |
+          echo "⏳ Pod가 Ready 상태가 될 때까지 대기 중..." && \
           kubectl rollout status deployment/${{ env.HELM_RELEASE_NAME }}-stockit-backend-chart-spring-backend \
             --namespace ${{ env.HELM_NAMESPACE }} \
-            --timeout=5m
+            --timeout=15m
 
       - name: Check pod status
         run: |
