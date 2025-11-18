@@ -49,9 +49,7 @@ public class OrderService {
     @Value("${order.market.hold-buffer-rate:0.05}")
     private BigDecimal marketHoldBufferRate;
 
-    /**
-     * 지정가 주문 생성
-     */
+    // 지정가 주문 생성
     @Transactional
     public OrderResponse createLimitOrder(LimitOrderCreateRequest request) {
         Account account = accountRepository.findById(request.accountId())
@@ -96,9 +94,7 @@ public class OrderService {
         return OrderResponse.from(order);
     }
 
-    /**
-     * 시장가 주문 생성
-     */
+    // 시장가 주문 생성
     @Transactional
     public OrderResponse createMarketOrder(MarketOrderCreateRequest request) {
         Account account = accountRepository.findById(request.accountId())
@@ -121,6 +117,10 @@ public class OrderService {
                 orderMethod
         );
 
+        // 시장가 주문도 지정가 주문처럼 웹소켓 구독을 먼저 시작
+        // 최근 체결가 조회 전에 구독이 시작되어 체결 이벤트를 받을 수 있도록 함
+        orderSubscriptionCoordinator.registerLimitOrder(stock.getCode());
+
         BigDecimal holdAmount = BigDecimal.ZERO;
         if (orderMethod == OrderMethod.SELL) {
             applySellHold(order);
@@ -138,15 +138,12 @@ public class OrderService {
         }
 
         redisOrderBookRepository.addOrder(order);
-        orderSubscriptionCoordinator.registerLimitOrder(stock.getCode());
 
         log.info("시장가 주문 생성 완료: orderId={} stock={} quantity={}", order.getOrderId(), stock.getCode(), order.getQuantity());
         return OrderResponse.from(order);
     }
 
-    /**
-     * 주문 취소
-     */
+    // 주문 취소
     @Transactional
     public OrderResponse cancelOrder(Long orderId) {
         Order order = orderRepository.findById(orderId)

@@ -16,9 +16,7 @@ public class OrderSubscriptionCoordinator {
     private final WebSocketSubscriptionManager subscriptionManager;
     private final KisWebSocketClient kisWebSocketClient;
 
-    /**
-     * 지정가 주문이 새로 등록되었을 때 호출
-     */
+    // 지정가 주문이 등록될 때 호출
     public void registerLimitOrder(String stockCode) {
         boolean alreadyActive = subscriptionManager.hasActiveReason(stockCode);
         int orderCount = subscriptionManager.incrementOrderReference(stockCode);
@@ -31,9 +29,7 @@ public class OrderSubscriptionCoordinator {
         }
     }
 
-    /**
-     * 지정가 주문이 완료/취소되어 등록 해제될 때 호출
-     */
+    // 지정가 주문이 완료/취소되어 등록 해제될 때 호출
     public void unregisterLimitOrder(String stockCode) {
         int remaining = subscriptionManager.decrementOrderReference(stockCode);
         log.debug("종목 {} 주문 참조 해제. 남은 orderCount={}, viewerCount={}",
