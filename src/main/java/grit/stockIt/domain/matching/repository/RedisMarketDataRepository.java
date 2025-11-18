@@ -7,6 +7,7 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Repository;
 
 import java.math.BigDecimal;
+import java.time.Duration;
 import java.util.Optional;
 
 @Slf4j
@@ -15,6 +16,7 @@ import java.util.Optional;
 public class RedisMarketDataRepository {
 
     private static final String LAST_PRICE_KEY_PATTERN = "sim:price:last:%s";
+    private static final Duration CACHE_TTL = Duration.ofMinutes(5); // 5분 캐시
 
     private final StringRedisTemplate redisTemplate;
 
@@ -23,7 +25,11 @@ public class RedisMarketDataRepository {
             return;
         }
         try {
-            redisTemplate.opsForValue().set(buildLastPriceKey(stockCode), price.toPlainString());
+            redisTemplate.opsForValue().set(
+                    buildLastPriceKey(stockCode),
+                    price.toPlainString(),
+                    CACHE_TTL
+            );
         } catch (DataAccessException e) {
             log.error("Redis에 마지막 체결가 저장 실패. stockCode={}", stockCode, e);
         }

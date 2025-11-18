@@ -48,5 +48,11 @@ public class OrderController {
     public OrderResponse getOrder(@PathVariable Long orderId) {
         return orderService.getOrder(orderId);
     }
+
+    @Operation(summary = "대기 주문 조회", description = "계좌의 대기 중인 주문 목록을 조회합니다.")
+    @GetMapping("/accounts/{accountId}/pending")
+    public grit.stockIt.domain.order.dto.PendingOrdersResponse getPendingOrders(@PathVariable Long accountId) {
+        return orderService.getPendingOrders(accountId);
+    }
 }
 
