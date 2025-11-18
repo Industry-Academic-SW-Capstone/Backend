@@ -216,82 +216,89 @@ jobs:
           ) &
           MONITOR_PID=$!
 
-          # rollout status 대기
-          if kubectl rollout status deployment/"$DEPLOYMENT_NAME" -n "$NAMESPACE" --timeout=10m; then
-            echo "✅ Rollout 완료!"
-            
-            # 모니터링 프로세스 종료
-            kill $MONITOR_PID 2>/dev/null || true
-            
-            # 실제 Pod Ready 상태 확인
-            echo ""
-            echo "=== Pod Ready 상태 확인 ==="
-            READY_PODS=$(kubectl get pods -n "$NAMESPACE" -l app.kubernetes.io/component=spring-backend -o jsonpath='{range .items[?(@.status.conditions[?(@.type=="Ready")].status=="True")]}{.metadata.name}{"\n"}{end}' 2>/dev/null | wc -l || echo "0")
-            TOTAL_PODS=$(kubectl get pods -n "$NAMESPACE" -l app.kubernetes.io/component=spring-backend --no-headers 2>/dev/null | grep -v Terminating | wc -l || echo "0")
-            echo "Ready Pod: $READY_PODS / $TOTAL_PODS"
-            
-            if [ "$READY_PODS" -ge 1 ] && [ "$READY_PODS" -eq "$TOTAL_PODS" ]; then
-              echo "✅ 모든 Pod가 Ready 상태입니다!"
-              echo ""
-              echo "=== 배포된 이미지 태그 확인 ==="
-              DEPLOYED_IMAGE=$(kubectl get deployment "$DEPLOYMENT_NAME" -n "$NAMESPACE" -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null || echo "")
-              
-              if [ -n "$DEPLOYED_IMAGE" ]; then
-                echo "배포된 이미지: $DEPLOYED_IMAGE"
-                if [[ "$DEPLOYED_IMAGE" == *"$EXPECTED_IMAGE_TAG"* ]]; then
-                  echo "✅ 최신 코드로 배포되었습니다!"
-                else
-                  echo "⚠️ 경고: 예상한 이미지 태그와 다릅니다!"
-                  echo "   예상: *$EXPECTED_IMAGE_TAG*"
-                  echo "   실제: $DEPLOYED_IMAGE"
-                fi
-              else
-                echo "⚠️ 배포된 이미지 정보를 가져올 수 없습니다."
-              fi
-            else
-              set +e  # 오류 출력 중에는 즉시 종료하지 않음
-              echo "❌ Pod가 Ready 상태가 아닙니다!"
-              echo ""
-              echo "=== Pod 상세 정보 ==="
-              kubectl get pods -n "$NAMESPACE" -l app.kubernetes.io/component=spring-backend -o wide
-              echo ""
-              echo "=== Pod 이벤트 ==="
-              kubectl get events -n "$NAMESPACE" --sort-by='.lastTimestamp' | grep spring-backend | tail -20 || true
-              echo ""
-              echo "=== Pod 로그 (최신 Pod) ==="
-              LATEST_POD=$(kubectl get pods -n "$NAMESPACE" -l app.kubernetes.io/component=spring-backend --sort-by=.metadata.creationTimestamp -o jsonpath='{.items[-1].metadata.name}' 2>/dev/null)
-              if [ -n "$LATEST_POD" ]; then
-                echo "Pod: $LATEST_POD"
-                kubectl logs "$LATEST_POD" -n "$NAMESPACE" --tail=100 2>&1 || echo "로그를 가져올 수 없습니다."
-                echo ""
-                echo "=== Pod Describe ==="
-                kubectl describe pod "$LATEST_POD" -n "$NAMESPACE" | tail -50 || true
-              fi
-              exit 1
-            fi
-          else
-            set +e  # 오류 출력 중에는 즉시 종료하지 않음
-            # 모니터링 프로세스 종료
-            kill $MONITOR_PID 2>/dev/null || true
-            echo "❌ Rollout 실패!"
-            echo ""
-            echo "=== Pod 상세 정보 ==="
-            kubectl get pods -n "$NAMESPACE" -l app.kubernetes.io/component=spring-backend -o wide
-            echo ""
-            echo "=== Pod 이벤트 ==="
-            kubectl get events -n "$NAMESPACE" --sort-by='.lastTimestamp' | grep spring-backend | tail -20 || true
-            echo ""
-            echo "=== Pod 로그 (최신 Pod) ==="
-            LATEST_POD=$(kubectl get pods -n "$NAMESPACE" -l app.kubernetes.io/component=spring-backend --sort-by=.metadata.creationTimestamp -o jsonpath='{.items[-1].metadata.name}' 2>/dev/null)
-            if [ -n "$LATEST_POD" ]; then
-              echo "Pod: $LATEST_POD"
-              kubectl logs "$LATEST_POD" -n "$NAMESPACE" --tail=100 2>&1 || echo "로그를 가져올 수 없습니다."
-              echo ""
-              echo "=== Pod Describe ==="
-              kubectl describe pod "$LATEST_POD" -n "$NAMESPACE" | tail -50 || true
-            fi
-            exit 1
-          fi
+  # rollout status 대기
+  if kubectl rollout status deployment/"$DEPLOYMENT_NAME" -n "$NAMESPACE" --timeout=10m; then
+    echo "✅ Rollout 완료!"
+    
+    # 모니터링 프로세스 종료
+    kill $MONITOR_PID 2>/dev/null || true
+    
+    # Rollout 완료 후 Pod 상태 안정화를 위한 대기
+    echo "⏳ Pod 상태 안정화 대기 (5초)..."
+    sleep 5
+    
+    # 실제 Pod Ready 상태 확인
+    echo ""
+    echo "=== Pod Ready 상태 확인 ==="
+    # 간단한 방법으로 변경: kubectl get pods로 직접 확인
+    kubectl get pods -n "$NAMESPACE" -l app.kubernetes.io/component=spring-backend
+    
+    READY_COUNT=$(kubectl get pods -n "$NAMESPACE" -l app.kubernetes.io/component=spring-backend --field-selector=status.phase=Running --no-headers 2>/dev/null | grep -E '([0-9]+)/\1' | wc -l || echo "0")
+    TOTAL_COUNT=$(kubectl get pods -n "$NAMESPACE" -l app.kubernetes.io/component=spring-backend --field-selector=status.phase=Running --no-headers 2>/dev/null | wc -l || echo "0")
+    echo "Running Pod 중 Ready 상태: $READY_COUNT / $TOTAL_COUNT"
+    
+    if [ "$READY_COUNT" -ge 1 ] && [ "$READY_COUNT" -eq "$TOTAL_COUNT" ]; then
+      echo "✅ 모든 Pod가 Ready 상태입니다!"
+      echo ""
+      echo "=== 배포된 이미지 태그 확인 ==="
+      DEPLOYED_IMAGE=$(kubectl get deployment "$DEPLOYMENT_NAME" -n "$NAMESPACE" -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null || echo "")
+      
+      if [ -n "$DEPLOYED_IMAGE" ]; then
+        echo "배포된 이미지: $DEPLOYED_IMAGE"
+        if [[ "$DEPLOYED_IMAGE" == *"$EXPECTED_IMAGE_TAG"* ]]; then
+          echo "✅ 최신 코드로 배포되었습니다!"
+        else
+          echo "⚠️ 경고: 예상한 이미지 태그와 다릅니다!"
+          echo "   예상: *$EXPECTED_IMAGE_TAG*"
+          echo "   실제: $DEPLOYED_IMAGE"
+        fi
+      else
+        echo "⚠️ 배포된 이미지 정보를 가져올 수 없습니다."
+      fi
+    else
+      set +e  # 오류 출력 중에는 즉시 종료하지 않음
+      echo "❌ Pod가 Ready 상태가 아닙니다!"
+      echo ""
+      echo "=== Pod 상세 정보 ==="
+      kubectl get pods -n "$NAMESPACE" -l app.kubernetes.io/component=spring-backend -o wide
+      echo ""
+      echo "=== Pod 이벤트 ==="
+      kubectl get events -n "$NAMESPACE" --sort-by='.lastTimestamp' | grep spring-backend | tail -20 || true
+      echo ""
+      echo "=== Pod 로그 (최신 Pod) ==="
+      LATEST_POD=$(kubectl get pods -n "$NAMESPACE" -l app.kubernetes.io/component=spring-backend --sort-by=.metadata.creationTimestamp -o jsonpath='{.items[-1].metadata.name}' 2>/dev/null)
+      if [ -n "$LATEST_POD" ]; then
+        echo "Pod: $LATEST_POD"
+        kubectl logs "$LATEST_POD" -n "$NAMESPACE" --tail=100 2>&1 || echo "로그를 가져올 수 없습니다."
+        echo ""
+        echo "=== Pod Describe ==="
+        kubectl describe pod "$LATEST_POD" -n "$NAMESPACE" | tail -50 || true
+      fi
+      exit 1
+    fi
+  else
+    set +e  # 오류 출력 중에는 즉시 종료하지 않음
+    # 모니터링 프로세스 종료
+    kill $MONITOR_PID 2>/dev/null || true
+    echo "❌ Rollout 실패!"
+    echo ""
+    echo "=== Pod 상세 정보 ==="
+    kubectl get pods -n "$NAMESPACE" -l app.kubernetes.io/component=spring-backend -o wide
+    echo ""
+    echo "=== Pod 이벤트 ==="
+    kubectl get events -n "$NAMESPACE" --sort-by='.lastTimestamp' | grep spring-backend | tail -20 || true
+    echo ""
+    echo "=== Pod 로그 (최신 Pod) ==="
+    LATEST_POD=$(kubectl get pods -n "$NAMESPACE" -l app.kubernetes.io/component=spring-backend --sort-by=.metadata.creationTimestamp -o jsonpath='{.items[-1].metadata.name}' 2>/dev/null)
+    if [ -n "$LATEST_POD" ]; then
+      echo "Pod: $LATEST_POD"
+      kubectl logs "$LATEST_POD" -n "$NAMESPACE" --tail=100 2>&1 || echo "로그를 가져올 수 없습니다."
+      echo ""
+      echo "=== Pod Describe ==="
+      kubectl describe pod "$LATEST_POD" -n "$NAMESPACE" | tail -50 || true
+    fi
+    exit 1
+  fi
 
       - name: Check pod status
         run: |
