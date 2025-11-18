@@ -9,7 +9,7 @@ metadata:
 spec:
   # HPA 사용 여부에 따라 replicas는 1 또는 .Values.autoscaling.minReplicas로 설정
   replicas: 1
-  progressDeadlineSeconds: 900  # 10분 (배포 전 이전 Pod 삭제하므로 충분)
+  progressDeadlineSeconds: 600  # 10분 (배포 전 이전 Pod 삭제하므로 충분)
   selector:
     matchLabels:
       {{- include "stockit-backend-chart.selectorLabels" . | nindent 6 }}
@@ -67,7 +67,7 @@ spec:
                   name: {{ .metadata.name }}
                   {{- else }}
                   name: stockit-secrets
-                  {{- end }}ㅋ
+                  {{- end }}
                   key: KIS_API_APPSECRET
             - name: FIREBASE_CREDENTIALS_BASE64
               valueFrom:
