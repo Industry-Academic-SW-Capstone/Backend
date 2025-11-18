@@ -93,5 +93,28 @@ public interface AccountRepository extends JpaRepository<Account, Long> {
            "WHERE a.contest.contestId = :contestId " +
            "AND (a.cash - c.seedMoney) / c.seedMoney > :myReturnRate")
     Long findMyRankInContestByReturnRate(@Param("contestId") Long contestId, 
-                                          @Param("myReturnRate") BigDecimal myReturnRate);
+                                         @Param("myReturnRate") BigDecimal myReturnRate);
+
+    /**
+     * 9. Main 계좌 조회 (회원 ID로)
+     * - isDefault = true인 계좌만 조회
+     * - Member JOIN FETCH로 N+1 문제 방지
+     */
+    @Query("SELECT a FROM Account a " +
+           "JOIN FETCH a.member m " +
+           "WHERE a.member.memberId = :memberId " +
+           "AND a.isDefault = true")
+    Optional<Account> findByMemberIdAndIsDefaultTrue(@Param("memberId") Long memberId);
+
+    /**
+     * 10. 대회 계좌 조회 (회원 ID + 대회 ID로)
+     * - Member와 Contest JOIN FETCH로 N+1 문제 방지
+     */
+    @Query("SELECT a FROM Account a " +
+           "JOIN FETCH a.member m " +
+           "JOIN FETCH a.contest c " +
+           "WHERE a.member.memberId = :memberId " +
+           "AND a.contest.contestId = :contestId")
+    Optional<Account> findByMemberIdAndContestId(@Param("memberId") Long memberId, 
+                                                  @Param("contestId") Long contestId);
 }

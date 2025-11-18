@@ -224,16 +224,12 @@ public class RankingService {
      */
     private Account findMyAccount(Long memberId, Long contestId) {
         if (contestId == null) {
-            // Main 계좌 조회
-            return accountRepository.findMainAccountsOrderByBalance().stream()
-                    .filter(account -> account.getMember().getMemberId().equals(memberId))
-                    .findFirst()
+            // Main 계좌 조회 (DB 레벨에서 필터링)
+            return accountRepository.findByMemberIdAndIsDefaultTrue(memberId)
                     .orElseThrow(() -> new IllegalArgumentException("Main 계좌를 찾을 수 없습니다."));
         } else {
-            // 대회 계좌 조회
-            return accountRepository.findByContestIdOrderByBalance(contestId).stream()
-                    .filter(account -> account.getMember().getMemberId().equals(memberId))
-                    .findFirst()
+            // 대회 계좌 조회 (DB 레벨에서 필터링)
+            return accountRepository.findByMemberIdAndContestId(memberId, contestId)
                     .orElseThrow(() -> new IllegalArgumentException("대회 계좌를 찾을 수 없습니다."));
         }
     }
