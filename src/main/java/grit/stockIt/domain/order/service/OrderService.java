@@ -9,10 +9,12 @@ import grit.stockIt.domain.matching.repository.RedisOrderBookRepository;
 import grit.stockIt.domain.order.dto.LimitOrderCreateRequest;
 import grit.stockIt.domain.order.dto.MarketOrderCreateRequest;
 import grit.stockIt.domain.order.dto.OrderResponse;
+import grit.stockIt.domain.order.dto.PendingOrdersResponse;
 import grit.stockIt.domain.order.entity.Order;
 import grit.stockIt.domain.order.entity.OrderHold;
 import grit.stockIt.domain.order.entity.OrderMethod;
 import grit.stockIt.domain.order.entity.OrderStatus;
+import grit.stockIt.domain.order.entity.OrderType;
 import grit.stockIt.domain.order.repository.OrderHoldRepository;
 import grit.stockIt.domain.order.repository.OrderRepository;
 import grit.stockIt.domain.stock.entity.Stock;
@@ -31,6 +33,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.util.List;
 import java.util.Optional;
 
 @Slf4j
@@ -184,6 +187,46 @@ public class OrderService {
                 .orElseThrow(() -> new BadRequestException("주문을 찾을 수 없습니다."));
         ensureAccountOwner(order.getAccount());
         return OrderResponse.from(order);
+    }
+
+    @Transactional(readOnly = true)
+    public PendingOrdersResponse getPendingOrders(Long accountId) {
+        // Account 조회 및 권한 확인
+        Account account = accountRepository.findById(accountId)
+                .orElseThrow(() -> new BadRequestException("계좌를 찾을 수 없습니다."));
+
+        ensureAccountOwner(account);
+
+        // 대기 주문 목록 조회 (PENDING, PARTIALLY_FILLED)
+        List<Order> pendingOrders = orderRepository.findAllPendingOrdersByAccountId(
+                accountId,
+                List.of(OrderStatus.PENDING, OrderStatus.PARTIALLY_FILLED)
+        );
+
+        // DTO 변환
+        List<PendingOrdersResponse.PendingOrderItem> orderItems = pendingOrders.stream()
+                .map(order -> {
+                    String stockCode = order.getStock().getCode();
+                    String stockName = order.getStock().getName();
+                    String marketType = order.getStock().getMarketType();
+                    BigDecimal price = order.getOrderType() == OrderType.MARKET ? null : order.getPrice();
+
+                    return new PendingOrdersResponse.PendingOrderItem(
+                            order.getOrderId(),
+                            stockCode,
+                            stockName,
+                            marketType,
+                            order.getOrderMethod(),
+                            price,
+                            order.getQuantity(),
+                            order.getRemainingQuantity(),
+                            order.getCreatedAt()
+                    );
+                })
+                .toList();
+
+        log.info("대기 주문 조회 완료: accountId={}, count={}", accountId, orderItems.size());
+        return new PendingOrdersResponse(orderItems);
     }
 
     private BigDecimal calculateHoldAmount(Order order) {
