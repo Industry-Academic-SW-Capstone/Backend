@@ -18,6 +18,12 @@ public interface AccountRepository extends JpaRepository<Account, Long> {
     List<Account> findByMember(Member member);
     List<Account> findByContest(Contest contest);
 
+    // --- ⬇️ [신규] MissionService를 위해 이 메서드 추가 ⬇️ ---
+    /**
+     * 회원의 '기본' 계좌를 찾습니다. (isDefault = true)
+     */
+    Optional<Account> findByMemberAndIsDefaultTrue(Member member);
+
     // ==================== 랭킹 관련 쿼리 ====================
 
     /**
