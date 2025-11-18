@@ -187,6 +187,8 @@ jobs:
           echo "⏳ Pod가 Ready 상태가 될 때까지 대기 중..." && \
           DEPLOYMENT_NAME="${{ env.HELM_RELEASE_NAME }}-stockit-backend-chart-spring-backend" && \
           NAMESPACE="${{ env.HELM_NAMESPACE }}" && \
+          EXPECTED_IMAGE_TAG="${{ steps.image-tag.outputs.tag }}" && \
+          echo "예상 이미지 태그: $EXPECTED_IMAGE_TAG" && \
           # 2분마다 stuck된 Pod 확인 및 삭제 (백그라운드)
           (
             for i in {1..5}; do
@@ -206,10 +208,23 @@ jobs:
           ) & \
           MONITOR_PID=$! && \
           # rollout status 대기
-          kubectl rollout status deployment/$DEPLOYMENT_NAME --namespace $NAMESPACE --timeout=10m && \
+          kubectl rollout status "deployment/$DEPLOYMENT_NAME" --namespace "$NAMESPACE" --timeout=10m && \
           # 모니터링 프로세스 종료
           kill $MONITOR_PID 2>/dev/null || true && \
-          echo "✅ 배포 완료!"
+          echo "✅ 배포 완료!" && \
+          echo "" && \
+          echo "=== 배포된 이미지 태그 확인 ===" && \
+          DEPLOYED_IMAGE=$(kubectl get deployment "$DEPLOYMENT_NAME" -n "$NAMESPACE" -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null || echo "") && \
+          if [ -n "$DEPLOYED_IMAGE" ]; then
+            echo "배포된 이미지: $DEPLOYED_IMAGE" && \
+            if [[ "$DEPLOYED_IMAGE" == *"$EXPECTED_IMAGE_TAG"* ]]; then
+              echo "✅ 최신 코드로 배포되었습니다!"
+            else
+              echo "⚠️ 경고: 예상한 이미지 태그와 다릅니다!"
+            fi
+          else
+            echo "⚠️ 배포된 이미지 정보를 가져올 수 없습니다."
+          fi
 
       - name: Check pod status
         run: |
