@@ -561,6 +561,7 @@ public class KisWebSocketClient extends TextWebSocketHandler {
     private void resubscribeAll() {
         try {
             // WebSocketSubscriptionManager의 구독 목록과 내부 구독 목록을 합침
+            // subscriptionManager에는 연결 끊김 직전에 구독 요청이 있었으나 subscribedStocks에 반영되지 못한 종목도 포함됨
             Set<String> allStocks = new HashSet<>(subscriptionManager.getAllSubscribedStocks());
             allStocks.addAll(subscribedStocks);
             
@@ -572,7 +573,8 @@ public class KisWebSocketClient extends TextWebSocketHandler {
             log.info("종목 재구독 시작: 체결가 {}개, 호가 {}개", allStocks.size(), subscribedOrderBooks.size());
             
             // 기존 구독 목록 초기화 후 재구독
-            Set<String> stocksToResubscribe = new HashSet<>(subscribedStocks);
+            // allStocks를 사용하여 subscriptionManager의 상태까지 포함한 모든 종목 재구독
+            Set<String> stocksToResubscribe = new HashSet<>(allStocks);
             Set<String> orderBooksToResubscribe = new HashSet<>(subscribedOrderBooks);
             subscribedStocks.clear();
             subscribedOrderBooks.clear();
