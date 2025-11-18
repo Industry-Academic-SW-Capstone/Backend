@@ -1,5 +1,6 @@
 package grit.stockIt.domain.stock.service;
 
+import grit.stockIt.domain.matching.repository.RedisMarketDataRepository;
 import grit.stockIt.domain.stock.dto.KisStockDetailDto;
 import grit.stockIt.domain.stock.dto.KisStockDetailResponseDto;
 import grit.stockIt.domain.stock.dto.StockDetailDto;
@@ -32,6 +33,7 @@ public class StockDetailService {
     private final KisApiProperties kisApiProperties;
     private final StockRepository stockRepository;
     private final ObjectMapper objectMapper;
+    private final RedisMarketDataRepository redisMarketDataRepository;
 
     // 주식 상세 정보 조회
     public Mono<StockDetailDto> getStockDetail(String stockCode) {
@@ -60,20 +62,35 @@ public class StockDetailService {
                 .onErrorResume(e -> Mono.error(new RuntimeException("주식 상세 정보 조회 실패: " + stockCode, e)));
     }
 
-    // KIS API에서 현재가만 조회
+    // KIS API에서 현재가만 조회 (캐시 우선)
     public Mono<BigDecimal> getCurrentPrice(String stockCode) {
-        return getStockPriceFromKis(stockCode)
-                .map(kisDetail -> {
-                    String priceStr = kisDetail.currentPrice();
-                    if (priceStr == null || priceStr.trim().isEmpty()) {
-                        throw new RuntimeException("KIS API에서 현재가를 가져올 수 없습니다: " + stockCode);
+        // 1. Redis 캐시에서 먼저 조회
+        return Mono.fromCallable(() -> redisMarketDataRepository.getLastPrice(stockCode))
+                .flatMap(cachedPrice -> {
+                    if (cachedPrice.isPresent()) {
+                        log.info("캐시에서 현재가 조회: stockCode={}, price={}", stockCode, cachedPrice.get());
+                        return Mono.just(cachedPrice.get());
                     }
-                    try {
-                        return new BigDecimal(priceStr.trim());
-                    } catch (NumberFormatException e) {
-                        log.error("현재가 파싱 실패: stockCode={}, price={}", stockCode, priceStr, e);
-                        throw new RuntimeException("현재가 파싱 실패: " + stockCode, e);
-                    }
+                    
+                    // 2. 캐시에 없으면 KIS API 호출
+                    log.info("캐시에 없어 KIS API 호출: stockCode={}", stockCode);
+                    return getStockPriceFromKis(stockCode)
+                            .map(kisDetail -> {
+                                String priceStr = kisDetail.currentPrice();
+                                if (priceStr == null || priceStr.trim().isEmpty()) {
+                                    throw new RuntimeException("KIS API에서 현재가를 가져올 수 없습니다: " + stockCode);
+                                }
+                                try {
+                                    BigDecimal price = new BigDecimal(priceStr.trim());
+                                    // 3. Redis에 캐시 저장
+                                    redisMarketDataRepository.updateLastPrice(stockCode, price);
+                                    log.info("KIS API에서 현재가 조회 및 캐시 저장: stockCode={}, price={}", stockCode, price);
+                                    return price;
+                                } catch (NumberFormatException e) {
+                                    log.error("현재가 파싱 실패: stockCode={}, price={}", stockCode, priceStr, e);
+                                    throw new RuntimeException("현재가 파싱 실패: " + stockCode, e);
+                                }
+                            });
                 })
                 .doOnError(e -> log.error("현재가 조회 실패: stockCode={}", stockCode, e));
     }
