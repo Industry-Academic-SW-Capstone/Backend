@@ -6,6 +6,7 @@ import grit.stockIt.domain.contest.dto.ContestUpdateRequest;
 import grit.stockIt.domain.contest.service.ContestService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
+// removed invalid import alias for RequestBody
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -18,6 +19,8 @@ import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import grit.stockIt.domain.account.dto.JoinContestRequest;
+import grit.stockIt.domain.account.dto.AccountResponse;
 
 @Slf4j
 @RestController
@@ -27,6 +30,8 @@ import java.util.List;
 public class ContestController {
 
     private final ContestService contestService;
+    private final grit.stockIt.domain.account.service.AccountService accountService;
+    private final grit.stockIt.domain.member.repository.MemberRepository memberRepository;
 
     @Operation(
             summary = "대회 생성", 
@@ -101,5 +106,37 @@ public class ContestController {
         
         contestService.deleteContest(contestId, userDetails.getUsername());
         return ResponseEntity.noContent().build();
+    }
+
+    @Operation(
+            summary = "대회 참여",
+            description = "인증된 사용자가 특정 대회에 참여하여 계좌를 생성합니다",
+            security = @SecurityRequirement(name = "bearerAuth")
+    )
+        @PostMapping("/{contestId}/join")
+        public ResponseEntity<?> joinContest(
+            @Parameter(name = "contestId", description = "대회 ID", required = true)
+            @PathVariable("contestId") Long contestId,
+            @Valid @io.swagger.v3.oas.annotations.parameters.RequestBody(description = "계좌명", required = true)
+            @RequestBody JoinContestRequest request,
+            @Parameter(hidden = true) @AuthenticationPrincipal UserDetails userDetails) {
+
+        if (userDetails == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
+
+        String email = userDetails.getUsername();
+        var memberOpt = memberRepository.findByEmail(email);
+        if (memberOpt.isEmpty()) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
+
+        try {
+            var account = accountService.createAccountForContest(memberOpt.get(), contestId, request.getAccountName());
+            var resp = AccountResponse.from(account);
+            return ResponseEntity.status(HttpStatus.CREATED).body(resp);
+        } catch (IllegalArgumentException ex) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(ex.getMessage());
+        }
     }
 }
