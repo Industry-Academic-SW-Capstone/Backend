@@ -51,6 +51,16 @@ public class Member extends BaseEntity {
     @Builder.Default
     private boolean executionNotificationEnabled = true;
 
+    // 2단계 인증 사용 여부
+    @Column(name = "two_factor_enabled", nullable = false)
+    @Builder.Default
+    private boolean twoFactorEnabled = false;
+
+    // 기타 알림 동의 여부
+    @Column(name = "notification_agreement", nullable = false)
+    @Builder.Default
+    private boolean notificationAgreement = false;
+
     /**
      * 카카오 토큰 업데이트 또는 생성
      */
@@ -84,5 +94,27 @@ public class Member extends BaseEntity {
 
     public boolean isExecutionNotificationEnabled() {
         return executionNotificationEnabled;
+    }
+
+    // 프로필 정보 업데이트
+    public void updateProfile(String name, String profileImage) {
+        if (name != null) this.name = name;
+        if (profileImage != null) this.profileImage = profileImage;
+    }
+
+    public void setTwoFactorEnabled(boolean enabled) {
+        this.twoFactorEnabled = enabled;
+    }
+
+    public void setNotificationAgreement(boolean agreed) {
+        this.notificationAgreement = agreed;
+    }
+
+    public boolean isTwoFactorEnabled() {
+        return twoFactorEnabled;
+    }
+
+    public boolean isNotificationAgreement() {
+        return notificationAgreement;
     }
 }

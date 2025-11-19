@@ -24,6 +24,8 @@ public class MemberResponse {
     private String profileImage;
     private String provider; // LOCAL, KAKAO
     private LocalDateTime createdAt;
+    private boolean twoFactorEnabled;
+    private boolean notificationAgreement;
 
     public static MemberResponse from(Member member) {
         return MemberResponse.builder()
@@ -33,6 +35,8 @@ public class MemberResponse {
                 .profileImage(member.getProfileImage())
                 .provider(member.getProvider() != null ? member.getProvider().name() : null)
                 .createdAt(member.getCreatedAt())
+                .twoFactorEnabled(member.isTwoFactorEnabled())
+                .notificationAgreement(member.isNotificationAgreement())
                 .build();
     }
 }

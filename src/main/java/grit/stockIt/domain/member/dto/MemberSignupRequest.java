@@ -25,10 +25,4 @@ public class MemberSignupRequest {
     @Size(min = 8, message = "비밀번호는 8자 이상이어야 합니다.")
     private String password;
 
-    @NotBlank(message = "이름은 필수입니다.")
-    @Size(max = 20, message = "이름은 20자 이하여야 합니다.")
-    private String name;
-
-    @Size(max = 255, message = "프로필 이미지 경로는 255자 이하여야 합니다.")
-    private String profileImage; 
 }
