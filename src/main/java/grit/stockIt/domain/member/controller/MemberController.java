@@ -30,6 +30,8 @@ import org.springframework.web.bind.annotation.*;
 public class MemberController {
 
     private final LocalMemberService memberService; 
+    private final grit.stockIt.domain.account.service.AccountService accountService;
+    private final grit.stockIt.domain.member.repository.MemberRepository memberRepository;
     @Operation(summary = "회원가입", description = "새로운 회원을 등록합니다.")
     @PostMapping("/signup")
     public ResponseEntity<MemberResponse> signup(@Valid @RequestBody MemberSignupRequest request) {
@@ -92,6 +94,26 @@ public class MemberController {
         String email = auth.getName();
         MemberResponse updated = memberService.updateMember(email, request);
         return ResponseEntity.ok(updated);
+    }
+
+    @Operation(summary = "내 계좌 목록 조회", description = "현재 로그인한 사용자의 모든 계좌 정보를 반환합니다.")
+    @GetMapping("/me/accounts")
+    public ResponseEntity<java.util.List<grit.stockIt.domain.account.dto.AccountResponse>> getMyAccounts() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+
+        if (auth == null || !auth.isAuthenticated() || "anonymousUser".equals(auth.getPrincipal())) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
+
+        String email = auth.getName();
+        var memberOpt = memberRepository.findByEmail(email);
+        if (memberOpt.isEmpty()) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
+
+        var accounts = accountService.getAccountsForMember(memberOpt.get());
+        var resp = accounts.stream().map(grit.stockIt.domain.account.dto.AccountResponse::from).toList();
+        return ResponseEntity.ok(resp);
     }
 
     @Operation(summary = "FCM 토큰 등록/업데이트", description = "FCM 푸시 알림을 받기 위한 토큰을 등록하거나 업데이트합니다.")

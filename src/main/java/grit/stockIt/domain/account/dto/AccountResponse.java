@@ -9,6 +9,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 
 @Getter
 @Builder
@@ -21,7 +22,12 @@ public class AccountResponse {
     private Long contestId;
     private String accountName;
     private BigDecimal cash;
+    private BigDecimal holdAmount;
+    private BigDecimal availableCash;
     private Boolean isDefault;
+    private LocalDateTime createdAt;
+    private LocalDateTime updatedAt;
+    private LocalDateTime deletedAt;
 
     public static AccountResponse from(Account a) {
         return AccountResponse.builder()
@@ -30,7 +36,12 @@ public class AccountResponse {
                 .contestId(a.getContest() != null ? a.getContest().getContestId() : null)
                 .accountName(a.getAccountName())
                 .cash(a.getCash())
+                .holdAmount(a.getHoldAmount())
+                .availableCash(a.getAvailableCash())
                 .isDefault(a.getIsDefault())
+                .createdAt(a.getCreatedAt())
+                .updatedAt(a.getUpdatedAt())
+                .deletedAt(a.getDeletedAt())
                 .build();
     }
 }
