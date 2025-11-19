@@ -31,7 +31,6 @@ public class MemberController {
 
     private final LocalMemberService memberService; 
     private final grit.stockIt.domain.account.service.AccountService accountService;
-    private final grit.stockIt.domain.member.repository.MemberRepository memberRepository;
     @Operation(summary = "회원가입", description = "새로운 회원을 등록합니다.")
     @PostMapping("/signup")
     public ResponseEntity<MemberResponse> signup(@Valid @RequestBody MemberSignupRequest request) {
@@ -106,9 +105,10 @@ public class MemberController {
         }
 
         String email = auth.getName();
-        var memberOpt = memberRepository.findByEmail(email);
+        var memberOpt = memberService.findMemberEntityByEmail(email);
         if (memberOpt.isEmpty()) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+            log.error("Authenticated principal not found in DB: email={}", email);
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).build();
         }
 
         var accounts = accountService.getAccountsForMember(memberOpt.get());

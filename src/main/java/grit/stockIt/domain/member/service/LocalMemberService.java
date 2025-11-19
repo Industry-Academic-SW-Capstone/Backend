@@ -11,6 +11,7 @@ import grit.stockIt.domain.member.repository.MemberRepository;
 import grit.stockIt.global.jwt.JwtService;
 import grit.stockIt.global.jwt.JwtToken;
 import lombok.RequiredArgsConstructor;
+import java.util.Optional;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -155,6 +156,15 @@ public class LocalMemberService {
     @Transactional(readOnly = true)
     public boolean existsByEmail(String email) {
         return memberRepository.existsByEmail(email);
+    }
+
+    /**
+     * 회원 엔티티를 Optional로 반환합니다. 컨트롤러에서 엔티티가 필요한 경우 사용하세요.
+     * (계좌 조회 등 엔티티 전달이 필요한 상황에서 Repository 접근을 컨트롤러에 두지 않기 위해 추가)
+     */
+    @Transactional(readOnly = true)
+    public Optional<Member> findMemberEntityByEmail(String email) {
+        return memberRepository.findByEmail(email);
     }
 
     // 체결 알림 설정 변경
