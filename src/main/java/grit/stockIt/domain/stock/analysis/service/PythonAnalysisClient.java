@@ -22,15 +22,11 @@ public class PythonAnalysisClient {
 
     // Python 서버에 종목분석 요청
     public Mono<StockAnalysisResponse> analyze(StockAnalysisRequest request) {
-        log.info("Python 서버에 종목분석 요청: stockCode={}", request.stockCode());
-
         return webClient.post()
                 .uri(pythonServerUrl + "/stock/analyze")
                 .bodyValue(request)
                 .retrieve()
-                .bodyToMono(StockAnalysisResponse.class)
-                .doOnSuccess(response -> log.info("Python 서버 분석 완료: stockCode={}", request.stockCode()))
-                .doOnError(e -> log.error("Python 서버 분석 실패: stockCode={}", request.stockCode(), e));
+                .bodyToMono(StockAnalysisResponse.class);
     }
 }
 
