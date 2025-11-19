@@ -1,10 +1,11 @@
 package grit.stockIt.domain.contest.dto;
 
-import com.fasterxml.jackson.annotation.JsonCreator;
-import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.databind.PropertyNamingStrategies;
+import com.fasterxml.jackson.databind.annotation.JsonNaming;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -14,36 +15,11 @@ import java.time.LocalDateTime;
 
 @Getter
 @NoArgsConstructor
+@AllArgsConstructor
 @Builder
 @Schema(description = "대회 생성 요청")
+@JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
 public class ContestCreateRequest {
-
-    @JsonCreator
-    public ContestCreateRequest(
-            @JsonProperty("contestName") String contestName,
-            @JsonProperty("startDate") LocalDateTime startDate,
-            @JsonProperty("endDate") LocalDateTime endDate,
-            @JsonProperty("seedMoney") Long seedMoney,
-            @JsonProperty("commissionRate") BigDecimal commissionRate,
-            @JsonProperty("minMarketCap") Long minMarketCap,
-            @JsonProperty("maxMarketCap") Long maxMarketCap,
-            @JsonProperty("dailyTradeLimit") Integer dailyTradeLimit,
-            @JsonProperty("maxHoldingsCount") Integer maxHoldingsCount,
-            @JsonProperty("buyCooldownMinutes") Integer buyCooldownMinutes,
-            @JsonProperty("sellCooldownMinutes") Integer sellCooldownMinutes) {
-        this.contestName = contestName;
-        this.startDate = startDate;
-        this.endDate = endDate;
-        this.seedMoney = seedMoney;
-        this.commissionRate = commissionRate;
-        this.minMarketCap = minMarketCap;
-        this.maxMarketCap = maxMarketCap;
-        this.dailyTradeLimit = dailyTradeLimit;
-        this.maxHoldingsCount = maxHoldingsCount;
-        this.buyCooldownMinutes = buyCooldownMinutes;
-        this.sellCooldownMinutes = sellCooldownMinutes;
-    }
-
     @NotBlank(message = "대회명은 필수입니다")
     @Schema(description = "대회명", example = "2025 모의투자 대회")
     private String contestName;
