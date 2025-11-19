@@ -18,17 +18,17 @@ public class ContestUpdateRequest {
 
     @JsonCreator
     public ContestUpdateRequest(
-            @JsonProperty("contestName") String contestName,
-            @JsonProperty("startDate") LocalDateTime startDate,
-            @JsonProperty("endDate") LocalDateTime endDate,
-            @JsonProperty("seedMoney") Long seedMoney,
-            @JsonProperty("commissionRate") BigDecimal commissionRate,
-            @JsonProperty("minMarketCap") Long minMarketCap,
-            @JsonProperty("maxMarketCap") Long maxMarketCap,
-            @JsonProperty("dailyTradeLimit") Integer dailyTradeLimit,
-            @JsonProperty("maxHoldingsCount") Integer maxHoldingsCount,
-            @JsonProperty("buyCooldownMinutes") Integer buyCooldownMinutes,
-            @JsonProperty("sellCooldownMinutes") Integer sellCooldownMinutes) {
+            @JsonProperty("contest_name") String contestName,
+            @JsonProperty("start_date") LocalDateTime startDate,
+            @JsonProperty("end_date") LocalDateTime endDate,
+            @JsonProperty("seed_money") Long seedMoney,
+            @JsonProperty("commission_rate") BigDecimal commissionRate,
+            @JsonProperty("min_market_cap") Long minMarketCap,
+            @JsonProperty("max_market_cap") Long maxMarketCap,
+            @JsonProperty("daily_trade_limit") Integer dailyTradeLimit,
+            @JsonProperty("max_holdings_count") Integer maxHoldingsCount,
+            @JsonProperty("buy_cooldown_minutes") Integer buyCooldownMinutes,
+            @JsonProperty("sell_cooldown_minutes") Integer sellCooldownMinutes) {
         this.contestName = contestName;
         this.startDate = startDate;
         this.endDate = endDate;

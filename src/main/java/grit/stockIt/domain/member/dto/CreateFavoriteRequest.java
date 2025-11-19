@@ -14,7 +14,7 @@ public class CreateFavoriteRequest {
     private String stockCode;
 
     @JsonCreator
-    public CreateFavoriteRequest(@JsonProperty("stockCode") String stockCode) {
+    public CreateFavoriteRequest(@JsonProperty("stock_code") String stockCode) {
         if (stockCode != null) {
             stockCode = stockCode.trim();
         }

@@ -85,4 +85,9 @@ public class AccountService {
             return accountRepository.findByMemberAndContest(member, contest).orElseThrow(() -> ex);
         }
     }
+
+    @Transactional(readOnly = true)
+    public java.util.List<Account> getAccountsForMember(Member member) {
+        return accountRepository.findByMember(member);
+    }
 }
