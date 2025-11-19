@@ -5,6 +5,7 @@ import grit.stockIt.domain.member.dto.MemberLoginRequest;
 import grit.stockIt.domain.member.dto.MemberResponse;
 import grit.stockIt.domain.member.dto.MemberSignupRequest;
 import grit.stockIt.domain.member.dto.NotificationSettingsRequest;
+import grit.stockIt.domain.member.dto.MemberUpdateRequest;
 import grit.stockIt.domain.member.service.LocalMemberService;
 import grit.stockIt.global.jwt.JwtToken;
 import io.swagger.v3.oas.annotations.Operation;
@@ -63,6 +64,34 @@ public class MemberController {
         log.info("로그아웃: {}", email);
         
         return ResponseEntity.ok("로그아웃되었습니다.");
+    }
+
+    @Operation(summary = "내 정보 조회", description = "현재 로그인한 사용자의 정보를 반환합니다.")
+    @GetMapping("/me")
+    public ResponseEntity<MemberResponse> getMyInfo() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+
+        if (auth == null || !auth.isAuthenticated() || "anonymousUser".equals(auth.getPrincipal())) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
+
+        String email = auth.getName();
+        MemberResponse resp = memberService.getMemberByEmail(email);
+        return ResponseEntity.ok(resp);
+    }
+
+    @Operation(summary = "내 정보 수정", description = "현재 로그인한 사용자의 프로필 및 설정을 수정합니다.")
+    @PutMapping("/me")
+    public ResponseEntity<MemberResponse> updateMyInfo(@RequestBody MemberUpdateRequest request) {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+
+        if (auth == null || !auth.isAuthenticated() || "anonymousUser".equals(auth.getPrincipal())) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
+
+        String email = auth.getName();
+        MemberResponse updated = memberService.updateMember(email, request);
+        return ResponseEntity.ok(updated);
     }
 
     @Operation(summary = "FCM 토큰 등록/업데이트", description = "FCM 푸시 알림을 받기 위한 토큰을 등록하거나 업데이트합니다.")

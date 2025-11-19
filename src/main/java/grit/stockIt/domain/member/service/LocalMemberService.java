@@ -4,6 +4,7 @@ import grit.stockIt.domain.account.service.AccountService;
 import grit.stockIt.domain.member.dto.MemberLoginRequest;
 import grit.stockIt.domain.member.dto.MemberResponse;
 import grit.stockIt.domain.member.dto.MemberSignupRequest;
+import grit.stockIt.domain.member.dto.MemberUpdateRequest;
 import grit.stockIt.domain.member.entity.AuthProvider;
 import grit.stockIt.domain.member.entity.Member;
 import grit.stockIt.domain.member.repository.MemberRepository;
@@ -36,13 +37,17 @@ public class LocalMemberService {
         String encodedPassword = passwordEncoder.encode(request.getPassword());
 
         // 회원 생성 (로컬 회원)
+        String defaultName = request.getEmail() != null && request.getEmail().contains("@")
+            ? request.getEmail().split("@")[0]
+            : request.getEmail();
+
         Member member = Member.builder()
-                .name(request.getName())
-                .email(request.getEmail())
-                .password(encodedPassword)
-                .profileImage(request.getProfileImage())
-                .provider(AuthProvider.LOCAL) // 로컬 사용자로 설정
-                .build();
+            .name(defaultName)
+            .email(request.getEmail())
+            .password(encodedPassword)
+            .profileImage(null)
+            .provider(AuthProvider.LOCAL) // 로컬 사용자로 설정
+            .build();
 
         Member savedMember = memberRepository.save(member);
 
@@ -50,6 +55,35 @@ public class LocalMemberService {
         accountService.createDefaultAccountForMember(savedMember);
 
         return MemberResponse.from(savedMember);
+    }
+
+    @Transactional(readOnly = true)
+    public MemberResponse getMemberByEmail(String email) {
+        Member member = memberRepository.findByEmail(email)
+                .orElseThrow(() -> new IllegalArgumentException("회원을 찾을 수 없습니다."));
+        return MemberResponse.from(member);
+    }
+
+    @Transactional
+    public MemberResponse updateMember(String email, MemberUpdateRequest request) {
+        Member member = memberRepository.findByEmail(email)
+                .orElseThrow(() -> new IllegalArgumentException("회원을 찾을 수 없습니다."));
+
+        // update optional profile fields
+        if (request.getName() != null || request.getProfileImage() != null) {
+            member.updateProfile(request.getName(), request.getProfileImage());
+        }
+
+        if (request.getTwoFactorEnabled() != null) {
+            member.setTwoFactorEnabled(request.getTwoFactorEnabled());
+        }
+
+        if (request.getNotificationAgreement() != null) {
+            member.setNotificationAgreement(request.getNotificationAgreement());
+        }
+
+        Member saved = memberRepository.save(member);
+        return MemberResponse.from(saved);
     }
 
     /**
