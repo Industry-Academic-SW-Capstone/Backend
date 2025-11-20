@@ -18,6 +18,12 @@ WORKDIR /app
 # 보안을 위해 non-root 유저 생성 및 사용
 RUN addgroup --system stockit && adduser --system --ingroup stockit stockit
 
+# 타임존 설정 (Asia/Seoul) - root 권한 필요하므로 USER 전에 실행
+ENV TZ=Asia/Seoul
+RUN apk add --no-cache tzdata && \
+  cp /usr/share/zoneinfo/Asia/Seoul /etc/localtime && \
+  echo "Asia/Seoul" > /etc/timezone
+
 # 빌드 스테이지에서 JAR 파일만 복사 (구체적인 파일명 사용)
 COPY --from=build /app/build/libs/stockIt-*.jar app.jar
 
@@ -26,12 +32,6 @@ RUN chown stockit:stockit app.jar
 USER stockit
 
 EXPOSE 8080
-
-# 타임존 설정 (Asia/Seoul)
-ENV TZ=Asia/Seoul
-RUN apk add --no-cache tzdata && \
-    cp /usr/share/zoneinfo/Asia/Seoul /etc/localtime && \
-    echo "Asia/Seoul" > /etc/timezone
 
 # JVM 옵션 추가 (컨테이너 환경 최적화 및 타임존 설정)
 ENV JAVA_OPTS="-XX:+UseContainerSupport -XX:MaxRAMPercentage=75.0 -XX:+UseG1GC -XX:+UseStringDeduplication -Duser.timezone=Asia/Seoul"
