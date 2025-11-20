@@ -78,6 +78,7 @@ db:
   service:
     port: 5432
     targetPort: 5432
+    externalPort: 5432  # 외부 접속용 포트 (LoadBalancer Service)
     host: postgres-db-service
   persistence:
     enabled: true
