@@ -56,7 +56,9 @@ public class MissionProgress extends BaseEntity { // 생성 시간(createdAt) = 
         this.currentValue = currentValue;
         this.status = status;
     }
-
+    public void setCurrentValue(int value) {
+        this.currentValue = value;
+    }
     // --- 연관관계 편의 메서드 ---
 
     /**

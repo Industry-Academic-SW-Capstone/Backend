@@ -15,44 +15,23 @@ import java.util.Optional;
 
 public interface MissionProgressRepository extends JpaRepository<MissionProgress, Long> {
 
-    /**
-     *
-     * 특정 회원의 특정 미션 진행도를 조회합니다. (FindOrCreate 로직의 핵심)
-     */
     Optional<MissionProgress> findByMemberAndMission(Member member, Mission mission);
 
-    /**
-     * 특정 회원의 특정 상태(예: IN_PROGRESS)인 모든 미션 진행도를 조회합니다.
-     * (이벤트 발생 시 갱신 대상을 찾는 핵심 메서드)
-     */
     List<MissionProgress> findByMemberAndStatus(Member member, MissionStatus status);
 
-    /**
-     * 특정 트랙의 모든 '일일 미션' 진행도를 조회합니다. (스케줄러의 일괄 초기화용)
-     */
-    List<MissionProgress> findAllByMission_Track(MissionTrack track); // (track = DAILY)
+    // --- ⬇️ [추가] 시드 복사기 업적용: 완료된 미션 개수 카운트 ⬇️ ---
+    long countByMemberAndStatus(Member member, MissionStatus status);
 
-    /**
-     * 특정 회원의 특정 트랙에 해당하는 모든 미션 진행도를 조회합니다.
-     * (트랙 초기화 로직용)
-     */
+    List<MissionProgress> findAllByMission_Track(MissionTrack track);
+
     List<MissionProgress> findAllByMemberAndMission_Track(Member member, MissionTrack track);
 
-    /**
-     * 특정 회원의 모든 미션 진행도를 '미션(Mission)'과 '보상(Reward)' 정보와 함께 조회합니다.
-     * (N+1 문제 해결용)
-     */
     @Query("SELECT mp FROM MissionProgress mp " +
             "JOIN FETCH mp.mission m " +
-            "LEFT JOIN FETCH m.reward r " + // 보상은 없을 수도 있으므로 LEFT JOIN
+            "LEFT JOIN FETCH m.reward r " +
             "WHERE mp.member = :member")
     List<MissionProgress> findByMemberWithMissionAndReward(@Param("member") Member member);
 
-    /**
-     * [신규] N+1 문제 해결 (findDailyAttendanceMission 전용)
-     * 특정 회원의 특정 미션(Track, Type)을 Mission 엔티티와 함께 조회합니다.
-     * 상태(status)와 관계없이 조회합니다.
-     */
     @Query("SELECT mp FROM MissionProgress mp JOIN FETCH mp.mission m " +
             "WHERE mp.member = :member " +
             "AND m.track = :track " +
@@ -63,14 +42,16 @@ public interface MissionProgressRepository extends JpaRepository<MissionProgress
             @Param("conditionType") MissionConditionType conditionType
     );
 
-    /**
-     * [신규] N+1 문제 해결 (updateMissionProgress 전용)
-     * Mission 엔티티를 함께 Fetch Join 합니다.
-     */
     @Query("SELECT mp FROM MissionProgress mp JOIN FETCH mp.mission " +
             "WHERE mp.member = :member AND mp.status = :status")
     List<MissionProgress> findByMemberAndStatusWithMission(
             @Param("member") Member member,
             @Param("status") MissionStatus status
+    );
+
+    // --- ⬇️ [추가] 스케줄러용: 특정 조건 타입(HOLDING_DAYS)이면서 진행 중인 미션 조회 ⬇️ ---
+    List<MissionProgress> findAllByMission_ConditionTypeAndStatus(
+            MissionConditionType conditionType,
+            MissionStatus status
     );
 }

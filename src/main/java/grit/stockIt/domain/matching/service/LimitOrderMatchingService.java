@@ -191,22 +191,40 @@ public class LimitOrderMatchingService {
                 actualFillQuantity = affordableQuantity;
             }
 
+            // ⬇️ [추가 1] 매도(SELL)라면, 로직 실행 전에 '현재 평단가'를 미리 조회해서 임시 저장
+            BigDecimal currentAvgPrice = BigDecimal.ZERO;
+            if (order.getOrderMethod() == OrderMethod.SELL) {
+                // AccountStockRepository를 의존성 주입받아 사용해야 합니다.
+                currentAvgPrice = accountStockRepository
+                        .findByAccountAndStock(order.getAccount(), order.getStock())
+                        .map(AccountStock::getAveragePrice)
+                        .orElse(BigDecimal.ZERO);
+            }
             try {
                 order.applyFill(command.fillQuantity());
                 executions.add(executionService.record(order, event.price(), command.fillQuantity()));
+
+                // 계좌/재고 반영 (여기서 전량 매도 시 AccountStock의 평단가가 0이 될 수 있음)
                 handleAccountOnFill(order, event.price(), command.fillQuantity());
+
                 updatedOrders.add(order);
+
                 if (order.getRemainingQuantity() <= 0) {
                     finalizeFilledOrder(order);
 
                     try {
+                        // ⬇️ [수정 2] 새로운 생성자를 사용하여 '평단가(currentAvgPrice)' 주입
                         TradeCompletionEvent missionEvent = new TradeCompletionEvent(
-                                order.getAccount().getMember().getMemberId(), // Member ID
-                                order.getAccount().getAccountId(),            // Account ID
-                                order.getStock().getCode(),                 // Stock Code
-                                order.getOrderMethod(),                     // BUY or SELL
-                                order.getQuantity(),                        // [수정] '주문의 총 수량'
-                                event.price()                               // 마지막 체결 가격
+                                order.getAccount().getMember().getMemberId(),
+                                order.getAccount().getAccountId(),
+                                order.getStock().getCode(),
+                                order.getOrderMethod(),
+                                order.getQuantity(),         // 총 주문 수량
+                                event.price(),               // 체결 가격 (매도 단가)
+                                null,                        // profitAmount (Service에서 계산할 거면 null)
+                                null,                        // profitRate (Service에서 계산할 거면 null)
+                                0,                           // holdingDays (Scheduler가 처리하거나 별도 로직)
+                                currentAvgPrice              // ⭐️ [핵심] 아까 꺼내둔 평단가 전달!
                         );
                         eventPublisher.publishEvent(missionEvent);
                         log.info("미션 시스템 이벤트 발행 (주문 완료 기준): MemberId={}", missionEvent.getMemberId());

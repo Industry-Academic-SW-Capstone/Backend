@@ -1,5 +1,5 @@
 // MatchingTestController.java
-package grit.stockIt.domain.matching.controller; // (패키지 위치는 알맞게 조정하세요)
+package grit.stockIt.domain.matching.controller;
 
 import grit.stockIt.domain.matching.dto.MarketFillTestRequest;
 import grit.stockIt.domain.matching.event.LimitOrderFillEventMessage;

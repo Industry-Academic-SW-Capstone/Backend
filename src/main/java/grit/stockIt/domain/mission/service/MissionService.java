@@ -1,17 +1,22 @@
 package grit.stockIt.domain.mission.service;
 
+import grit.stockIt.domain.account.entity.Account;
+import grit.stockIt.domain.account.entity.AccountStock;
+import grit.stockIt.domain.account.repository.AccountRepository;
+import grit.stockIt.domain.account.repository.AccountStockRepository; // [추가]
 import grit.stockIt.domain.member.entity.Member;
 import grit.stockIt.domain.member.repository.MemberRepository;
 import grit.stockIt.domain.mission.entity.Mission;
 import grit.stockIt.domain.mission.entity.MissionProgress;
 import grit.stockIt.domain.mission.entity.Reward;
+import grit.stockIt.domain.mission.enums.MissionConditionType;
 import grit.stockIt.domain.mission.enums.MissionStatus;
 import grit.stockIt.domain.mission.enums.MissionTrack;
 import grit.stockIt.domain.mission.enums.MissionType;
 import grit.stockIt.domain.mission.repository.MissionProgressRepository;
 import grit.stockIt.domain.mission.repository.MissionRepository;
-import grit.stockIt.domain.mission.enums.MissionConditionType;
 import grit.stockIt.domain.order.entity.OrderMethod;
+import grit.stockIt.domain.order.event.TradeCompletionEvent;
 import grit.stockIt.domain.title.entity.MemberTitle;
 import grit.stockIt.domain.title.entity.Title;
 import grit.stockIt.domain.title.repository.MemberTitleRepository;
@@ -20,9 +25,8 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import grit.stockIt.domain.order.event.TradeCompletionEvent;
-import grit.stockIt.domain.account.entity.Account;
-import grit.stockIt.domain.account.repository.AccountRepository;
+import grit.stockIt.domain.stock.entity.Stock;
+import grit.stockIt.domain.stock.repository.StockRepository;
 
 import java.math.BigDecimal;
 import java.util.Arrays;
@@ -37,69 +41,275 @@ import java.util.stream.Stream;
 @Transactional // 미션 관련 로직은 하나의 트랜잭션으로 관리
 public class MissionService {
 
-    // --- 의존성 주입 (필요한 모든 리포지토리) ---
+    // --- 의존성 주입 ---
     private final MemberRepository memberRepository;
     private final MissionRepository missionRepository;
     private final MissionProgressRepository missionProgressRepository;
     private final MemberTitleRepository memberTitleRepository;
     private final AccountRepository accountRepository;
+    private final AccountStockRepository accountStockRepository; // [추가됨] 홀딩 여부 확인용
+    private final StockRepository stockRepository;
 
+    private static final long JUNK_STOCK_MARKET_CAP_THRESHOLD = 100000000000L;
     /**
-     * [1] (이벤트 수신) 거래 이벤트 발생 시 호출되는 메인 메서드
-     * (이벤트에는 ID가 포함되어 있으므로 findById 유지)
-     * @param event 발생한 거래 이벤트
+     * [1] (이벤트 수신) 거래 이벤트 발생 시 미션 진행도 업데이트
+     * - 일반 미션 갱신 로직
+     * - 매도(SELL) 발생 시 '홀딩' 미션 초기화 로직 포함
      */
     public void updateMissionProgress(TradeCompletionEvent event) {
-
         log.info("수신된 거래 이벤트: MemberId={}, Method={}, Qty={}",
                 event.getMemberId(), event.getOrderMethod(), event.getFilledQuantity());
 
         Member member = memberRepository.findById(event.getMemberId())
                 .orElseThrow(() -> new EntityNotFoundException("회원을 찾을 수 없습니다."));
 
-        // 1. 회원의 '진행 중'인 미션 목록 조회 (N+1 해결된 쿼리)
+        // 1. 회원의 '진행 중'인 미션 목록 조회
         List<MissionProgress> progressList = missionProgressRepository
                 .findByMemberAndStatusWithMission(member, MissionStatus.IN_PROGRESS);
 
-        // 2. 진행 중인 미션들을 순회하며 조건 검사
+        // 2. 진행 중인 미션 순회
         for (MissionProgress progress : progressList) {
             Mission mission = progress.getMission();
-            MissionTrack track = mission.getTrack();
+            MissionConditionType type = mission.getConditionType();
 
-            // 3. 트랙 필터링 (업적은 항상 검사)
-            if (track == MissionTrack.ACHIEVEMENT || isTrackRelated(track, event)) {
+            // 🚨 [핵심 로직] 매도(SELL) 발생 시 -> '홀딩' 미션은 무조건 0으로 초기화 (존버 실패)
+            if (event.getOrderMethod() == OrderMethod.SELL && type == MissionConditionType.HOLDING_DAYS) {
+                if (progress.getCurrentValue() > 0) {
+                    log.info("매도 발생으로 홀딩 미션 리셋! MissionId={}, 기존값={}",
+                            mission.getId(), progress.getCurrentValue());
+                    progress.setCurrentValue(0); // 0일차로 초기화
+                }
+                continue; // 초기화했으니 다른 검사는 건너뜀
+            }
 
-                if (isMissionConditionMatches(mission, event)) {
+            // 3. 그 외 조건 매칭 여부 확인 및 업데이트
+            if (isMissionConditionMatches(mission, event)) {
+                updateProgressValue(progress, mission, event);
+            }
+        }
+        // 2. [신규] 특수 업적 미션 체크 (달콤한 첫입, 강형욱)
+        checkSpecialAchievement(member, event);
+    }
 
-                    log.info("미션 조건 일치: MemberId={}, MissionId={}, Condition={}",
-                            member.getMemberId(), mission.getId(), mission.getConditionType());
+    /**
+     * [신규] 특수 조건 업적 처리
+     * - 달콤한 첫입 (FIRST_PROFIT)
+     * - 강형욱 (JUNK_STOCK_JACKPOT)
+     */
+    private void checkSpecialAchievement(Member member, TradeCompletionEvent event) {
+        // 매도가 아니거나 수익이 없으면 패스
+        if (event.getOrderMethod() != OrderMethod.SELL) return;
 
-                    int valueToIncrease = 0;
-                    MissionConditionType type = mission.getConditionType();
+        // 수익 여부 판단 (매도가 > 평단가)
+        boolean isProfit = event.getFilledPrice().compareTo(event.getBuyAveragePrice()) > 0;
+        if (!isProfit) return;
 
-                    if (type == MissionConditionType.BUY_COUNT ||
-                            type == MissionConditionType.SELL_COUNT ||
-                            type == MissionConditionType.TRADE_COUNT) {
-                        valueToIncrease = 1;
-                    } else if (type == MissionConditionType.BUY_AMOUNT ||
-                            type == MissionConditionType.SELL_AMOUNT) {
-                        valueToIncrease = event.getFilledAmount().intValue();
-                    }
+        // A. 달콤한 첫입 (첫 수익 실현)
+        handleOneTimeAchievement(member, MissionConditionType.FIRST_PROFIT, 1);
 
-                    if (valueToIncrease > 0) {
-                        progress.incrementProgress(valueToIncrease);
-                        log.info("미션 진행도 갱신: MissionId={}, NewValue={}",
-                                mission.getId(), progress.getCurrentValue());
+        // B. 강형욱 (잡주로 100% 이상 수익)
+        // 종목 정보 조회
+        Stock stock = stockRepository.findById(event.getStockCode()).orElse(null);
+
+/*        // 시가총액 1,000억 미만이고, 수익률이 100% 이상인 경우
+        if (stock != null && stock.getMarketCap() < JUNK_STOCK_MARKET_CAP_THRESHOLD) {
+            // 수익률 계산: (매도가 - 평단가) / 평단가
+            BigDecimal profitRate = event.getFilledPrice().subtract(event.getBuyAveragePrice())
+                    .divide(event.getBuyAveragePrice(), 2, java.math.RoundingMode.HALF_UP);
+
+            // 1.0 이상 (100%)
+            if (profitRate.compareTo(BigDecimal.ONE) >= 0) {
+                log.info("잡주 대박 터짐! Member={}, Stock={}, Rate={}", member.getName(), stock.getName(), profitRate);
+                handleOneTimeAchievement(member, MissionConditionType.JUNK_STOCK_JACKPOT, 1);
+            }
+        }*/
+    }
+
+    /**
+     * 1회성 업적 달성 처리 헬퍼 (이미 완료되었으면 무시)
+     */
+    private void handleOneTimeAchievement(Member member, MissionConditionType type, int value) {
+        missionProgressRepository.findByMemberAndMissionTypeWithMission(member, MissionTrack.ACHIEVEMENT, type)
+                .ifPresent(progress -> {
+                    if (!progress.isCompleted()) {
+                        progress.setCurrentValue(value);
                         checkMissionCompletion(progress);
                     }
+                });
+    }
+    /**
+     * [신규] 스케줄러 호출용: 매일 자정에 보유 주식이 있으면 홀딩 일수 +1
+     */
+    public void processDailyHoldingUpdate() {
+        // 1. 'HOLDING_DAYS' 조건이면서 '진행 중'인 미션들만 조회
+        List<MissionProgress> holdingProgressList = missionProgressRepository
+                .findAllByMission_ConditionTypeAndStatus(MissionConditionType.HOLDING_DAYS, MissionStatus.IN_PROGRESS);
+
+        for (MissionProgress progress : holdingProgressList) {
+            Member member = progress.getMember();
+
+            // 2. 회원이 주식을 하나라도 가지고 있는지 확인 (수량 > 0)
+            boolean hasStock = accountStockRepository.existsByAccount_MemberAndQuantityGreaterThan(member, 0);
+
+            if (hasStock) {
+                progress.incrementProgress(1);
+                log.info("홀딩 미션 +1일 증가: MemberId={}, MissionId={}, NewValue={}",
+                        member.getMemberId(), progress.getMission().getId(), progress.getCurrentValue());
+                checkMissionCompletion(progress);
+            }
+        }
+    }
+
+    // [수정] 진행도 업데이트 로직 개선
+    private void updateProgressValue(MissionProgress progress, Mission mission, TradeCompletionEvent event) {
+        MissionConditionType type = mission.getConditionType();
+        int goal = mission.getGoalValue();
+
+        // A. 누적형 (카운트 증가) - 기존과 동일
+        if (isCumulativeType(type)) {
+            int valueToIncrease = calculateIncreaseValue(type, event);
+            if (valueToIncrease > 0) {
+                progress.incrementProgress(valueToIncrease);
+                log.info("미션(누적) 갱신: MissionId={}, Added={}, Current={}",
+                        mission.getId(), valueToIncrease, progress.getCurrentValue());
+                checkMissionCompletion(progress);
+            }
+        }
+        // B. 달성형 (임계값 돌파 / 최고 기록 갱신) - [수정됨]
+        else if (isThresholdType(type)) {
+            int eventValue = calculateThresholdValue(type, event);
+
+            // 현재 기록보다 더 높은 기록이 나오면 갱신 (Best Record)
+            if (eventValue > progress.getCurrentValue()) {
+                // 목표치보다 크면 목표치로 고정 (100% 달성 표시를 위해)
+                int newValue = Math.min(eventValue, goal);
+                progress.setCurrentValue(newValue);
+
+                log.info("미션(달성형) 기록 갱신: MissionId={}, NewBest={}, Goal={}",
+                        mission.getId(), newValue, goal);
+
+                // 목표 달성 여부 체크
+                if (eventValue >= goal) {
+                    checkMissionCompletion(progress);
                 }
             }
         }
     }
 
-    /**
-     * [2] (내부) 미션 완료 여부를 검사하고 후속 조치 실행
-     */
+    private boolean isCumulativeType(MissionConditionType type) {
+
+        return switch (type) {
+
+            case TRADE_COUNT, BUY_COUNT, SELL_COUNT,
+
+                 BUY_AMOUNT, SELL_AMOUNT,
+
+                 TOTAL_TRADE_AMOUNT, DAILY_PROFIT_COUNT, DAILY_TRADE_COUNT -> true;
+
+            default -> false;
+
+        };
+
+    }
+
+    private boolean isThresholdType(MissionConditionType type) {
+        // HOLDING_DAYS는 스케줄러가 처리하므로 제외
+        return switch (type) {
+            case PROFIT_RATE, PROFIT_AMOUNT -> true;
+            default -> false;
+        };
+    }
+
+    private int calculateIncreaseValue(MissionConditionType type, TradeCompletionEvent event) {
+        return switch (type) {
+            case TRADE_COUNT, BUY_COUNT, SELL_COUNT, DAILY_TRADE_COUNT -> 1;
+
+            case BUY_AMOUNT, SELL_AMOUNT, TOTAL_TRADE_AMOUNT ->
+                    event.getFilledAmount().intValue();
+
+            case DAILY_PROFIT_COUNT -> {
+                // 매도이면서 수익금이 0보다 크면 카운트
+                boolean isProfit = event.getOrderMethod() == OrderMethod.SELL
+                        && event.getProfitAmount() != null
+                        && event.getProfitAmount().compareTo(BigDecimal.ZERO) > 0;
+                yield isProfit ? 1 : 0;
+            }
+            default -> 0;
+        };
+    }
+
+    // [수정] 값 계산 시 반올림 적용 (선택 사항이나 권장)
+    private int calculateThresholdValue(MissionConditionType type, TradeCompletionEvent event) {
+        // 매도가 아니면 수익률/수익금 계산 불가
+        if (event.getOrderMethod() != OrderMethod.SELL) return 0;
+
+        // 1. 수익률 (PROFIT_RATE) 계산
+        if (type == MissionConditionType.PROFIT_RATE) {
+            // (A) 이벤트에 이미 계산된 값이 있고 0이 아니라면 우선 사용 (선택 사항)
+            if (event.getProfitRate() != null && event.getProfitRate().compareTo(BigDecimal.ZERO) != 0) {
+                return event.getProfitRate().setScale(0, java.math.RoundingMode.HALF_UP).intValue();
+            }
+
+            // (B) 직접 계산 로직
+            // [수정됨] getPrice() -> getFilledPrice()
+            BigDecimal sellPrice = event.getFilledPrice();
+
+            // [수정됨] getAveragePrice() -> getBuyAveragePrice()
+            BigDecimal avgBuyPrice = event.getBuyAveragePrice();
+
+            // 평단가가 0이거나 없으면 계산 불가 (0 리턴)
+            if (avgBuyPrice == null || avgBuyPrice.compareTo(BigDecimal.ZERO) == 0) {
+                return 0;
+            }
+
+            // 공식: ((매도가 - 평단가) / 평단가) * 100
+            BigDecimal profitRate = sellPrice.subtract(avgBuyPrice)
+                    .divide(avgBuyPrice, 4, java.math.RoundingMode.HALF_UP) // 소수점 4자리까지 계산
+                    .multiply(BigDecimal.valueOf(100));
+
+            return profitRate.setScale(0, java.math.RoundingMode.HALF_UP).intValue();
+        }
+
+        // 2. 수익금 (PROFIT_AMOUNT) 계산 (필요하다면 추가)
+        if (type == MissionConditionType.PROFIT_AMOUNT) {
+            if (event.getProfitAmount() != null && event.getProfitAmount().compareTo(BigDecimal.ZERO) != 0) {
+                return event.getProfitAmount().intValue();
+            }
+
+            BigDecimal totalSellAmount = event.getFilledAmount(); // 총 판 금액
+            BigDecimal totalBuyCost = event.getBuyAveragePrice()
+                    .multiply(BigDecimal.valueOf(event.getFilledQuantity())); // 총 산 금액 (평단가 * 수량)
+
+            return totalSellAmount.subtract(totalBuyCost).intValue();
+        }
+
+        return 0;
+    }
+
+    private boolean isMissionConditionMatches(Mission mission, TradeCompletionEvent event) {
+        MissionConditionType type = mission.getConditionType();
+        OrderMethod method = event.getOrderMethod();
+
+        // 매수 전용
+        if (type == MissionConditionType.BUY_COUNT || type == MissionConditionType.BUY_AMOUNT)
+            return method == OrderMethod.BUY;
+
+        // 매도 전용
+        if (type == MissionConditionType.SELL_COUNT || type == MissionConditionType.SELL_AMOUNT ||
+                type == MissionConditionType.PROFIT_RATE || type == MissionConditionType.DAILY_PROFIT_COUNT ||
+                type == MissionConditionType.PROFIT_AMOUNT)
+            return method == OrderMethod.SELL;
+
+        // 공통
+        if (type == MissionConditionType.TRADE_COUNT || type == MissionConditionType.TOTAL_TRADE_AMOUNT ||
+                type == MissionConditionType.DAILY_TRADE_COUNT)
+            return true;
+
+        return false;
+    }
+
+    // --- [공통 로직] 완료 처리, 보상, 초기화 ---
+
     public void checkMissionCompletion(MissionProgress progress) {
         if (progress.getStatus() == MissionStatus.COMPLETED || !progress.isCompleted()) {
             return;
@@ -110,40 +320,102 @@ public class MissionService {
 
         distributeReward(progress.getMember(), progress.getMission().getReward());
         activateNextMission(progress);
-
         handleMissionChain(progress);
+        checkSeedCopierAchievement(progress.getMember());
     }
 
     /**
-     * [3] (내부) 미션 완료에 따른 보상(돈, 칭호) 지급
+     * [신규] 시드 복사기 (누적 미션 30회) 체크
      */
+    private void checkSeedCopierAchievement(Member member) {
+        // 완료된 미션 총 개수 조회
+        long completedCount = missionProgressRepository.countByMemberAndStatus(member, MissionStatus.COMPLETED);
+
+        missionProgressRepository.findByMemberAndMissionTypeWithMission(member, MissionTrack.ACHIEVEMENT, MissionConditionType.TOTAL_MISSION_COUNT)
+                .ifPresent(progress -> {
+                    if (!progress.isCompleted()) {
+                        // 현재 완료 횟수를 진행도에 반영
+                        progress.setCurrentValue((int) completedCount);
+                        if (completedCount >= progress.getMission().getGoalValue()) { // 30회
+                            // 재귀 호출 방지를 위해 직접 complete 호출 (혹은 checkMissionCompletion 호출)
+                            // 여기서는 간단히 내부 로직 실행
+                            progress.complete();
+                            distributeReward(member, progress.getMission().getReward());
+                            log.info("'시드 복사기' 업적 달성! 총 완료 미션: {}개", completedCount);
+                        }
+                    }
+                });
+    }
+
+    /**
+     * [신규] 인생 2회차 (파산 신청) API 로직
+     * - 조건: (보유 현금 + 보유 주식의 원금 총액) < 50,000원
+     */
+    public Reward applyForBankruptcy(Member member) {
+        // 1. 기본 계좌 조회
+        Account account = accountRepository.findByMemberAndIsDefaultTrue(member)
+                .orElseThrow(() -> new EntityNotFoundException("기본 계좌가 없습니다."));
+
+// 2. 해당 계좌의 보유 주식 목록 조회 (Repository 사용)
+        // Account 엔티티에 accountStocks 리스트가 없으므로 리포지토리로 별도 조회
+        List<AccountStock> myStocks = accountStockRepository.findAllByAccount(account);
+
+        // 3. 보유 주식 총 평가금액 계산 (평단가 * 보유수량)
+        // [수정] getBuyPrice() -> getAveragePrice()
+        BigDecimal totalStockAsset = myStocks.stream()
+                .map(as -> as.getAveragePrice().multiply(BigDecimal.valueOf(as.getQuantity())))
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        // 3. 총 자산 (현금 + 주식 원금)
+        BigDecimal totalAsset = account.getCash().add(totalStockAsset);
+
+        // 4. 5만원 미만인지 확인
+        if (totalAsset.compareTo(BigDecimal.valueOf(50000)) >= 0) {
+            throw new IllegalStateException("아직 파산할 정도로 돈이 없지 않습니다. (자산: " + totalAsset + "원)");
+        }
+
+        // 5. 업적 달성 처리
+        MissionProgress bankruptcyProgress = missionProgressRepository
+                .findByMemberAndMissionTypeWithMission(member, MissionTrack.ACHIEVEMENT, MissionConditionType.ASSET_UNDER_THRESHOLD)
+                .orElseThrow(() -> new EntityNotFoundException("인생 2회차 미션 데이터를 찾을 수 없습니다."));
+
+        if (bankruptcyProgress.isCompleted()) {
+            throw new IllegalStateException("이미 구조 지원금을 받으셨습니다.");
+        }
+
+        bankruptcyProgress.setCurrentValue(50000); // 조건 충족 표시
+        bankruptcyProgress.complete();
+        distributeReward(member, bankruptcyProgress.getMission().getReward());
+
+        log.info("파산 신청 승인! 구조지원금 지급 완료. Member={}", member.getName());
+        return bankruptcyProgress.getMission().getReward();
+    }
+
     private void distributeReward(Member member, Reward reward) {
         if (reward == null) return;
 
         if (reward.getMoneyAmount() > 0) {
-            Account defaultAccount = accountRepository.findByMemberAndIsDefaultTrue(member)
-                    .orElseThrow(() -> new EntityNotFoundException("보상을 지급할 기본 계좌를 찾을 수 없습니다."));
-            defaultAccount.increaseCash(BigDecimal.valueOf(reward.getMoneyAmount()));
-            log.info("보상 지급: {}원", reward.getMoneyAmount());
+            accountRepository.findByMemberAndIsDefaultTrue(member)
+                    .ifPresentOrElse(
+                            acc -> {
+                                acc.increaseCash(BigDecimal.valueOf(reward.getMoneyAmount()));
+                                log.info("보상 지급: {}원", reward.getMoneyAmount());
+                            },
+                            () -> log.error("보상 지급 실패: 기본 계좌 없음 MemberId={}", member.getMemberId())
+                    );
         }
 
-        Title titleToGrant = reward.getTitleToGrant();
-        if (titleToGrant != null) {
-            boolean alreadyHas = memberTitleRepository.existsByMemberAndTitle(member, titleToGrant);
-            if (!alreadyHas) {
-                MemberTitle newMemberTitle = MemberTitle.builder()
+        if (reward.getTitleToGrant() != null) {
+            if (!memberTitleRepository.existsByMemberAndTitle(member, reward.getTitleToGrant())) {
+                member.addMemberTitle(MemberTitle.builder()
                         .member(member)
-                        .title(titleToGrant)
-                        .build();
-                member.addMemberTitle(newMemberTitle);
-                log.info("칭호 지급: {}", titleToGrant.getName());
+                        .title(reward.getTitleToGrant())
+                        .build());
+                log.info("칭호 지급: {}", reward.getTitleToGrant().getName());
             }
         }
     }
 
-    /**
-     * [4] (내부) 다음 연계 미션 활성화 (중급/고급)
-     */
     private void activateNextMission(MissionProgress completedProgress) {
         Mission completedMission = completedProgress.getMission();
         Member member = completedProgress.getMember();
@@ -156,8 +428,7 @@ public class MissionService {
 
         if (nextMission != null) {
             log.info("다음 미션 활성화: MissionId={}", nextMission.getId());
-            MissionProgress nextProgress = missionProgressRepository
-                    .findByMemberAndMission(member, nextMission)
+            missionProgressRepository.findByMemberAndMission(member, nextMission)
                     .orElseGet(() -> {
                         MissionProgress newProgress = MissionProgress.builder()
                                 .member(member)
@@ -166,33 +437,35 @@ public class MissionService {
                                 .build();
                         member.addMissionProgress(newProgress);
                         return newProgress;
-                    });
-            nextProgress.activate();
+                    }).activate();
         } else if (completedMission.getType() == MissionType.ADVANCED) {
             log.info("트랙 최종 완료: Track={}", completedMission.getTrack());
             resetMissionTrack(member, completedMission.getTrack());
         }
     }
 
-    /**
-     * [5] (내부) 특정 트랙(단타, 스윙, 장기) 초기화
-     */
     public void resetMissionTrack(Member member, MissionTrack track) {
         log.info("트랙 초기화 시작: MemberId={}, Track={}", member.getMemberId(), track);
         List<MissionProgress> progressList = missionProgressRepository.findAllByMemberAndMission_Track(member, track);
 
         for (MissionProgress progress : progressList) {
+            progress.reset();
             progress.deactivate();
-            if (progress.getMission().getType() == MissionType.INTERMEDIATE) {
+
+            // 트랙의 첫 번째 미션(중급 1단계)만 다시 활성화
+            if (progress.getMission().getType() == MissionType.INTERMEDIATE && isFirstMissionInTrack(progress.getMission())) {
                 progress.activate();
-                log.info("트랙 1단계 미션 재활성화: MissionId={}", progress.getMission().getId());
+                log.info("트랙 첫 미션 재활성화: MissionId={}", progress.getMission().getId());
             }
         }
     }
 
-    /**
-     * [6] (스케줄러 호출) 모든 '일일 미션' 갱신
-     */
+    private boolean isFirstMissionInTrack(Mission mission) {
+        long id = mission.getId();
+        // data.sql 기준 첫 미션 ID (201: 단타, 301: 스윙, 401: 장기)
+        return id == 201 || id == 301 || id == 401;
+    }
+
     @Transactional
     public void resetDailyMissions() {
         log.info("일일 미션 전체 초기화 시작...");
@@ -200,12 +473,19 @@ public class MissionService {
         for (MissionProgress progress : dailyProgressList) {
             progress.reset();
         }
+
+        // 2. [신규] Track = ACHIEVEMENT 이지만 'DAILY_TRADE_COUNT' 타입인 미션(카이팅 장인) 초기화
+        // (완료하지 못한 경우에만 리셋해야 함)
+        List<MissionProgress> kitingMissions = missionProgressRepository
+                .findAllByMission_ConditionTypeAndStatus(MissionConditionType.DAILY_TRADE_COUNT, MissionStatus.IN_PROGRESS);
+
+        for (MissionProgress mp : kitingMissions) {
+            // 업적이라 트랙은 ACHIEVEMENT지만 성격은 Daily이므로 매일 리셋
+            mp.setCurrentValue(0);
+        }
         log.info("일일 미션 총 {}건 초기화 완료.", dailyProgressList.size());
     }
 
-    /**
-     * [7] (외부 호출) 신규 회원을 위한 초기 미션 세팅
-     */
     @Transactional
     public void initializeMissionsForNewMember(Member newMember) {
         log.info("신규 회원 초기 미션 세팅 시작: MemberId={}", newMember.getMemberId());
@@ -221,9 +501,16 @@ public class MissionService {
                 .collect(Collectors.toList());
 
         for (Mission mission : allMissions) {
-            MissionStatus initialStatus = (mission.getType() == MissionType.ADVANCED)
-                    ? MissionStatus.INACTIVE
-                    : MissionStatus.IN_PROGRESS;
+            MissionStatus initialStatus = MissionStatus.INACTIVE;
+
+            // 1. 일일 미션 & 업적 미션 -> 기본 진행 중
+            if (mission.getTrack() == MissionTrack.DAILY || mission.getTrack() == MissionTrack.ACHIEVEMENT) {
+                initialStatus = MissionStatus.IN_PROGRESS;
+            }
+            // 2. 트랙 미션 -> 첫 번째 미션만 진행 중
+            else if (isFirstMissionInTrack(mission)) {
+                initialStatus = MissionStatus.IN_PROGRESS;
+            }
 
             MissionProgress newProgress = MissionProgress.builder()
                     .member(newMember)
@@ -236,18 +523,16 @@ public class MissionService {
         log.info("신규 회원 초기 미션 총 {}건 세팅 완료.", allMissions.size());
     }
 
-    /**
-     * [8] (API 호출) 일일 출석 체크 보상 수령
-     * 수정: memberId -> email 파라미터 변경
-     */
+    // --- API 관련 메서드 (Controller 호출용) ---
+
     @Transactional
     public Reward claimDailyAttendance(String email) {
         Member member = getMemberByEmail(email);
+        MissionProgress attendanceProgress = missionProgressRepository
+                .findByMemberAndMissionTypeWithMission(member, MissionTrack.DAILY, MissionConditionType.LOGIN_COUNT)
+                .orElseThrow(() -> new EntityNotFoundException("일일 출석 미션을 찾을 수 없습니다."));
 
-        MissionProgress attendanceProgress = findDailyAttendanceMission(member);
-
-        if (attendanceProgress.getStatus() == MissionStatus.COMPLETED ||
-                attendanceProgress.isCompleted()) {
+        if (attendanceProgress.getStatus() == MissionStatus.COMPLETED || attendanceProgress.isCompleted()) {
             throw new IllegalStateException("오늘은 이미 출석 보상을 받았습니다.");
         }
 
@@ -256,114 +541,46 @@ public class MissionService {
         return attendanceProgress.getMission().getReward();
     }
 
-    /**
-     * [9] (API 호출) 현재 회원의 모든 미션 진행 목록 조회
-     * 수정: memberId -> email 파라미터 변경
-     */
     @Transactional(readOnly = true)
     public List<MissionProgress> getMissionProgressList(String email) {
         Member member = getMemberByEmail(email);
         return missionProgressRepository.findByMemberWithMissionAndReward(member);
     }
 
-    /**
-     * [신규] (API 호출) '종목 리포트 보기' 미션 처리
-     * 수정: memberId -> email 파라미터 변경
-     */
     @Transactional
     public void handleReportView(String email) {
-        Member member = getMemberByEmail(email);
-
-        // 1. '일일 리포트 조회' 미션 진행도 찾기
-        MissionProgress reportProgress = findDailyMissionByConditionType(
-                member, MissionConditionType.VIEW_REPORT
-        );
-
-        // 2. 이미 목표 달성(3회)했으면 갱신 안 함
-        if (reportProgress.getStatus() == MissionStatus.COMPLETED ||
-                reportProgress.isCompleted()) {
-            log.info("이미 일일 리포트 미션을 완료했습니다: MemberId={}", member.getMemberId());
-            return;
-        }
-
-        // 3. 진행도 증가
-        reportProgress.incrementProgress(1);
-        log.info("리포트 미션 진행도 갱신: MissionId={}, NewValue={}",
-                reportProgress.getMission().getId(), reportProgress.getCurrentValue());
-
-        // 4. 완료 여부 검사
-        checkMissionCompletion(reportProgress);
+        handleDailySimpleMission(email, MissionConditionType.VIEW_REPORT);
     }
 
-    /**
-     * [신규] (API 호출) '포트폴리오 분석' 미션 처리
-     * 수정: memberId -> email 파라미터 변경
-     */
     @Transactional
     public void handlePortfolioAnalysis(String email) {
-        Member member = getMemberByEmail(email);
-
-        // 1. '일일 포트폴리오 분석' 미션 진행도 찾기
-        MissionProgress analysisProgress = findDailyMissionByConditionType(
-                member, MissionConditionType.ANALYZE_PORTFOLIO
-        );
-
-        // 2. 이미 목표 달성(1회)했으면 갱신 안 함
-        if (analysisProgress.getStatus() == MissionStatus.COMPLETED ||
-                analysisProgress.isCompleted()) {
-            log.info("이미 일일 포트폴리오 분석 미션을 완료했습니다: MemberId={}", member.getMemberId());
-            return;
-        }
-
-        // 3. 진행도 증가
-        analysisProgress.incrementProgress(1);
-        log.info("포트폴리오 분석 미션 진행도 갱신: MissionId={}, NewValue={}",
-                analysisProgress.getMission().getId(), analysisProgress.getCurrentValue());
-
-        // 4. 완료 여부 검사
-        checkMissionCompletion(analysisProgress);
+        handleDailySimpleMission(email, MissionConditionType.ANALYZE_PORTFOLIO);
     }
 
-    // --- Private Helper Methods ---
+    private void handleDailySimpleMission(String email, MissionConditionType type) {
+        Member member = getMemberByEmail(email);
+        missionProgressRepository.findByMemberAndMissionTypeWithMission(member, MissionTrack.DAILY, type)
+                .ifPresent(progress -> {
+                    if (progress.getStatus() != MissionStatus.COMPLETED && !progress.isCompleted()) {
+                        progress.incrementProgress(1);
+                        log.info("일일 미션({}) 진행도 갱신: MemberId={}", type, member.getMemberId());
+                        checkMissionCompletion(progress);
+                    }
+                });
+    }
 
-    /**
-     * [Helper] 이메일로 회원 조회 (공통 로직 분리)
-     */
+    // --- Helper Methods ---
+
     private Member getMemberByEmail(String email) {
         return memberRepository.findByEmail(email)
                 .orElseThrow(() -> new EntityNotFoundException("회원을 찾을 수 없습니다. Email: " + email));
-    }
-
-    private MissionProgress findDailyAttendanceMission(Member member) {
-        return findDailyMissionByConditionType(member, MissionConditionType.LOGIN_COUNT);
-    }
-
-    private boolean isMissionConditionMatches(Mission mission, TradeCompletionEvent event) {
-        MissionConditionType missionType = mission.getConditionType();
-        OrderMethod eventMethod = event.getOrderMethod();
-
-        switch (missionType) {
-            case BUY_COUNT:
-            case BUY_AMOUNT:
-                return eventMethod == OrderMethod.BUY;
-            case SELL_COUNT:
-            case SELL_AMOUNT:
-                return eventMethod == OrderMethod.SELL;
-            case TRADE_COUNT:
-                return true;
-            default:
-                return false;
-        }
-    }
-
-    private boolean isTrackRelated(MissionTrack track, TradeCompletionEvent event) {
-        return true;
     }
 
     private void handleMissionChain(MissionProgress completedProgress) {
         Member member = completedProgress.getMember();
         Mission mission = completedProgress.getMission();
 
+        // 일일 출석 완료 시 -> 연속 출석 업적 갱신
         if (mission.getTrack() == MissionTrack.DAILY &&
                 mission.getConditionType() == MissionConditionType.LOGIN_COUNT) {
             log.info("연쇄 업적 갱신 시도: 일일 출석 -> 연속 출석");
@@ -372,44 +589,36 @@ public class MissionService {
     }
 
     private void updateSpecificAchievement(Member member, MissionConditionType conditionType, int valueToIncrease) {
-        Optional<Mission> achievementOpt = missionRepository
-                .findByTrackAndConditionType(MissionTrack.ACHIEVEMENT, conditionType);
+        // 1. Optional -> List로 변경하여 해당 타입의 모든 업적 조회 (예: 3일, 7일, 30일 연속 등)
+        List<Mission> achievements = missionRepository
+                .findAllByTrackAndConditionType(MissionTrack.ACHIEVEMENT, conditionType);
 
-        if (achievementOpt.isEmpty()) {
-            log.warn("연쇄 업적을 찾지 못했습니다: ConditionType={}", conditionType);
-            return;
-        }
-        Mission achievement = achievementOpt.get();
+        if (achievements.isEmpty()) return;
 
-        MissionProgress achievementProgress = missionProgressRepository
-                .findByMemberAndMission(member, achievement)
-                .orElseGet(() -> {
-                    MissionProgress newProgress = MissionProgress.builder()
-                            .member(member)
-                            .mission(achievement)
-                            .status(MissionStatus.IN_PROGRESS)
-                            .build();
-                    member.addMissionProgress(newProgress);
-                    return newProgress;
-                });
+        // 2. 조회된 모든 업적에 대해 진행도 업데이트 반복
+        for (Mission achievement : achievements) {
+            MissionProgress achievementProgress = missionProgressRepository
+                    .findByMemberAndMission(member, achievement)
+                    .orElseGet(() -> {
+                        MissionProgress newProgress = MissionProgress.builder()
+                                .member(member)
+                                .mission(achievement)
+                                .status(MissionStatus.IN_PROGRESS)
+                                .build();
+                        member.addMissionProgress(newProgress);
+                        return newProgress;
+                    });
 
-        if (achievementProgress.getStatus() != MissionStatus.COMPLETED) {
-            achievementProgress.incrementProgress(valueToIncrease);
-            log.info("연쇄 업적 갱신: MissionId={}, NewValue={}",
-                    achievement.getId(), achievementProgress.getCurrentValue());
-            checkMissionCompletion(achievementProgress);
+            // 이미 완료된 업적은 패스
+            if (achievementProgress.getStatus() != MissionStatus.COMPLETED) {
+                achievementProgress.incrementProgress(valueToIncrease);
+                log.info("업적 미션({}) 갱신: MissionId={}, NewValue={}",
+                        achievement.getName(), achievement.getId(), achievementProgress.getCurrentValue());
+
+                checkMissionCompletion(achievementProgress);
+            }
         }
     }
 
-    private MissionProgress findDailyMissionByConditionType(Member member, MissionConditionType conditionType) {
-        return missionProgressRepository
-                .findByMemberAndMissionTypeWithMission(
-                        member,
-                        MissionTrack.DAILY,
-                        conditionType
-                )
-                .orElseThrow(() -> new EntityNotFoundException(
-                        "회원에게 [" + conditionType + "] 일일 미션이 존재하지 않습니다."
-                ));
-    }
+    // findDailyAttendanceMission 제거 (직접 쿼리 사용으로 대체됨)
 }

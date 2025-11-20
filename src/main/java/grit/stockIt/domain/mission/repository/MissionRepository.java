@@ -19,7 +19,8 @@ public interface MissionRepository extends JpaRepository<Mission, Long> {
      * [신규] 특정 트랙의 특정 조건 타입을 가진 미션을 조회합니다.
      * (예: 'ACHIEVEMENT' 트랙의 'LOGIN_STREAK' 미션 찾기)
      */
-    Optional<Mission> findByTrackAndConditionType(MissionTrack track, MissionConditionType conditionType);
+    // 변경: 리스트로 반환
+    List<Mission> findAllByTrackAndConditionType(MissionTrack track, MissionConditionType conditionType);
 
     List<Mission> findAllByTrackInAndType(List<MissionTrack> tracks, MissionType type);
 }
