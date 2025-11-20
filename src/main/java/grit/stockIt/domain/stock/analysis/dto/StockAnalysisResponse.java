@@ -6,7 +6,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 public record StockAnalysisResponse(
     @JsonProperty("stock_code") String stockCode,
     @JsonProperty("stock_name") String stockName,
-    @JsonProperty("style_tag") String styleTag,
+    @JsonProperty("final_style_tag") String finalStyleTag,
     @JsonProperty("style_description") String styleDescription
 ) {}
 
