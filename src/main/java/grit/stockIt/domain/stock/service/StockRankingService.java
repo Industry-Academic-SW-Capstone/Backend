@@ -41,7 +41,7 @@ public class StockRankingService {
                 .uri(uriBuilder -> uriBuilder
                         .path("/uapi/domestic-stock/v1/quotations/volume-rank")
                         .queryParam("FID_COND_MRKT_DIV_CODE", "J")
-                        .queryParam("FID_COND_SCR_DIV_CODE", "20170")
+                        .queryParam("FID_COND_SCR_DIV_CODE", "20171")
                         .queryParam("FID_INPUT_ISCD", "0000")
                         .queryParam("FID_DIV_CLS_CODE", "0")
                         .queryParam("FID_BLNG_CLS_CODE", "3") // 거래금액순 (0:평균거래량, 1:거래증가율, 2:평균거래회전율, 3:거래금액순, 4:평균거래금액회전율)
