@@ -4,6 +4,7 @@ import grit.stockIt.domain.account.entity.Account;
 import grit.stockIt.domain.account.repository.AccountRepository;
 import grit.stockIt.domain.contest.entity.Contest;
 import grit.stockIt.domain.contest.repository.ContestRepository;
+import grit.stockIt.domain.mission.service.MissionService;
 import grit.stockIt.domain.ranking.dto.MyRankDto;
 import grit.stockIt.domain.ranking.dto.RankingDto;
 import grit.stockIt.domain.ranking.dto.RankingResponse;
@@ -21,7 +22,7 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
-
+import grit.stockIt.domain.mission.service.MissionService;
 /**
  * 랭킹 서비스
  * - 1분마다 자동으로 랭킹 갱신 (스케줄러)
@@ -37,7 +38,7 @@ public class RankingService {
 
     private final AccountRepository accountRepository;
     private final ContestRepository contestRepository;
-
+    private final MissionService missionService;
     // ==================== 스케줄러 ====================
 
     /**
@@ -48,14 +49,27 @@ public class RankingService {
      */
     @Scheduled(fixedRate = 60000) // 60초 = 1분
     @CacheEvict(value = "rankings", allEntries = true)
+    @Transactional
     public void updateAllRankings() {
         log.info("🔄 [스케줄러] 랭킹 갱신 시작: {}", LocalDateTime.now());
 
         try {
             // 1. Main 계좌 랭킹 갱신 (캐시 워밍업)
-            getMainRankings();
+            RankingResponse mainRanking = getMainRankings();
             log.info("✅ Main 계좌 랭킹 갱신 완료");
 
+            // --- ⬇️ [추가] Main 랭킹 Top 10 유저에게 '랭커' 칭호 지급 로직 ⬇️ ---
+            if (mainRanking != null && mainRanking.getRankings() != null) {
+                List<Long> top10MemberIds = mainRanking.getRankings().stream()
+                        .filter(dto -> dto.getRank() <= 10) // 1위~10위 필터링
+                        .map(RankingDto::getMemberId)       // MemberId 추출
+                        .collect(Collectors.toList());
+
+                // MissionService로 Top 10 명단 전달 (미션 달성 처리)
+                if (!top10MemberIds.isEmpty()) {
+                    missionService.processRankerAchievement(top10MemberIds);
+                }
+            }
             // 2. 진행 중인 대회 랭킹 갱신
             List<Contest> activeContests = contestRepository.findActiveContests(LocalDateTime.now());
             log.info("📊 진행 중인 대회 수: {}", activeContests.size());
