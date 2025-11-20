@@ -8,6 +8,7 @@ import grit.stockIt.domain.member.dto.MemberUpdateRequest;
 import grit.stockIt.domain.member.entity.AuthProvider;
 import grit.stockIt.domain.member.entity.Member;
 import grit.stockIt.domain.member.repository.MemberRepository;
+import grit.stockIt.domain.mission.service.MissionService;
 import grit.stockIt.global.jwt.JwtService;
 import grit.stockIt.global.jwt.JwtToken;
 import lombok.RequiredArgsConstructor;
@@ -25,7 +26,7 @@ public class LocalMemberService {
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
     private final AccountService accountService;
-
+    private final MissionService missionService; // 미션 보상 지급용
     /**
      * 로컬 회원가입 (이메일 기준)
      */
@@ -54,6 +55,9 @@ public class LocalMemberService {
 
         // 디폴트 계좌 생성 (회원당 1개 보장)
         accountService.createDefaultAccountForMember(savedMember);
+
+        //  미션 시스템 초기화
+        missionService.initializeMissionsForNewMember(savedMember);
 
         return MemberResponse.from(savedMember);
     }

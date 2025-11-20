@@ -24,6 +24,8 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import grit.stockIt.domain.order.event.TradeCompletionEvent; // 1. TradeCompletionEvent 임포트
+import org.springframework.context.ApplicationEventPublisher; // 2. 이벤트 발행기 임포트
 
 import java.math.BigDecimal;
 import java.time.Duration;
@@ -189,23 +191,47 @@ public class LimitOrderMatchingService {
                 actualFillQuantity = affordableQuantity;
             }
 
+            // ⬇️ [추가 1] 매도(SELL)라면, 로직 실행 전에 '현재 평단가'를 미리 조회해서 임시 저장
+            BigDecimal currentAvgPrice = BigDecimal.ZERO;
+            if (order.getOrderMethod() == OrderMethod.SELL) {
+                // AccountStockRepository를 의존성 주입받아 사용해야 합니다.
+                currentAvgPrice = accountStockRepository
+                        .findByAccountAndStock(order.getAccount(), order.getStock())
+                        .map(AccountStock::getAveragePrice)
+                        .orElse(BigDecimal.ZERO);
+            }
             try {
-                order.applyFill(actualFillQuantity);
-                Execution execution = executionService.record(order, fillPrice, actualFillQuantity); // 체결 저장
-                executions.add(execution);
-                handleAccountOnFill(order, fillPrice, actualFillQuantity);
+                order.applyFill(command.fillQuantity());
+                executions.add(executionService.record(order, event.price(), command.fillQuantity()));
+
+                // 계좌/재고 반영 (여기서 전량 매도 시 AccountStock의 평단가가 0이 될 수 있음)
+                handleAccountOnFill(order, event.price(), command.fillQuantity());
+
                 updatedOrders.add(order);
-                
-                // 체결 완료 이벤트 발행 (Event-Driven 아키텍처)
-                publishExecutionFilledEvent(execution, order, stockCode);
-                if (order.getOrderMethod() == OrderMethod.BUY && actualFillQuantity < desiredFillQuantity) {
-                    int shortfall = desiredFillQuantity - actualFillQuantity;
-                    cancelledQuantity += shortfall;
-                    cancelDueToInsufficientFunds(order, stockCode);
-                    continue;
-                }
+
                 if (order.getRemainingQuantity() <= 0) {
                     finalizeFilledOrder(order);
+
+                    try {
+                        // ⬇️ [수정 2] 새로운 생성자를 사용하여 '평단가(currentAvgPrice)' 주입
+                        TradeCompletionEvent missionEvent = new TradeCompletionEvent(
+                                order.getAccount().getMember().getMemberId(),
+                                order.getAccount().getAccountId(),
+                                order.getStock().getCode(),
+                                order.getOrderMethod(),
+                                order.getQuantity(),         // 총 주문 수량
+                                event.price(),               // 체결 가격 (매도 단가)
+                                null,                        // profitAmount (Service에서 계산할 거면 null)
+                                null,                        // profitRate (Service에서 계산할 거면 null)
+                                0,                           // holdingDays (Scheduler가 처리하거나 별도 로직)
+                                currentAvgPrice              // ⭐️ [핵심] 아까 꺼내둔 평단가 전달!
+                        );
+                        eventPublisher.publishEvent(missionEvent);
+                        log.info("미션 시스템 이벤트 발행 (주문 완료 기준): MemberId={}", missionEvent.getMemberId());
+
+                    } catch (Exception e) {
+                        log.error("미션 이벤트 발행 실패: orderId={}", order.getOrderId(), e);
+                    }
                 }
             } catch (IllegalArgumentException ex) {
                 log.error("주문 체결 처리 중 오류 발생. orderId={} fillQuantity={}", orderId, command.fillQuantity(), ex);
@@ -253,11 +279,14 @@ public class LimitOrderMatchingService {
         if (order.getOrderMethod() == OrderMethod.BUY) {
             order.getAccount().decreaseCash(fillAmount);
             orderHoldRepository.findById(order.getOrderId())
-                    .ifPresentOrElse(hold -> {
-                        order.getAccount().decreaseHoldAmount(fillAmount);
-                        hold.decreaseHoldAmount(fillAmount);
-                        orderHoldRepository.save(hold);
-                    }, () -> log.warn("OrderHold를 찾을 수 없습니다. orderId={}", order.getOrderId()));
+                    .ifPresentOrElse(
+                            hold -> {
+                                order.getAccount().decreaseHoldAmount(fillAmount);
+                                hold.decreaseHoldAmount(fillAmount);
+                                orderHoldRepository.save(hold);
+                            },
+                            () -> log.warn("OrderHold를 찾을 수 없습니다. orderId={}", order.getOrderId())
+                    );
             updateAccountStockOnBuy(order, fillQuantity, price);
             return;
         }
@@ -410,7 +439,7 @@ public class LimitOrderMatchingService {
                     execution.getQuantity(),
                     execution.getOrderMethod().name()  // BUY, SELL
             );
-            
+
             // 체결 완료 이벤트 발행
             eventPublisher.publishEvent(event);
             log.debug("체결 완료 이벤트 발행: executionId={}, memberId={}", execution.getExecutionId(), event.memberId());
