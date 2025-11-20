@@ -53,6 +53,11 @@ kis:
     appsecret: ${KIS_API_APPSECRET}
   api-app-key: ${KIS_API_APPKEY:}
 
+# Python 서버 설정
+python:
+  analysis:
+    url: ${PYTHON_ANALYSIS_URL:http://localhost:8000}
+
 kakao:
   rest-api-key: ${KAKAO_REST_API_KEY:}
   redirect-uri: ${KAKAO_REDIRECT_URI:http://localhost:8080/api/auth/kakao/callback}
