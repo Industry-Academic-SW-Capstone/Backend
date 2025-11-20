@@ -63,13 +63,15 @@ jobs:
 
       - name: Generate image tag
         id: image-tag
+        env:
+          TZ: Asia/Seoul
         run: |
           if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
             # 수동 실행 시 커밋 SHA 사용
             TAG="${{ github.sha }}"
           elif [ "${{ github.ref }}" == "refs/heads/main" ]; then
-            # main 브랜치: 버전 번호 생성 (날짜 기반)
-            TAG="$(date +%Y%m%d)-${{ github.sha }}"
+            # main 브랜치: 버전 번호 생성 (날짜 기반, Asia/Seoul 타임존)
+            TAG="$(TZ=Asia/Seoul date +%Y%m%d)-${{ github.sha }}"
           elif [ "${{ github.ref }}" == "refs/heads/develop" ]; then
             # develop 브랜치: develop-커밋SHA
             TAG="develop-${{ github.sha }}"
@@ -135,11 +137,14 @@ jobs:
 
       - name: Generate image tag
         id: image-tag
+        env:
+          TZ: Asia/Seoul
         run: |
           if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
             TAG="${{ github.sha }}"
           elif [ "${{ github.ref }}" == "refs/heads/main" ]; then
-            TAG="$(date +%Y%m%d)-${{ github.sha }}"
+            # main 브랜치: 버전 번호 생성 (날짜 기반, Asia/Seoul 타임존)
+            TAG="$(TZ=Asia/Seoul date +%Y%m%d)-${{ github.sha }}"
           else
             TAG="develop-${{ github.sha }}"
           fi
