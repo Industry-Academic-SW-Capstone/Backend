@@ -196,26 +196,24 @@ public class MissionService {
         }
     }
 
+
     private boolean isCumulativeType(MissionConditionType type) {
-
         return switch (type) {
-
             case TRADE_COUNT, BUY_COUNT, SELL_COUNT,
-
                  BUY_AMOUNT, SELL_AMOUNT,
+                 TOTAL_TRADE_AMOUNT, DAILY_PROFIT_COUNT, DAILY_TRADE_COUNT,
 
-                 TOTAL_TRADE_AMOUNT, DAILY_PROFIT_COUNT, DAILY_TRADE_COUNT -> true;
+                 PROFIT_RATE // [추가] 수익률도 이제 차곡차곡 쌓는 '누적형'입니다.
+                    -> true;
 
             default -> false;
-
         };
-
     }
 
     private boolean isThresholdType(MissionConditionType type) {
         // HOLDING_DAYS는 스케줄러가 처리하므로 제외
         return switch (type) {
-            case PROFIT_RATE, PROFIT_AMOUNT -> true;
+            case PROFIT_AMOUNT -> true;
             default -> false;
         };
     }
@@ -228,12 +226,33 @@ public class MissionService {
                     event.getFilledAmount().intValue();
 
             case DAILY_PROFIT_COUNT -> {
-                // 매도이면서 수익금이 0보다 크면 카운트
-                boolean isProfit = event.getOrderMethod() == OrderMethod.SELL
-                        && event.getProfitAmount() != null
-                        && event.getProfitAmount().compareTo(BigDecimal.ZERO) > 0;
-                yield isProfit ? 1 : 0;
+                // 매도(SELL)이면서, 체결가가 평단가보다 크면 익절 (1회 증가)
+                boolean isSell = event.getOrderMethod() == OrderMethod.SELL;
+                boolean isProfit = event.getFilledPrice().compareTo(event.getBuyAveragePrice()) > 0;
+                yield (isSell && isProfit) ? 1 : 0;
             }
+
+            // [신규 이동] 수익률 누적 계산
+            case PROFIT_RATE -> {
+                if (event.getOrderMethod() != OrderMethod.SELL) yield 0;
+
+                BigDecimal sellPrice = event.getFilledPrice();
+                BigDecimal avgBuyPrice = event.getBuyAveragePrice();
+
+                if (avgBuyPrice == null || avgBuyPrice.compareTo(BigDecimal.ZERO) == 0) {
+                    yield 0;
+                }
+
+                // 수익률 공식: ((매도가 - 평단가) / 평단가) * 100
+                BigDecimal profitRate = sellPrice.subtract(avgBuyPrice)
+                        .divide(avgBuyPrice, 4, java.math.RoundingMode.HALF_UP)
+                        .multiply(BigDecimal.valueOf(100));
+
+                // 예: 5.5% 수익 -> 6점 증가 (반올림)
+                // 예: -10% 손실 -> -10점 (진행도 깎임) -> 원치 않으시면 Math.max(0, ...) 처리 필요
+                yield profitRate.setScale(0, java.math.RoundingMode.HALF_UP).intValue();
+            }
+
             default -> 0;
         };
     }
@@ -245,42 +264,41 @@ public class MissionService {
 
         // 1. 수익률 (PROFIT_RATE) 계산
         if (type == MissionConditionType.PROFIT_RATE) {
-            // (A) 이벤트에 이미 계산된 값이 있고 0이 아니라면 우선 사용 (선택 사항)
-            if (event.getProfitRate() != null && event.getProfitRate().compareTo(BigDecimal.ZERO) != 0) {
-                return event.getProfitRate().setScale(0, java.math.RoundingMode.HALF_UP).intValue();
-            }
+            // [수정] event.getProfitRate()를 신뢰하지 않고 직접 계산 로직을 우선 사용
 
-            // (B) 직접 계산 로직
-            // [수정됨] getPrice() -> getFilledPrice()
-            BigDecimal sellPrice = event.getFilledPrice();
-
-            // [수정됨] getAveragePrice() -> getBuyAveragePrice()
-            BigDecimal avgBuyPrice = event.getBuyAveragePrice();
+            BigDecimal sellPrice = event.getFilledPrice();     // 매도 체결가
+            BigDecimal avgBuyPrice = event.getBuyAveragePrice(); // 평단가
 
             // 평단가가 0이거나 없으면 계산 불가 (0 리턴)
             if (avgBuyPrice == null || avgBuyPrice.compareTo(BigDecimal.ZERO) == 0) {
+                log.warn("수익률 계산 실패: 평단가가 0입니다. StockCode={}", event.getStockCode());
                 return 0;
             }
 
             // 공식: ((매도가 - 평단가) / 평단가) * 100
+            // 예: 매도가 10500, 평단가 10000 -> (500 / 10000) * 100 = 5%
             BigDecimal profitRate = sellPrice.subtract(avgBuyPrice)
-                    .divide(avgBuyPrice, 4, java.math.RoundingMode.HALF_UP) // 소수점 4자리까지 계산
-                    .multiply(BigDecimal.valueOf(100));
+                    .divide(avgBuyPrice, 4, java.math.RoundingMode.HALF_UP) // 소수점 4자리까지 확보 (0.0500)
+                    .multiply(BigDecimal.valueOf(100)); // 백분율 변환 (5.00)
 
+            // 로그로 계산 과정 출력 (디버깅용)
+            log.info("수익률 계산: ({} - {}) / {} * 100 = {}%",
+                    sellPrice, avgBuyPrice, avgBuyPrice, profitRate);
+
+            // 소수점 반올림하여 정수로 반환 (예: 4.9% -> 5%, 4.4% -> 4%)
             return profitRate.setScale(0, java.math.RoundingMode.HALF_UP).intValue();
         }
 
-        // 2. 수익금 (PROFIT_AMOUNT) 계산 (필요하다면 추가)
+        // 2. 수익금 (PROFIT_AMOUNT) 계산
         if (type == MissionConditionType.PROFIT_AMOUNT) {
-            if (event.getProfitAmount() != null && event.getProfitAmount().compareTo(BigDecimal.ZERO) != 0) {
-                return event.getProfitAmount().intValue();
-            }
-
-            BigDecimal totalSellAmount = event.getFilledAmount(); // 총 판 금액
+            // 수익금은 직접 계산: (판 금액 - (평단가 * 수량))
+            BigDecimal totalSellAmount = event.getFilledAmount();
             BigDecimal totalBuyCost = event.getBuyAveragePrice()
-                    .multiply(BigDecimal.valueOf(event.getFilledQuantity())); // 총 산 금액 (평단가 * 수량)
+                    .multiply(BigDecimal.valueOf(event.getFilledQuantity()));
 
-            return totalSellAmount.subtract(totalBuyCost).intValue();
+            BigDecimal profitAmount = totalSellAmount.subtract(totalBuyCost);
+
+            return profitAmount.intValue();
         }
 
         return 0;
@@ -347,11 +365,15 @@ public class MissionService {
                 });
     }
 
+
+
     /**
      * [신규] 인생 2회차 (파산 신청) API 로직
      * - 조건: (보유 현금 + 보유 주식의 원금 총액) < 50,000원
      */
-    public Reward applyForBankruptcy(Member member) {
+    @Transactional
+    public Reward applyForBankruptcy(String email) {
+        Member member = getMemberByEmail(email);
         // 1. 기본 계좌 조회
         Account account = accountRepository.findByMemberAndIsDefaultTrue(member)
                 .orElseThrow(() -> new EntityNotFoundException("기본 계좌가 없습니다."));
@@ -412,6 +434,47 @@ public class MissionService {
                         .title(reward.getTitleToGrant())
                         .build());
                 log.info("칭호 지급: {}", reward.getTitleToGrant().getName());
+            }
+        }
+    }
+
+    /**
+     * [신규] 랭킹 Top 10 달성 처리 (스케줄러 호출용)
+     * - RankingService에서 1분마다 Top 10 유저 ID 리스트를 넘겨줌
+     */
+    public void processRankerAchievement(List<Long> topRankerIds) {
+        if (topRankerIds.isEmpty()) return;
+
+        // 1. 'RANKING_TOP_10' 조건의 업적 미션 조회 (미션 ID: 909 '랭커')
+        Mission rankerMission = missionRepository.findAllByTrackAndConditionType(MissionTrack.ACHIEVEMENT, MissionConditionType.RANKING_TOP_10)
+                .stream().findFirst()
+                .orElse(null);
+
+        if (rankerMission == null) return;
+
+        // 2. Top 10 유저들을 순회하며 미션 달성 처리
+        for (Long memberId : topRankerIds) {
+            Member member = memberRepository.findById(memberId).orElse(null);
+            if (member == null) continue;
+
+            // 3. 미션 진행도 조회 또는 생성
+            MissionProgress progress = missionProgressRepository
+                    .findByMemberAndMission(member, rankerMission)
+                    .orElseGet(() -> {
+                        MissionProgress newProgress = MissionProgress.builder()
+                                .member(member)
+                                .mission(rankerMission)
+                                .status(MissionStatus.IN_PROGRESS)
+                                .build();
+                        member.addMissionProgress(newProgress);
+                        return newProgress;
+                    });
+
+            // 4. 이미 완료한 사람은 패스 (칭호 중복 지급 방지)
+            if (!progress.isCompleted()) {
+                log.info("🏆 랭커 등극! 칭호 지급: MemberId={}", memberId);
+                progress.setCurrentValue(10); // 목표치(10) 달성 처리
+                checkMissionCompletion(progress); // 보상(칭호) 지급 및 완료 처리
             }
         }
     }
