@@ -50,7 +50,11 @@ public class StockAnalysisService {
                     // 4. Python 서버 호출
                     return pythonAnalysisClient.analyze(request);
                 })
-                .doOnError(e -> log.error("종목분석 실패: stockCode={}", stockCode, e));
+                .doOnError(e -> log.error("종목분석 실패: stockCode={}", stockCode, e))
+                .onErrorMap(throwable -> {
+                    log.error("종목분석 최종 실패: stockCode={}", stockCode, throwable);
+                    return new RuntimeException("종목 분석 중 오류가 발생했습니다: " + throwable.getMessage(), throwable);
+                });
     }
 
     // 시장 데이터 조회 (캐시 우선)
