@@ -128,6 +128,9 @@ public class StockChartService {
                     .map(chartDataList -> {
                         return chartDataList.stream()
                                 .map(kisData -> mapMinuteToStockChartDto(stockCode, periodType, kisData))
+                                .sorted(Comparator
+                                        .comparing(StockChartDto::date)
+                                        .thenComparing(StockChartDto::time, Comparator.nullsLast(Comparator.naturalOrder()))) // 날짜+시간 기준 오름차순 정렬 (과거 → 현재)
                                 .toList();
                     })
                     .doOnError(e -> log.error("주식 분봉 데이터 조회 중 오류 발생: {}", stockCode, e))
@@ -159,7 +162,12 @@ public class StockChartService {
                             }
                         }
 
-                        return result;
+                        // 날짜+시간 기준 오름차순 정렬 (과거 → 현재)
+                        return result.stream()
+                                .sorted(Comparator
+                                        .comparing(StockChartDto::date)
+                                        .thenComparing(StockChartDto::time, Comparator.nullsLast(Comparator.naturalOrder())))
+                                .toList();
                     })
                     .doOnError(e -> log.error("주식 분봉 데이터 조회 중 오류 발생: {}", stockCode, e))
                     .onErrorResume(e -> Mono.error(new RuntimeException("주식 분봉 데이터 조회 실패: " + stockCode, e)));
@@ -172,6 +180,7 @@ public class StockChartService {
             return getChartDataFromKis(stockCode, "D", startDateLocal, endDateLocal) // 일봉
                     .map(chartDataList -> {
                         return chartDataList.stream()
+                                .sorted(Comparator.comparing(kisData -> parseDate(kisData.date()))) // 날짜 기준 오름차순 정렬 (과거 → 현재)
                                 .map(kisData -> mapToStockChartDto(stockCode, periodType, kisData))
                                 .toList();
                     })
@@ -227,7 +236,10 @@ public class StockChartService {
                             }
                         }
                         
-                        return result;
+                        // 날짜 기준 오름차순 정렬 (과거 → 현재) - 안전성을 위해 최종 정렬
+                        return result.stream()
+                                .sorted(Comparator.comparing(StockChartDto::date))
+                                .toList();
                     })
                     .doOnError(e -> log.error("주식 차트 데이터 조회 중 오류 발생: {}", stockCode, e))
                     .onErrorResume(e -> Mono.error(new RuntimeException("주식 차트 데이터 조회 실패: " + stockCode, e)));
@@ -240,6 +252,7 @@ public class StockChartService {
             return getChartDataFromKis(stockCode, "M", startDateLocal, endDateLocal) // 월봉
                     .map(chartDataList -> {
                         return chartDataList.stream()
+                                .sorted(Comparator.comparing(kisData -> parseDate(kisData.date()))) // 날짜 기준 오름차순 정렬 (과거 → 현재)
                                 .map(kisData -> mapToStockChartDto(stockCode, periodType, kisData))
                                 .toList();
                     })
