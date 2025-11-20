@@ -50,11 +50,15 @@ public class StockAnalysisService {
                     // 4. Python 서버 호출
                     return pythonAnalysisClient.analyze(request);
                 })
-                .doOnError(e -> log.error("종목분석 실패: stockCode={}", stockCode, e));
+                .doOnError(e -> log.error("종목분석 실패: stockCode={}", stockCode, e))
+                .onErrorMap(throwable -> {
+                    log.error("종목분석 최종 실패: stockCode={}", stockCode, throwable);
+                    return new RuntimeException("종목 분석 중 오류가 발생했습니다: " + throwable.getMessage(), throwable);
+                });
     }
 
     // 시장 데이터 조회 (캐시 우선)
-    private Mono<MarketData> getMarketData(String stockCode) {
+    public Mono<MarketData> getMarketData(String stockCode) {
         // 1. 캐시 확인
         return Mono.fromCallable(() -> redisStockAnalysisRepository.getMarketData(stockCode))
                 .flatMap(cachedData -> {
@@ -86,7 +90,7 @@ public class StockAnalysisService {
     }
 
     // 재무 데이터 조회 (캐시 우선)
-    private Mono<FinancialData> getFinancialData(String stockCode) {
+    public Mono<FinancialData> getFinancialData(String stockCode) {
         // 1. 캐시 확인
         return Mono.fromCallable(() -> redisStockAnalysisRepository.getFinancialData(stockCode))
                 .flatMap(cachedData -> {
@@ -116,7 +120,7 @@ public class StockAnalysisService {
     }
 
     // 배당 데이터 조회 (캐시 우선)
-    private Mono<DividendData> getDividendData(String stockCode) {
+    public Mono<DividendData> getDividendData(String stockCode) {
         // 1. 캐시 확인
         return Mono.fromCallable(() -> redisStockAnalysisRepository.getDividendData(stockCode))
                 .flatMap(cachedData -> {

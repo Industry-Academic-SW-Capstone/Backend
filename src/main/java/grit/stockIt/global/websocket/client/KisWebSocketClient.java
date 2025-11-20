@@ -692,7 +692,7 @@ public class KisWebSocketClient extends TextWebSocketHandler {
                     ? LocalTime.parse(tradeTime.trim(), TIME_FORMAT)
                     : LocalTime.now();
             LocalDateTime dateTime = LocalDateTime.of(date, time);
-            return dateTime.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli();
+            return dateTime.atZone(ZoneId.of("Asia/Seoul")).toInstant().toEpochMilli();
         } catch (Exception e) {
             return System.currentTimeMillis();
         }

@@ -121,7 +121,7 @@ public class RedisOrderBookRepository {
 
     private long createdAt(Order order) {
         if (order.getCreatedAt() != null) {
-            return order.getCreatedAt().atZone(ZoneId.systemDefault()).toInstant().toEpochMilli();
+            return order.getCreatedAt().atZone(ZoneId.of("Asia/Seoul")).toInstant().toEpochMilli();
         }
         return Instant.now().toEpochMilli();
     }
