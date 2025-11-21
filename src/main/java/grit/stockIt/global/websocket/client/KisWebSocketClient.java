@@ -126,17 +126,15 @@ public class KisWebSocketClient extends TextWebSocketHandler {
         try {
             log.info("호가 구독 요청: {}", stockCode);
             
-            // 이미 호가 구독 중이면 중복 구독 방지
-            if (subscribedOrderBooks.contains(stockCode)) {
-                log.debug("종목 {} 호가 이미 구독 중 (중복 구독 무시)", stockCode);
-                return;
-            }
-            
             if (!isConnected()) {
                 log.info("KIS 연결 없음. 연결 시작...");
                 connectToKis();
             }
             
+            // 구독 메시지 전송 (중복 구독은 KIS API가 처리)
+            // subscribedOrderBooks 체크를 제거하여 항상 구독 메시지 전송
+            // 클라이언트가 구독을 변경한 후 다시 구독할 때도 정상 작동
+            // KIS 연결이 끊어졌다가 재연결된 경우에도 안전하게 처리
             sendOrderBookSubscribeMessage(stockCode);
             subscribedOrderBooks.add(stockCode);
             
@@ -176,6 +174,10 @@ public class KisWebSocketClient extends TextWebSocketHandler {
     private void connectToKis() {
         try {
             log.info("KIS 웹소켓 연결 시작");
+            
+            // 새로운 웹소켓 세션이 생성되므로 Approval Key를 새로 발급
+            // 기존 키는 이전 연결에서 사용되었으므로 무효화됨
+            kisTokenManager.refreshApprovalKey();
             
             StandardWebSocketClient client = new StandardWebSocketClient();
             kisSession = client.execute(this, KIS_WS_URL).get();

@@ -8,10 +8,7 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 
-/**
- * 웹소켓 구독 관리자
- * 종목별 구독자 수를 추적하고 관리
- */
+// 웹소켓 구독 관리자
 @Slf4j
 @Component
 public class WebSocketSubscriptionManager {
@@ -28,10 +25,7 @@ public class WebSocketSubscriptionManager {
     // subscriptionId -> 종목코드 매핑 (구독 해제 시 필요)
     private final Map<String, String> subscriptionIdToStockCode = new ConcurrentHashMap<>();
     
-    /**
-     * 구독자 수 증가
-     * @return 증가 후 구독자 수
-     */
+    // 구독자 수 증가
     public int incrementSubscribers(String stockCode) {
         int count = viewerCounts
                 .computeIfAbsent(stockCode, k -> new AtomicInteger(0))
@@ -41,10 +35,7 @@ public class WebSocketSubscriptionManager {
         return count;
     }
     
-    /**
-     * 구독자 수 감소
-     * @return 감소 후 구독자 수
-     */
+    // 구독자 수 감소
     public int decrementSubscribers(String stockCode) {
         AtomicInteger count = viewerCounts.get(stockCode);
         if (count == null) {
@@ -61,17 +52,13 @@ public class WebSocketSubscriptionManager {
         return newCount;
     }
     
-    /**
-     * 현재 구독자 수 조회
-     */
+    // 현재 구독자 수 조회
     public int getSubscriberCount(String stockCode) {
         AtomicInteger count = viewerCounts.get(stockCode);
         return count != null ? count.get() : 0;
     }
     
-    /**
-     * 주문 기준 구독 참조 수 증가
-     */
+    // 주문 기준 구독 참조 수 증가
     public int incrementOrderReference(String stockCode) {
         int count = orderReferenceCounts
                 .computeIfAbsent(stockCode, k -> new AtomicInteger(0))
@@ -81,9 +68,7 @@ public class WebSocketSubscriptionManager {
         return count;
     }
     
-    /**
-     * 주문 기준 구독 참조 수 감소
-     */
+    // 주문 기준 구독 참조 수 감소
     public int decrementOrderReference(String stockCode) {
         AtomicInteger count = orderReferenceCounts.get(stockCode);
         if (count == null) {
@@ -105,17 +90,12 @@ public class WebSocketSubscriptionManager {
         return count != null ? count.get() : 0;
     }
     
-    /**
-     * 현재 화면 구독자나 주문 참조가 하나라도 존재하는지
-     */
+    // 현재 화면 구독자나 주문 참조가 하나라도 존재하는지
     public boolean hasActiveReason(String stockCode) {
         return getSubscriberCount(stockCode) > 0 || getOrderReferenceCount(stockCode) > 0;
     }
     
-    /**
-     * 세션의 구독 종목 추가
-     * @return 새로 추가된 경우 true, 이미 구독 중이면 false
-     */
+    // 세션의 구독 종목 추가
     public boolean addSessionSubscription(String sessionId, String stockCode) {
         Set<String> stocks = sessionSubscriptions
                 .computeIfAbsent(sessionId, k -> ConcurrentHashMap.newKeySet());
@@ -128,24 +108,28 @@ public class WebSocketSubscriptionManager {
         return isNewSubscription;
     }
     
-    /**
-     * 세션의 구독 종목 조회
-     */
+    // 세션의 구독 종목 조회
     public Set<String> getSessionSubscriptions(String sessionId) {
         return sessionSubscriptions.getOrDefault(sessionId, Set.of());
     }
     
-    /**
-     * 세션 제거 (연결 해제 시)
-     */
+    // 세션의 구독 종목 제거
+    public void removeSessionSubscription(String sessionId, String stockCode) {
+        sessionSubscriptions.computeIfPresent(sessionId, (key, stocks) -> {
+            stocks.remove(stockCode);
+            log.debug("세션 {}에서 종목 {} 구독 제거", sessionId, stockCode);
+            // Set이 비어있으면 null 반환하여 Map에서 제거, 아니면 Set 반환
+            return stocks.isEmpty() ? null : stocks;
+        });
+    }
+    
+    // 세션 제거 (연결 해제 시)
     public void removeSession(String sessionId) {
         sessionSubscriptions.remove(sessionId);
         log.debug("세션 {} 제거", sessionId);
     }
     
-    /**
-     * 현재 구독 중인 모든 종목 코드
-     */
+    // 현재 구독 중인 모든 종목 코드
     public Set<String> getAllSubscribedStocks() {
         Set<String> allStocks = ConcurrentHashMap.newKeySet();
         allStocks.addAll(viewerCounts.keySet());
@@ -153,18 +137,13 @@ public class WebSocketSubscriptionManager {
         return allStocks;
     }
     
-    /**
-     * subscriptionId → stockCode 매핑 저장
-     */
+    // subscriptionId → stockCode 매핑 저장
     public void addSubscriptionMapping(String subscriptionId, String stockCode) {
         subscriptionIdToStockCode.put(subscriptionId, stockCode);
         log.debug("구독 매핑 저장: {} → {}", subscriptionId, stockCode);
     }
     
-    /**
-     * subscriptionId로 stockCode 조회 및 매핑 제거
-     * @return 종목 코드 (없으면 null)
-     */
+    // subscriptionId로 stockCode 조회 및 매핑 제거
     public String removeSubscriptionMapping(String subscriptionId) {
         String stockCode = subscriptionIdToStockCode.remove(subscriptionId);
         if (stockCode != null) {
