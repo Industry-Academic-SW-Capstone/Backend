@@ -100,10 +100,11 @@ public class KisTokenAdminController {
     public ResponseEntity<Object> deleteAccessToken() {
         try {
             Boolean deleted = redisTemplate.delete(ACCESS_TOKEN_KEY);
+            boolean wasDeleted = Boolean.TRUE.equals(deleted);
             return ResponseEntity.ok(new TokenDeleteResponse(
                     "ACCESS_TOKEN",
-                    deleted,
-                    deleted ? "Access Token 삭제 성공" : "Access Token이 존재하지 않음"
+                    wasDeleted,
+                    wasDeleted ? "Access Token 삭제 성공" : "Access Token이 존재하지 않음"
             ));
         } catch (Exception e) {
             log.error("Access Token 삭제 실패", e);
@@ -117,10 +118,11 @@ public class KisTokenAdminController {
     public ResponseEntity<Object> deleteApprovalKey() {
         try {
             Boolean deleted = redisTemplate.delete(APPROVAL_KEY_KEY);
+            boolean wasDeleted = Boolean.TRUE.equals(deleted);
             return ResponseEntity.ok(new TokenDeleteResponse(
                     "APPROVAL_KEY",
-                    deleted,
-                    deleted ? "Approval Key 삭제 성공" : "Approval Key가 존재하지 않음"
+                    wasDeleted,
+                    wasDeleted ? "Approval Key 삭제 성공" : "Approval Key가 존재하지 않음"
             ));
         } catch (Exception e) {
             log.error("Approval Key 삭제 실패", e);
