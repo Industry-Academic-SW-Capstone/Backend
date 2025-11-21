@@ -3,6 +3,7 @@ package grit.stockIt.global.auth;
 import grit.stockIt.global.config.KisApiProperties;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
@@ -37,6 +38,13 @@ public class KisTokenManager {
         return token;
     }
 
+    // Access Token을 무효화하고 새로 발급받음
+    public String refreshAccessToken() {
+        log.info("Access Token 갱신 요청 - 기존 토큰 무효화 후 새 토큰 발급");
+        redisTemplate.delete(ACCESS_TOKEN_KEY);
+        return fetchNewAccessToken();
+    }
+
     // KIS 인증 서버에 접속해 새 Access Token을 발급받고 Redis에 저장
     private String fetchNewAccessToken() {
         log.info("KIS에서 새 Access Token을 발급받습니다.");
@@ -48,11 +56,11 @@ public class KisTokenManager {
         );
 
         // KIS API 서버에 비동기 POST 요청
-        Mono<Map> responseMono = webClient.post()
+        Mono<Map<String, Object>> responseMono = webClient.post()
                 .uri(properties.url() + "/oauth2/tokenP") // 토큰 발급 URL
                 .bodyValue(requestBody)
                 .retrieve()
-                .bodyToMono(Map.class); // 응답을 Map으로 받음
+                .bodyToMono(new ParameterizedTypeReference<Map<String, Object>>() {}); // 응답을 Map으로 받음
 
         // 24시간중 한번 받기 때문에 비동기로 받을 필요가 없어서 동기적으로 받음
         Map<String, Object> response = responseMono.block();
@@ -92,7 +100,7 @@ public class KisTokenManager {
                 "secretkey", properties.appsecret()
         );
 
-        Mono<Map> responseMono = webClient.post()
+        Mono<Map<String, Object>> responseMono = webClient.post()
                 .uri(properties.url() + "/oauth2/Approval") // 웹소켓 접속키 발급 URL
                 .header("Content-Type", "application/json; charset=utf-8")
                 .bodyValue(requestBody)
@@ -104,7 +112,7 @@ public class KisTokenManager {
                                             response.statusCode(), body);
                                     return Mono.error(new RuntimeException("Approval Key 발급 실패: " + body));
                                 }))
-                .bodyToMono(Map.class);
+                .bodyToMono(new ParameterizedTypeReference<Map<String, Object>>() {});
 
         Map<String, Object> response = responseMono.block();
 
