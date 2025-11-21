@@ -63,6 +63,9 @@ public class Contest extends BaseEntity {
     @Column(name = "sell_cooldown_minutes")
     private Integer sellCooldownMinutes;
 
+    @Column(name = "contest_note", columnDefinition = "text")
+    private String contestNote;
+
     @OneToMany(mappedBy = "contest", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<Account> accounts = new ArrayList<>();
 
@@ -102,6 +105,9 @@ public class Contest extends BaseEntity {
         }
         if (request.getSellCooldownMinutes() != null) {
             this.sellCooldownMinutes = request.getSellCooldownMinutes();
+        }
+        if (request.getContestNote() != null) {
+            this.contestNote = request.getContestNote();
         }
     }
 }

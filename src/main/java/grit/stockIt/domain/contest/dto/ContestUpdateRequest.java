@@ -1,8 +1,9 @@
 package grit.stockIt.domain.contest.dto;
 
-import com.fasterxml.jackson.annotation.JsonCreator;
-import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.databind.PropertyNamingStrategies;
+import com.fasterxml.jackson.databind.annotation.JsonNaming;
 import io.swagger.v3.oas.annotations.media.Schema;
+import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -12,36 +13,11 @@ import java.time.LocalDateTime;
 
 @Getter
 @NoArgsConstructor
+@AllArgsConstructor
 @Builder
 @Schema(description = "대회 수정 요청")
+@JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
 public class ContestUpdateRequest {
-
-    @JsonCreator
-    public ContestUpdateRequest(
-            @JsonProperty("contest_name") String contestName,
-            @JsonProperty("start_date") LocalDateTime startDate,
-            @JsonProperty("end_date") LocalDateTime endDate,
-            @JsonProperty("seed_money") Long seedMoney,
-            @JsonProperty("commission_rate") BigDecimal commissionRate,
-            @JsonProperty("min_market_cap") Long minMarketCap,
-            @JsonProperty("max_market_cap") Long maxMarketCap,
-            @JsonProperty("daily_trade_limit") Integer dailyTradeLimit,
-            @JsonProperty("max_holdings_count") Integer maxHoldingsCount,
-            @JsonProperty("buy_cooldown_minutes") Integer buyCooldownMinutes,
-            @JsonProperty("sell_cooldown_minutes") Integer sellCooldownMinutes) {
-        this.contestName = contestName;
-        this.startDate = startDate;
-        this.endDate = endDate;
-        this.seedMoney = seedMoney;
-        this.commissionRate = commissionRate;
-        this.minMarketCap = minMarketCap;
-        this.maxMarketCap = maxMarketCap;
-        this.dailyTradeLimit = dailyTradeLimit;
-        this.maxHoldingsCount = maxHoldingsCount;
-        this.buyCooldownMinutes = buyCooldownMinutes;
-        this.sellCooldownMinutes = sellCooldownMinutes;
-    }
-
     @Schema(description = "대회명", example = "2025 모의투자 대회")
     private String contestName;
 
@@ -74,4 +50,7 @@ public class ContestUpdateRequest {
 
     @Schema(description = "매도 후 쿨다운 시간 (분)", example = "5")
     private Integer sellCooldownMinutes;
+
+    @Schema(description = "대회 설명(노트)", example = "대회 규정 및 안내 등 상세 설명")
+    private String contestNote;
 }

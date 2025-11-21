@@ -62,8 +62,8 @@ public class ContestController {
     @Operation(summary = "대회 상세 조회", description = "특정 대회의 상세 정보를 조회합니다")
     @GetMapping("/{contestId}")
     public ResponseEntity<ContestResponse> getContest(
-            @Parameter(description = "대회 ID", required = true)
-            @PathVariable Long contestId) {
+            @Parameter(name = "contestId", description = "대회 ID", required = true)
+            @PathVariable("contestId") Long contestId) {
         
         ContestResponse response = contestService.getContest(contestId);
         return ResponseEntity.ok(response);
@@ -76,8 +76,8 @@ public class ContestController {
     )
     @PutMapping("/{contestId}")
     public ResponseEntity<ContestResponse> updateContest(
-            @Parameter(description = "대회 ID", required = true)
-            @PathVariable Long contestId,
+            @Parameter(name = "contestId", description = "대회 ID", required = true)
+            @PathVariable("contestId") Long contestId,
             @Valid @RequestBody ContestUpdateRequest request,
             @Parameter(hidden = true) @AuthenticationPrincipal UserDetails userDetails) {
         
@@ -96,8 +96,8 @@ public class ContestController {
     )
     @DeleteMapping("/{contestId}")
     public ResponseEntity<Void> deleteContest(
-            @Parameter(description = "대회 ID", required = true)
-            @PathVariable Long contestId,
+            @Parameter(name = "contestId", description = "대회 ID", required = true)
+            @PathVariable("contestId") Long contestId,
             @Parameter(hidden = true) @AuthenticationPrincipal UserDetails userDetails) {
         
         if (userDetails == null) {
