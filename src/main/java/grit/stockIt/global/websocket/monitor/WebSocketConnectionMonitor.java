@@ -6,10 +6,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
-/**
- * 웹소켓 연결 상태 모니터링
- * 주기적으로 KIS 웹소켓 연결 상태를 확인하고 필요시 재연결
- */
+// 웹소켓 연결 상태 모니터링
 @Slf4j
 @Component
 @RequiredArgsConstructor
@@ -17,16 +14,18 @@ public class WebSocketConnectionMonitor {
     
     private final KisWebSocketClient kisWebSocketClient;
     
-    /**
-     * 30초마다 연결 상태 확인
-     * 연결이 끊어져 있고 재연결이 필요한 경우 재연결 시도
-     */
+    // 30초마다 연결 상태 확인
     @Scheduled(fixedDelay = 30000, initialDelay = 60000)
     public void checkConnection() {
         try {
             if (!kisWebSocketClient.isConnected()) {
-                log.warn("KIS 웹소켓 연결 끊김 감지 - 재연결 시도");
-                kisWebSocketClient.reconnect();
+                // 구독 종목이 있을 때만 재연결 시도
+                if (kisWebSocketClient.hasSubscriptions()) {
+                    log.warn("KIS 웹소켓 연결 끊김 감지 - 재연결 시도 (구독 종목 있음)");
+                    kisWebSocketClient.reconnect();
+                } else {
+                    log.debug("KIS 웹소켓 연결 끊김 - 구독 종목 없음으로 재연결 생략");
+                }
             } else {
                 log.debug("KIS 웹소켓 연결 정상");
             }
@@ -35,9 +34,7 @@ public class WebSocketConnectionMonitor {
         }
     }
     
-    /**
-     * 5분마다 연결 상태 로깅 (헬스체크)
-     */
+    // 5분마다 연결 상태 로깅 (헬스체크)
     @Scheduled(fixedDelay = 300000, initialDelay = 60000)
     public void logConnectionStatus() {
         boolean isConnected = kisWebSocketClient.isConnected();

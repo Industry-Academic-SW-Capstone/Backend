@@ -466,6 +466,11 @@ public class KisWebSocketClient extends TextWebSocketHandler {
         return kisSession != null && kisSession.isOpen();
     }
     
+    // 구독 종목이 있는지 확인
+    public boolean hasSubscriptions() {
+        return !subscribedStocks.isEmpty() || !subscribedOrderBooks.isEmpty();
+    }
+    
     // KIS 웹소켓 연결 해제
     private void disconnectFromKis() {
         if (!isConnected()) {
