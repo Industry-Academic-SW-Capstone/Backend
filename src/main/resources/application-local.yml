@@ -22,8 +22,13 @@ spring:
         highlight_sql: true
         format_sql: true
         dialect: org.hibernate.dialect.PostgreSQLDialect
+<<<<<<< Updated upstream
         default_batch_fetch_size: 100
     defer-datasource-initialization: true
   sql:
     init:
       mode: never
+=======
+  jackson:
+    property-naming-strategy: SNAKE_CASE
+>>>>>>> Stashed changes

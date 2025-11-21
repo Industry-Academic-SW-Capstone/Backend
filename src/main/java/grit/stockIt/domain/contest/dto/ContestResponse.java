@@ -59,6 +59,9 @@ public class ContestResponse {
     @Schema(description = "매도 후 쿨다운 시간 (분)", example = "5")
     private Integer sellCooldownMinutes;
 
+    @Schema(description = "대회 설명(노트)", example = "대회 규정 및 안내 등 상세 설명")
+    private String contestNote;
+
     @Schema(description = "생성일시", example = "2025-01-01T00:00:00")
     private LocalDateTime createdAt;
 
@@ -81,6 +84,7 @@ public class ContestResponse {
                 .maxHoldingsCount(contest.getMaxHoldingsCount())
                 .buyCooldownMinutes(contest.getBuyCooldownMinutes())
                 .sellCooldownMinutes(contest.getSellCooldownMinutes())
+                .contestNote(contest.getContestNote())
                 .createdAt(contest.getCreatedAt())
                 .updatedAt(contest.getUpdatedAt())
                 .build();

@@ -48,6 +48,7 @@ public class ContestService {
                 .maxHoldingsCount(request.getMaxHoldingsCount())
                 .buyCooldownMinutes(request.getBuyCooldownMinutes())
                 .sellCooldownMinutes(request.getSellCooldownMinutes())
+                .contestNote(request.getContestNote())
                 .build();
 
         Contest saved = contestRepository.save(contest);
