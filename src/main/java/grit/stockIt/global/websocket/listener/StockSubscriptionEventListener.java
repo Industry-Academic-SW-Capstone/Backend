@@ -108,10 +108,14 @@ public class StockSubscriptionEventListener {
         
         if (isOrderBook) {
             log.info("종목 {} 호가 구독 해제 (세션: {})", stockCode, sessionId);
+            // 세션 구독 목록에서 제거 (재구독 시 정상 작동을 위해 필요)
+            subscriptionManager.removeSessionSubscription(sessionId, mappedValue);
             // 호가는 체결가와 독립적으로 관리 (카운트 감소 없이 바로 해제)
             unsubscribeOrderBookFromKis(stockCode);
         } else {
             log.info("종목 {} 체결가 구독 해제 (세션: {})", stockCode, sessionId);
+            // 세션 구독 목록에서 제거
+            subscriptionManager.removeSessionSubscription(sessionId, stockCode);
             subscriptionManager.decrementSubscribers(stockCode);
             
             if (!subscriptionManager.hasActiveReason(stockCode)) {
