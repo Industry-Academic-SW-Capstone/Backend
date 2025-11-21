@@ -115,14 +115,12 @@ public class WebSocketSubscriptionManager {
     
     // 세션의 구독 종목 제거
     public void removeSessionSubscription(String sessionId, String stockCode) {
-        Set<String> stocks = sessionSubscriptions.get(sessionId);
-        if (stocks != null) {
+        sessionSubscriptions.computeIfPresent(sessionId, (key, stocks) -> {
             stocks.remove(stockCode);
-            if (stocks.isEmpty()) {
-                sessionSubscriptions.remove(sessionId);
-            }
             log.debug("세션 {}에서 종목 {} 구독 제거", sessionId, stockCode);
-        }
+            // Set이 비어있으면 null 반환하여 Map에서 제거, 아니면 Set 반환
+            return stocks.isEmpty() ? null : stocks;
+        });
     }
     
     // 세션 제거 (연결 해제 시)
