@@ -25,7 +25,6 @@ import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import grit.stockIt.domain.order.event.TradeCompletionEvent; // 1. TradeCompletionEvent 임포트
-import org.springframework.context.ApplicationEventPublisher; // 2. 이벤트 발행기 임포트
 
 import java.math.BigDecimal;
 import java.time.Duration;
@@ -191,10 +190,9 @@ public class LimitOrderMatchingService {
                 actualFillQuantity = affordableQuantity;
             }
 
-            // ⬇️ [추가 1] 매도(SELL)라면, 로직 실행 전에 '현재 평단가'를 미리 조회해서 임시 저장
+            // 매도(SELL)라면 로직 실행 전에 현재 평단가를 미리 조회해서 임시 저장
             BigDecimal currentAvgPrice = BigDecimal.ZERO;
             if (order.getOrderMethod() == OrderMethod.SELL) {
-                // AccountStockRepository를 의존성 주입받아 사용해야 합니다.
                 currentAvgPrice = accountStockRepository
                         .findByAccountAndStock(order.getAccount(), order.getStock())
                         .map(AccountStock::getAveragePrice)
@@ -202,7 +200,11 @@ public class LimitOrderMatchingService {
             }
             try {
                 order.applyFill(command.fillQuantity());
-                executions.add(executionService.record(order, event.price(), command.fillQuantity()));
+                Execution execution = executionService.record(order, event.price(), command.fillQuantity());
+                executions.add(execution);
+
+                // 체결 완료 알림 이벤트 발행
+                publishExecutionFilledEvent(execution, order, stockCode);
 
                 // 계좌/재고 반영 (여기서 전량 매도 시 AccountStock의 평단가가 0이 될 수 있음)
                 handleAccountOnFill(order, event.price(), command.fillQuantity());
@@ -213,7 +215,6 @@ public class LimitOrderMatchingService {
                     finalizeFilledOrder(order);
 
                     try {
-                        // ⬇️ [수정 2] 새로운 생성자를 사용하여 '평단가(currentAvgPrice)' 주입
                         TradeCompletionEvent missionEvent = new TradeCompletionEvent(
                                 order.getAccount().getMember().getMemberId(),
                                 order.getAccount().getAccountId(),
@@ -221,10 +222,10 @@ public class LimitOrderMatchingService {
                                 order.getOrderMethod(),
                                 order.getQuantity(),         // 총 주문 수량
                                 event.price(),               // 체결 가격 (매도 단가)
-                                null,                        // profitAmount (Service에서 계산할 거면 null)
-                                null,                        // profitRate (Service에서 계산할 거면 null)
-                                0,                           // holdingDays (Scheduler가 처리하거나 별도 로직)
-                                currentAvgPrice              // ⭐️ [핵심] 아까 꺼내둔 평단가 전달!
+                                null,
+                                null,
+                                0,
+                                currentAvgPrice
                         );
                         eventPublisher.publishEvent(missionEvent);
                         log.info("미션 시스템 이벤트 발행 (주문 완료 기준): MemberId={}", missionEvent.getMemberId());
@@ -422,10 +423,7 @@ public class LimitOrderMatchingService {
         return LIMIT_LOCK_KEY_PATTERN.formatted(stockCode);
     }
 
-    /**
-     * 체결 완료 이벤트 발행
-     * Event-Driven 아키텍처: ExecutionNotificationService와 완전히 분리
-     */
+    // 체결 완료 이벤트 발행
     private void publishExecutionFilledEvent(Execution execution, Order order, String stockCode) {
         try {
             ExecutionFilledEvent event = new ExecutionFilledEvent(
@@ -433,6 +431,8 @@ public class LimitOrderMatchingService {
                     order.getOrderId(),
                     order.getAccount().getAccountId(),
                     order.getAccount().getMember().getMemberId(),  // Member ID 추가
+                    order.getAccount().getContest().getContestId(),  // Contest ID 추가
+                    order.getAccount().getContest().getContestName(),  // Contest 이름 추가
                     stockCode,
                     execution.getStock().getName(),
                     execution.getPrice(),
@@ -442,7 +442,8 @@ public class LimitOrderMatchingService {
 
             // 체결 완료 이벤트 발행
             eventPublisher.publishEvent(event);
-            log.debug("체결 완료 이벤트 발행: executionId={}, memberId={}", execution.getExecutionId(), event.memberId());
+            log.debug("체결 완료 이벤트 발행: executionId={}, memberId={}, contestId={}", 
+                    execution.getExecutionId(), event.memberId(), event.contestId());
         } catch (Exception e) {
             log.error("체결 완료 이벤트 발행 실패: executionId={}", execution.getExecutionId(), e);
         }
