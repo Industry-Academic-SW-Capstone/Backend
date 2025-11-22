@@ -14,16 +14,24 @@ public class MissionScheduler {
     private final MissionService missionService;
 
     /**
-     * [기존] 매일 자정 (00:00)에 일일 미션을 초기화합니다.
+     * [수정됨] 매일 자정 (00:00)
+     * 1. 출석 안 한 사람 연속 출석 초기화 (검사)
+     * 2. 일일 미션 초기화 (실행)
      */
     @Scheduled(cron = "0 0 0 * * ?", zone = "Asia/Seoul")
     public void dailyMissionResetTask() {
-        log.info("=== 일일 미션 초기화 스케줄러 시작 ===");
+        log.info("=== 자정 미션 스케줄러 시작 ===");
         try {
+            // 1. [순서 중요] 먼저 출석 체크 안 한 사람의 연속 기록을 날려야 함
+            // (일일 미션을 리셋해버리면 누가 안 했는지 알 수 없으므로 이게 먼저 와야 함)
+            missionService.checkAndResetAttendanceStreaks();
+
+            // 2. 그 다음 일일 미션 상태를 0으로 리셋
             missionService.resetDailyMissions();
-            log.info("=== 일일 미션 초기화 완료 ===");
+
+            log.info("=== 자정 미션 스케줄러 완료 ===");
         } catch (Exception e) {
-            log.error("일일 미션 초기화 중 오류 발생", e);
+            log.error("자정 미션 처리 중 오류 발생", e);
         }
     }
 
@@ -42,4 +50,6 @@ public class MissionScheduler {
             log.error("홀딩 미션 업데이트 중 오류 발생", e);
         }
     }
+
+
 }

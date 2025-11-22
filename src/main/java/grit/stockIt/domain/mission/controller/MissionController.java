@@ -1,7 +1,6 @@
 package grit.stockIt.domain.mission.controller;
 
-import grit.stockIt.domain.mission.dto.MissionProgressResponseDto;
-import grit.stockIt.domain.mission.dto.RewardResponseDto;
+import grit.stockIt.domain.mission.dto.*;
 import grit.stockIt.domain.mission.entity.MissionProgress;
 import grit.stockIt.domain.mission.entity.Reward;
 import grit.stockIt.domain.mission.service.MissionService;
@@ -26,26 +25,39 @@ public class MissionController {
 
     private final MissionService missionService;
     private final MissionScheduler missionScheduler;
+
     /**
-     * GET /api/missions
-     * 현재 사용자의 모든 미션 목록을 조회합니다.
+     * [신규] 대시보드 위젯 정보 조회
+     * - 연속 출석 일수
+     * - 남은 일일 미션 개수
+     */
+    @GetMapping("/dashboard")
+    @Operation(summary = "미션 대시보드 요약", description = "메인화면 상단 위젯에 표시할 연속 출석일과 남은 미션 수를 반환합니다.")
+    public ResponseEntity<MissionDashboardDto> getDashboardSummary(@AuthenticationPrincipal UserDetails userDetails) {
+        return ResponseEntity.ok(missionService.getMissionDashboard(userDetails.getUsername()));
+    }
+
+    /**
+     * [수정] 미션 목록 조회 (트랙별 필터링 지원)
+     * - param track: DAILY, SHORT_TERM, SWING, LONG_TERM, ACHIEVEMENT
+     * - track 파라미터가 없거나 "ALL"이면 전체 반환
      */
     @GetMapping
-    public ResponseEntity<List<MissionProgressResponseDto>> getMyMissions(
-            @AuthenticationPrincipal UserDetails userDetails
+    @Operation(summary = "미션 목록 조회", description = "트랙별 미션 및 업적 진행도를 반환합니다. 보상 정보(금액/칭호)가 포함됩니다.")
+    public ResponseEntity<List<MissionListDto>> getMissions(
+            @AuthenticationPrincipal UserDetails userDetails,
+            @RequestParam(required = false, defaultValue = "ALL") String track
     ) {
-        String email = userDetails.getUsername();
-        log.info("Request: getMyMissions for Email={}", email);
+        return ResponseEntity.ok(missionService.getMissionsByTrack(userDetails.getUsername(), track));
+    }
 
-        // 1. 서비스 호출 (이메일만 전달)
-        List<MissionProgress> progressList = missionService.getMissionProgressList(email);
-
-        // 2. Entity List -> DTO List 변환
-        List<MissionProgressResponseDto> responseDtoList = progressList.stream()
-                .map(MissionProgressResponseDto::new)
-                .collect(Collectors.toList());
-
-        return ResponseEntity.ok(responseDtoList);
+    /**
+     * [신규] 보유 칭호 목록 조회
+     */
+    @GetMapping("/titles")
+    @Operation(summary = "보유 칭호 조회", description = "사용자가 획득한 모든 칭호 목록을 반환합니다.")
+    public ResponseEntity<List<MemberTitleDto>> getMyTitles(@AuthenticationPrincipal UserDetails userDetails) {
+        return ResponseEntity.ok(missionService.getMyTitles(userDetails.getUsername()));
     }
 
     /**
@@ -116,21 +128,5 @@ public class MissionController {
         Reward reward = missionService.applyForBankruptcy(email);
 
         return ResponseEntity.ok(new RewardResponseDto(reward));
-    }
-
-    /**
-     * GET /api/missions/scheduler/holding
-     * [테스트용] 홀딩 미션 업데이트 스케줄러를 강제로 실행합니다.
-     * 브라우저 주소창에서 바로 호출 가능합니다.
-     */
-    @GetMapping("/scheduler/holding")
-    @Operation(summary = "[테스트] 홀딩 미션 강제 업데이트", description = "전체 유저의 홀딩 미션(HOLDING_DAYS) 진행도를 +1 증가시킵니다.")
-    public ResponseEntity<String> forceRunHoldingScheduler() {
-        log.info("☢️ [TEST] 홀딩 미션 스케줄러 강제 실행 요청됨");
-
-        // 스케줄러의 메서드를 직접 호출 (로그 및 예외처리 포함됨)
-        missionScheduler.dailyHoldingProgressTask();
-
-        return ResponseEntity.ok("✅ 홀딩 미션 진행도 업데이트가 완료되었습니다.");
     }
 }

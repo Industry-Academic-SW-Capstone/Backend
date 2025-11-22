@@ -9,12 +9,16 @@ import grit.stockIt.job.util.MstFileDownloader;
 import grit.stockIt.job.util.MstFileParser;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.core.io.Resource;
+import org.springframework.jdbc.datasource.init.ResourceDatabasePopulator;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.*;
 import java.util.stream.Collectors;
+import javax.sql.DataSource;
+import org.springframework.context.ApplicationContext;
 
 @Slf4j
 @Service
@@ -29,6 +33,8 @@ public class MasterFileUpdateService {
     private static final String KOSPI_MST_ZIP_URL = "https://new.real.download.dws.co.kr/common/master/kospi_code.mst.zip";
     private static final String KOSDAQ_MST_ZIP_URL = "https://new.real.download.dws.co.kr/common/master/kosdaq_code.mst.zip";
 
+    private final DataSource dataSource;
+    private final ApplicationContext applicationContext;
 
     // 매일 새벽 4시에 실행
     @Scheduled(cron = "0 0 4 * * *")
@@ -241,6 +247,38 @@ public class MasterFileUpdateService {
             log.info("{}개의 비활성 종목을 소프트 삭제 처리했습니다: {}", stocksToDelete.size(), stocksToDelete.stream().map(Stock::getCode).collect(Collectors.joining(",")));
         } else {
             log.info("소프트 삭제할 비활성 종목이 없습니다.");
+        }
+    }
+
+    /**
+     * classpath에 있는 data.sql을 읽어서 DB에 반영합니다.
+     */
+    @Transactional
+    public void reloadDataSql() {
+        log.info("Checking data.sql file...");
+
+        // 1. data.sql 파일 가져오기
+        Resource resource = applicationContext.getResource("classpath:data.sql");
+
+        if (!resource.exists()) {
+            throw new RuntimeException("data.sql 파일을 찾을 수 없습니다.");
+        }
+
+        // 2. Spring JDBC 유틸리티를 사용하여 스크립트 실행
+        ResourceDatabasePopulator populator = new ResourceDatabasePopulator(resource);
+
+        // 오류 발생 시 계속 진행할지 여부 (true면 오류 무시, false면 중단)
+        populator.setContinueOnError(false);
+
+        // 인코딩 설정 (한글 깨짐 방지)
+        populator.setSqlScriptEncoding("UTF-8");
+
+        try {
+            populator.execute(dataSource);
+            log.info("data.sql 실행 및 데이터 업데이트 완료.");
+        } catch (Exception e) {
+            log.error("data.sql 실행 중 오류 발생: {}", e.getMessage());
+            throw new RuntimeException("게임 데이터 업데이트 실패", e);
         }
     }
 }

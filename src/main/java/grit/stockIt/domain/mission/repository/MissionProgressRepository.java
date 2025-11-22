@@ -54,4 +54,34 @@ public interface MissionProgressRepository extends JpaRepository<MissionProgress
             MissionConditionType conditionType,
             MissionStatus status
     );
+
+    // [핵심 변경] 대시보드용: 같은 조건(LOGIN_STREAK)의 미션 중 '목표치(GoalValue)'가 가장 큰 1개만 조회
+    // 이렇게 하면 7일, 15일 짜리가 아니라 100,000일 짜리 '트래커' 미션이 선택됨
+    @Query("SELECT mp FROM MissionProgress mp " +
+            "JOIN FETCH mp.mission m " +
+            "WHERE mp.member = :member " +
+            "AND m.track = :track " +
+            "AND m.conditionType = :conditionType " +
+            "ORDER BY m.goalValue DESC " + // 목표치가 가장 높은 순 정렬
+            "LIMIT 1")                     // 1개만 가져오기
+    Optional<MissionProgress> findTopByMemberAndConditionOrderByGoalDesc(
+            @Param("member") Member member,
+            @Param("track") MissionTrack track,
+            @Param("conditionType") MissionConditionType conditionType
+    );
+
+    // [신규 추가] 다건 조회용 (연속 출석 초기화 등) -> List 반환!
+    // 메서드 이름에 'All'을 붙여서 구분합니다.
+    @Query("SELECT mp FROM MissionProgress mp JOIN FETCH mp.mission m " +
+            "WHERE mp.member = :member " +
+            "AND m.track = :track " +
+            "AND m.conditionType = :conditionType")
+    List<MissionProgress> findAllByMemberAndMissionTypeWithMission(
+            @Param("member") Member member,
+            @Param("track") MissionTrack track,
+            @Param("conditionType") MissionConditionType conditionType
+    );
+
+    // [추가] 조건 타입으로 모든 유저의 진행도 조회 (LOGIN_COUNT 조회용)
+    List<MissionProgress> findAllByMission_ConditionType(MissionConditionType conditionType);
 }
