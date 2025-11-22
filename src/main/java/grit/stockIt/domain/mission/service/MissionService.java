@@ -6,6 +6,9 @@ import grit.stockIt.domain.account.repository.AccountRepository;
 import grit.stockIt.domain.account.repository.AccountStockRepository; // [추가]
 import grit.stockIt.domain.member.entity.Member;
 import grit.stockIt.domain.member.repository.MemberRepository;
+import grit.stockIt.domain.mission.dto.MemberTitleDto;
+import grit.stockIt.domain.mission.dto.MissionDashboardDto;
+import grit.stockIt.domain.mission.dto.MissionListDto;
 import grit.stockIt.domain.mission.entity.Mission;
 import grit.stockIt.domain.mission.entity.MissionProgress;
 import grit.stockIt.domain.mission.entity.Reward;
@@ -324,6 +327,92 @@ public class MissionService {
             return true;
 
         return false;
+    }
+
+    // ... 기존 메서드들 ...
+
+    /**
+     * [신규] 연속 출석 초기화 로직
+     * - 매일 자정, 일일 미션 초기화 '직전'에 실행됨
+     * - 어제 '일일 출석'을 완료하지 못한 유저의 '연속 출석(LOGIN_STREAK)' 진행도를 모두 0으로 리셋
+     */
+    @Transactional
+    public void checkAndResetAttendanceStreaks() {
+        log.info("연속 출석 끊김 여부 확인 시작...");
+
+        // 1. '일일 출석(LOGIN_COUNT)' 미션 조회 (여긴 findAllByMission_ConditionType 사용)
+        List<MissionProgress> dailyLoginMissions = missionProgressRepository
+                .findAllByMission_ConditionType(MissionConditionType.LOGIN_COUNT);
+
+        int resetCount = 0;
+
+        for (MissionProgress dailyProgress : dailyLoginMissions) {
+            // 2. 미션 트랙이 DAILY이고, 완료하지 못했다면 -> 출석 실패
+            if (dailyProgress.getMission().getTrack() == MissionTrack.DAILY && !dailyProgress.isCompleted()) {
+                Member member = dailyProgress.getMember();
+
+                // [수정됨] 3. 여기서 새로 만든 'findAll...' 메서드를 호출! (List 반환)
+                // 7일, 15일, 30일, 트래커 미션 등 여러 개를 한꺼번에 가져옴
+                List<MissionProgress> streakProgressList = missionProgressRepository
+                        .findAllByMemberAndMissionTypeWithMission(member, MissionTrack.ACHIEVEMENT, MissionConditionType.LOGIN_STREAK);
+
+                // 4. 연속 출석 진행도 0으로 초기화
+                for (MissionProgress streak : streakProgressList) {
+                    if (streak.getCurrentValue() > 0) {
+                        streak.setCurrentValue(0);
+                        log.info("연속 출석 초기화: MemberId={}, MissionId={}", member.getMemberId(), streak.getMission().getId());
+                    }
+                }
+                resetCount++;
+            }
+        }
+        log.info("총 {}명의 연속 출석 기록이 초기화되었습니다.", resetCount);
+    }
+
+    // 대시보드용 요약 정보 조회
+    @Transactional(readOnly = true)
+    public MissionDashboardDto getMissionDashboard(String email) {
+        Member member = getMemberByEmail(email);
+
+        // 1. 연속 출석 일수 (업적 중 LOGIN_STREAK 타입의 현재 진행도 조회)
+// 7일, 15일, 30일 업적 미션들과 충돌하지 않음
+        int streak = missionProgressRepository
+                .findTopByMemberAndConditionOrderByGoalDesc(member, MissionTrack.ACHIEVEMENT, MissionConditionType.LOGIN_STREAK)
+                .map(MissionProgress::getCurrentValue)
+                .orElse(0); // 트래커 미션이 아직 생성 안 됐으면 0일
+
+        // 2. 남은 일일 미션 개수 (DAILY 트랙 중, 완료되지 않은 것의 개수)
+        List<MissionProgress> dailyMissions = missionProgressRepository.findAllByMemberAndMission_Track(member, MissionTrack.DAILY);
+        int remaining = (int) dailyMissions.stream()
+                .filter(mp -> !mp.isCompleted())
+                .count();
+
+        return MissionDashboardDto.builder()
+                .consecutiveAttendanceDays(streak)
+                .remainingDailyMissions(remaining)
+                .build();
+    }
+
+    // 트랙별 미션 리스트 조회 (필터링 기능 추가)
+    @Transactional(readOnly = true)
+    public List<MissionListDto> getMissionsByTrack(String email, String trackName) {
+        Member member = getMemberByEmail(email);
+        List<MissionProgress> allProgress = missionProgressRepository.findByMemberWithMissionAndReward(member);
+
+        // trackName이 "ALL"이면 전체, 아니면 해당 트랙만 필터링
+        return allProgress.stream()
+                .filter(mp -> trackName.equals("ALL") || mp.getMission().getTrack().name().equals(trackName))
+                .map(MissionListDto::new)
+                .collect(Collectors.toList());
+    }
+
+    // 보유 칭호 목록 조회
+    @Transactional(readOnly = true)
+    public List<MemberTitleDto> getMyTitles(String email) {
+        Member member = getMemberByEmail(email);
+        return memberTitleRepository.findAllByMember(member).stream()
+                .map(MemberTitleDto::new)
+                .collect(Collectors.toList());
     }
 
     // --- [공통 로직] 완료 처리, 보상, 초기화 ---

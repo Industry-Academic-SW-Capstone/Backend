@@ -33,6 +33,10 @@ public class BatchJobController {
         try {
             // 서비스의 메인 업데이트 메서드 호출
             masterFileUpdateService.updateMasterFiles();
+
+            // data.sql 실행 (미션/보상/칭호 업데이트)
+            masterFileUpdateService.reloadDataSql();
+
             String successMessage = "마스터 파일 업데이트 작업이 수동 요청으로 성공적으로 실행되었습니다.";
             log.info(successMessage);
 
