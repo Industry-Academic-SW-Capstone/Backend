@@ -8,6 +8,8 @@ public record ExecutionFilledEvent(
         Long orderId,
         Long accountId,
         Long memberId,  // Member 조회를 위해 추가
+        Long contestId,  // 대회 ID
+        String contestName,  // 대회 이름
         String stockCode,
         String stockName,
         BigDecimal price,
