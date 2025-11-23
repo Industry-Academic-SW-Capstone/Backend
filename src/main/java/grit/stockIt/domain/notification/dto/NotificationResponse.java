@@ -1,5 +1,6 @@
 package grit.stockIt.domain.notification.dto;
 
+import com.fasterxml.jackson.annotation.JsonRawValue;
 import grit.stockIt.domain.notification.entity.Notification;
 import grit.stockIt.domain.notification.enums.NotificationType;
 import lombok.Builder;
@@ -12,6 +13,7 @@ public record NotificationResponse(
         NotificationType type,
         String title,
         String message,
+        @JsonRawValue  // JSON 문자열을 객체로 직접 반환
         String detailData,
         String iconType,
         boolean isRead,
