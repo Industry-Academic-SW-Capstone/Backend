@@ -110,6 +110,7 @@ DO UPDATE SET
     condition_type = EXCLUDED.condition_type,
     goal_value = EXCLUDED.goal_value,
     reward_id = EXCLUDED.reward_id,
+    next_mission_id = EXCLUDED.next_mission_id,
     updated_at = NOW();
 
 -- 3-1. [신규] 연속 출석 카운팅용 무한 미션 (ID: 900)
@@ -120,6 +121,7 @@ ON CONFLICT (mission_id)
 DO UPDATE SET
     name = EXCLUDED.name,
     goal_value = EXCLUDED.goal_value, -- 목표치 수정 시 반영
+    next_mission_id = EXCLUDED.next_mission_id,
     updated_at = NOW();
 
 -- 4. 연계 미션(체인) 연결

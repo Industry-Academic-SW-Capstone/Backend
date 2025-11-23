@@ -7,6 +7,7 @@ import grit.stockIt.domain.mission.enums.MissionConditionType;
 import grit.stockIt.domain.mission.enums.MissionStatus;
 import grit.stockIt.domain.mission.enums.MissionTrack;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -84,4 +85,26 @@ public interface MissionProgressRepository extends JpaRepository<MissionProgress
 
     // [추가] 조건 타입으로 모든 유저의 진행도 조회 (LOGIN_COUNT 조회용)
     List<MissionProgress> findAllByMission_ConditionType(MissionConditionType conditionType);
+
+    /**
+     * [성능 개선] 연속 출석 초기화 벌크 연산
+     * - 조건 1: 미션 트랙이 'ACHIEVEMENT'이고 조건 타입이 'LOGIN_STREAK'인 미션 진행 데이터 중 (연속 출석 미션들)
+     * - 조건 2: 해당 멤버가 어제 '일일 출석(LOGIN_COUNT)' 미션을 완료하지 못한 경우 (서브쿼리)
+     * - 동작: 진행도(currentValue)를 0으로 일괄 초기화
+     */
+    @Modifying(clearAutomatically = true) // 쿼리 실행 후 영속성 컨텍스트 초기화 (필수)
+    @Query("UPDATE MissionProgress mp " +
+            "SET mp.currentValue = 0 " +
+            "WHERE mp.mission.track = 'ACHIEVEMENT' " +
+            "AND mp.mission.conditionType = 'LOGIN_STREAK' " +
+            "AND mp.currentValue > 0 " +
+            "AND mp.member.memberId IN (" +
+            "SELECT dmp.member.memberId " +
+            "FROM MissionProgress dmp " +
+            "WHERE dmp.mission.track = 'DAILY' " +
+            "AND dmp.mission.conditionType = 'LOGIN_COUNT' " +
+            "AND dmp.status != 'COMPLETED' " + // 완료 상태가 아니고
+            "AND dmp.currentValue < dmp.mission.goalValue" + // 목표치 달성 못함
+            ")")
+    int bulkResetLoginStreakForAbsentees();
 }

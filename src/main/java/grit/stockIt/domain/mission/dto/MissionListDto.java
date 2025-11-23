@@ -28,15 +28,9 @@ public class MissionListDto {
         this.track = m.getTrack().name();
         this.title = m.getName();
 
-        // ⭐️ [핵심 로직 수정] ⭐️
-        // 1. 업적(ACHIEVEMENT)이고 칭호 보상이 있다면 -> 칭호의 설명(Title.description)을 가져옴
-        if (m.getTrack() == MissionTrack.ACHIEVEMENT && r != null && r.getTitleToGrant() != null) {
-            this.description = r.getTitleToGrant().getDescription();
-        }
-        // 2. 일반 미션이라면 -> 미션 이름(name)으로도 충분하므로 그대로 사용 (또는 빈 문자열)
-        else {
-            this.description = m.getName();
-        }
+        this.description = (m.getTrack() == MissionTrack.ACHIEVEMENT && r != null && r.getTitleToGrant() != null)
+                ? r.getTitleToGrant().getDescription()
+                : m.getName();
 
         this.currentValue = progress.getCurrentValue();
         this.goalValue = m.getGoalValue();
