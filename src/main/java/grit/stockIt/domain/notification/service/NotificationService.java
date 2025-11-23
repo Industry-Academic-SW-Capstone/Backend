@@ -103,12 +103,14 @@ public class NotificationService {
     }
 
     // Member 조회 헬퍼 메서드
+    // 인증된 세션의 memberId로 조회하므로, 못 찾으면 서버 데이터 불일치 문제
     private Member findMemberById(Long memberId) {
         return memberRepository.findById(memberId)
-                .orElseThrow(() -> new BadRequestException("회원을 찾을 수 없습니다."));
+                .orElseThrow(() -> new IllegalStateException("인증된 회원 정보를 찾을 수 없습니다. memberId: " + memberId));
     }
 
     // Notification 조회 헬퍼 메서드
+    // 클라이언트가 전달한 notificationId로 조회하므로, 못 찾으면 클라이언트 오류
     private Notification findNotificationById(Long notificationId) {
         return notificationRepository.findById(notificationId)
                 .orElseThrow(() -> new BadRequestException("알림을 찾을 수 없습니다."));

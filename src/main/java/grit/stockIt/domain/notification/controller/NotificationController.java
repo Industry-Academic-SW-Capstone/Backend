@@ -94,8 +94,9 @@ public class NotificationController {
         String email = userDetails.getUsername();
 
         // 이메일로 Member 조회하여 memberId 반환
+        // 인증된 이메일로 회원을 못 찾으면 서버 데이터 불일치 문제
         Member member = memberRepository.findByEmail(email)
-                .orElseThrow(() -> new BadRequestException("회원을 찾을 수 없습니다."));
+                .orElseThrow(() -> new IllegalStateException("인증된 회원 정보를 찾을 수 없습니다. email: " + email));
 
         return member.getMemberId();
     }
