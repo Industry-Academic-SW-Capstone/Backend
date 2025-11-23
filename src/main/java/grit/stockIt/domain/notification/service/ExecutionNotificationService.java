@@ -52,13 +52,13 @@ public class ExecutionNotificationService {
 
         try {
             // Member 조회
-            memberRepository.findById(event.memberId())
-                    .ifPresentOrElse(
-                            member -> processExecutionNotification(member, event),
-                            () -> log.warn("Member를 찾을 수 없습니다: memberId={}", event.memberId())
-                    );
+            Member member = memberRepository.findById(event.memberId())
+                    .orElseThrow(() -> new IllegalStateException("Member를 찾을 수 없습니다: memberId=" + event.memberId()));
+            
+            processExecutionNotification(member, event);
         } catch (Exception e) {
             log.error("체결 알림 처리 실패: executionId={}, memberId={}", event.executionId(), event.memberId(), e);
+            throw e;  // 예외 재던지기: 트랜잭션 롤백 발동
         }
     }
 
@@ -70,61 +70,57 @@ public class ExecutionNotificationService {
 
     // Notification 엔티티를 DB에 저장
     private void saveNotificationToDatabase(Member member, ExecutionFilledEvent event) {
-        try {
-            String orderMethodKorean = "BUY".equals(event.orderMethod()) ? "매수" : "매도";
-            
-            // 알림 제목
-            String title = String.format("%s %s 체결", event.stockName(), orderMethodKorean);
-            
-            // 알림 내용
-            String message = String.format("%s %d주가 %s원에 체결되었습니다", 
-                    orderMethodKorean, 
-                    event.quantity(), 
-                    formatPrice(event.price()));
+        String orderMethodKorean = "BUY".equals(event.orderMethod()) ? "매수" : "매도";
+        
+        // 알림 제목
+        String title = String.format("%s %s 체결", event.stockName(), orderMethodKorean);
+        
+        // 알림 내용
+        String message = String.format("%s %d주가 %s원에 체결되었습니다", 
+                orderMethodKorean, 
+                event.quantity(), 
+                formatPrice(event.price()));
 
-            // 상세 데이터 (JSON)
-            String detailData = createDetailData(event);
+        // 상세 데이터 (JSON)
+        String detailData = createDetailData(event);
 
-            // Notification 엔티티 생성
-            Notification notification = Notification.builder()
-                    .member(member)
-                    .type(NotificationType.EXECUTION)
-                    .title(title)
-                    .message(message)
-                    .detailData(detailData)
-                    .iconType("execution_success")
-                    .isRead(false)
-                    .build();
+        // Notification 엔티티 생성
+        Notification notification = Notification.builder()
+                .member(member)
+                .type(NotificationType.EXECUTION)
+                .title(title)
+                .message(message)
+                .detailData(detailData)
+                .iconType("execution_success")
+                .isRead(false)
+                .build();
 
-            // DB 저장
-            notificationRepository.save(notification);
-            
-            log.info("체결 알림 저장 완료: notificationId={}, memberId={}, executionId={}", 
-                    notification.getNotificationId(), member.getMemberId(), event.executionId());
-        } catch (Exception e) {
-            log.error("알림 DB 저장 실패: memberId={}, executionId={}", member.getMemberId(), event.executionId(), e);
-        }
+        // DB 저장
+        notificationRepository.save(notification);
+        
+        log.info("체결 알림 저장 완료: notificationId={}, memberId={}, executionId={}", 
+                notification.getNotificationId(), member.getMemberId(), event.executionId());
     }
 
     // 상세 데이터를 JSON으로 변환
     private String createDetailData(ExecutionFilledEvent event) {
-        try {
-            Map<String, Object> detailMap = new HashMap<>();
-            detailMap.put("executionId", event.executionId());
-            detailMap.put("orderId", event.orderId());
-            detailMap.put("accountId", event.accountId());
-            detailMap.put("contestId", event.contestId());
-            detailMap.put("contestName", event.contestName());
-            detailMap.put("stockCode", event.stockCode());
-            detailMap.put("stockName", event.stockName());
-            detailMap.put("price", event.price());
-            detailMap.put("quantity", event.quantity());
-            detailMap.put("orderMethod", event.orderMethod());
+        Map<String, Object> detailMap = new HashMap<>();
+        detailMap.put("executionId", event.executionId());
+        detailMap.put("orderId", event.orderId());
+        detailMap.put("accountId", event.accountId());
+        detailMap.put("contestId", event.contestId());
+        detailMap.put("contestName", event.contestName());
+        detailMap.put("stockCode", event.stockCode());
+        detailMap.put("stockName", event.stockName());
+        detailMap.put("price", event.price());
+        detailMap.put("quantity", event.quantity());
+        detailMap.put("orderMethod", event.orderMethod());
 
+        try {
             return objectMapper.writeValueAsString(detailMap);
         } catch (JsonProcessingException e) {
             log.error("JSON 변환 실패: executionId={}", event.executionId(), e);
-            return "{}";
+            throw new IllegalStateException("JSON 변환 중 오류 발생", e);
         }
     }
 
