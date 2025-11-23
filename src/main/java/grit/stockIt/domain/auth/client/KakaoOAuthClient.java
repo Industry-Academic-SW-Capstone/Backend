@@ -22,14 +22,20 @@ public class KakaoOAuthClient {
     /**
      * 인가 코드로 액세스 토큰 발급 (비동기)
      */
-    public Mono<KakaoTokenResponse> getAccessToken(String code) {
+    public Mono<KakaoTokenResponse> getAccessToken(String code, String redirectUri, String state) {
+        String body = "grant_type=authorization_code" +
+                "&client_id=" + kakaoProperties.getRestApiKey() +
+                "&redirect_uri=" + redirectUri +
+                "&code=" + code;
+
+        if (state != null) {
+            body += "&state=" + state;
+        }
+
         return webClient.post()
                 .uri("https://kauth.kakao.com/oauth/token")
                 .header(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_FORM_URLENCODED_VALUE)
-                .bodyValue("grant_type=authorization_code" +
-                        "&client_id=" + kakaoProperties.getRestApiKey() +
-                        "&redirect_uri=" + kakaoProperties.getRedirectUri() +
-                        "&code=" + code)
+                .bodyValue(body)
                 .retrieve()
                 .bodyToMono(KakaoTokenResponse.class);
     }

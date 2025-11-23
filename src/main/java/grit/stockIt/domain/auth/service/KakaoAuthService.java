@@ -38,12 +38,10 @@ public class KakaoAuthService {
      * 카카오 로그인 (비동기 처리)
      */
     @Transactional
-    public CompletableFuture<KakaoLoginResponse> login(String code) {
-        return kakaoOAuthClient.getAccessToken(code)
-                .flatMap(tokenResponse -> 
-                    kakaoOAuthClient.getUserInfo(tokenResponse.getAccessToken())
-                            .map(userInfo -> processLogin(tokenResponse, userInfo))
-                )
+    public CompletableFuture<KakaoLoginResponse> login(String code, String redirectUri, String state) {
+        return kakaoOAuthClient.getAccessToken(code, redirectUri, state)
+                .flatMap(tokenResponse -> kakaoOAuthClient.getUserInfo(tokenResponse.getAccessToken())
+                        .map(userInfo -> processLogin(tokenResponse, userInfo)))
                 .toFuture();
     }
 
@@ -61,7 +59,7 @@ public class KakaoAuthService {
 
             String jwt = jwtService.generateToken(member.getEmail());
             JwtToken jwtToken = JwtToken.builder().accessToken(jwt).build();
-            
+
             return KakaoLoginResponse.ofExistingUser(jwtToken);
         } else {
             var profile = userInfo.getKakaoAccount().getProfile();
@@ -120,7 +118,7 @@ public class KakaoAuthService {
                     .then()
                     .toFuture();
         }
-        
+
         log.info("로그아웃 완료: {}", email);
         return CompletableFuture.completedFuture(null);
     }
@@ -138,15 +136,14 @@ public class KakaoAuthService {
                     .refreshToken(tokenResponse.getRefreshToken())
                     .refreshTokenExpiresIn(refreshTokenExpiry)
                     .build();
-            
+
             member.updateKakaoToken(kakaoToken);
         } else {
             member.getKakaoToken().updateAllTokens(
                     tokenResponse.getAccessToken(),
                     accessTokenExpiry,
                     tokenResponse.getRefreshToken(),
-                    refreshTokenExpiry
-            );
+                    refreshTokenExpiry);
         }
     }
 }
