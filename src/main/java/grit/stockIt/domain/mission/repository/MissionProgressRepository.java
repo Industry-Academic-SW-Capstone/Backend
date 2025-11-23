@@ -87,24 +87,28 @@ public interface MissionProgressRepository extends JpaRepository<MissionProgress
     List<MissionProgress> findAllByMission_ConditionType(MissionConditionType conditionType);
 
     /**
-     * [성능 개선] 연속 출석 초기화 벌크 연산
-     * - 조건 1: 미션 트랙이 'ACHIEVEMENT'이고 조건 타입이 'LOGIN_STREAK'인 미션 진행 데이터 중 (연속 출석 미션들)
-     * - 조건 2: 해당 멤버가 어제 '일일 출석(LOGIN_COUNT)' 미션을 완료하지 못한 경우 (서브쿼리)
-     * - 동작: 진행도(currentValue)를 0으로 일괄 초기화
+     * [리팩토링 완료] 연속 출석 초기화 벌크 연산
+     * - 문자열 하드코딩 제거 -> Enum 파라미터 바인딩 사용 (:paramName)
+     * - 불필요한 중복 조건 제거 (currentValue < goalValue)
      */
-    @Modifying(clearAutomatically = true) // 쿼리 실행 후 영속성 컨텍스트 초기화 (필수)
+    @Modifying(clearAutomatically = true)
     @Query("UPDATE MissionProgress mp " +
             "SET mp.currentValue = 0 " +
-            "WHERE mp.mission.track = 'ACHIEVEMENT' " +
-            "AND mp.mission.conditionType = 'LOGIN_STREAK' " +
+            "WHERE mp.mission.track = :streakTrack " +
+            "AND mp.mission.conditionType = :streakCondition " +
             "AND mp.currentValue > 0 " +
             "AND mp.member.memberId IN (" +
             "SELECT dmp.member.memberId " +
             "FROM MissionProgress dmp " +
-            "WHERE dmp.mission.track = 'DAILY' " +
-            "AND dmp.mission.conditionType = 'LOGIN_COUNT' " +
-            "AND dmp.status != 'COMPLETED' " + // 완료 상태가 아니고
-            "AND dmp.currentValue < dmp.mission.goalValue" + // 목표치 달성 못함
+            "WHERE dmp.mission.track = :dailyTrack " +
+            "AND dmp.mission.conditionType = :dailyCondition " +
+            "AND dmp.status != :completedStatus" +
             ")")
-    int bulkResetLoginStreakForAbsentees();
+    int bulkResetLoginStreakForAbsentees(
+            @Param("streakTrack") MissionTrack streakTrack,
+            @Param("streakCondition") MissionConditionType streakCondition,
+            @Param("dailyTrack") MissionTrack dailyTrack,
+            @Param("dailyCondition") MissionConditionType dailyCondition,
+            @Param("completedStatus") MissionStatus completedStatus
+    );
 }

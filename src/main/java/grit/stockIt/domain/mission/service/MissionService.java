@@ -332,19 +332,24 @@ public class MissionService {
     // ... 기존 메서드들 ...
 
     /**
-     * [리팩토링] 연속 출석 초기화 로직 (벌크 연산 적용)
-     * - N+1 문제 해결: 수천 명의 유저 루프 -> 단 1회의 UPDATE 쿼리로 변경
+     * [리팩토링] 연속 출석 초기화 로직
+     * - 타입 안전성을 위해 Enum 상수를 직접 인자로 전달합니다.
      */
     @Transactional
     public void checkAndResetAttendanceStreaks() {
         log.info("연속 출석 끊김 여부 확인 및 초기화 시작 (Bulk Update)...");
 
-        // 벌크 연산 실행
-        int updatedCount = missionProgressRepository.bulkResetLoginStreakForAbsentees();
+        // 변경된 메서드 시그니처에 맞춰 Enum 값 전달
+        int updatedCount = missionProgressRepository.bulkResetLoginStreakForAbsentees(
+                MissionTrack.ACHIEVEMENT,           // :streakTrack (업적 트랙)
+                MissionConditionType.LOGIN_STREAK,  // :streakCondition (연속 출석 체크용)
+                MissionTrack.DAILY,                 // :dailyTrack (일일 미션 트랙)
+                MissionConditionType.LOGIN_COUNT,   // :dailyCondition (일일 출석 여부 확인용)
+                MissionStatus.COMPLETED             // :completedStatus (완료 상태 기준)
+        );
 
         log.info("총 {}건의 연속 출석 기록이 일괄 초기화되었습니다.", updatedCount);
     }
-
     // 대시보드용 요약 정보 조회
     @Transactional(readOnly = true)
     public MissionDashboardDto getMissionDashboard(String email) {
