@@ -332,43 +332,24 @@ public class MissionService {
     // ... 기존 메서드들 ...
 
     /**
-     * [신규] 연속 출석 초기화 로직
-     * - 매일 자정, 일일 미션 초기화 '직전'에 실행됨
-     * - 어제 '일일 출석'을 완료하지 못한 유저의 '연속 출석(LOGIN_STREAK)' 진행도를 모두 0으로 리셋
+     * [리팩토링] 연속 출석 초기화 로직
+     * - 타입 안전성을 위해 Enum 상수를 직접 인자로 전달합니다.
      */
     @Transactional
     public void checkAndResetAttendanceStreaks() {
-        log.info("연속 출석 끊김 여부 확인 시작...");
+        log.info("연속 출석 끊김 여부 확인 및 초기화 시작 (Bulk Update)...");
 
-        // 1. '일일 출석(LOGIN_COUNT)' 미션 조회 (여긴 findAllByMission_ConditionType 사용)
-        List<MissionProgress> dailyLoginMissions = missionProgressRepository
-                .findAllByMission_ConditionType(MissionConditionType.LOGIN_COUNT);
+        // 변경된 메서드 시그니처에 맞춰 Enum 값 전달
+        int updatedCount = missionProgressRepository.bulkResetLoginStreakForAbsentees(
+                MissionTrack.ACHIEVEMENT,           // :streakTrack (업적 트랙)
+                MissionConditionType.LOGIN_STREAK,  // :streakCondition (연속 출석 체크용)
+                MissionTrack.DAILY,                 // :dailyTrack (일일 미션 트랙)
+                MissionConditionType.LOGIN_COUNT,   // :dailyCondition (일일 출석 여부 확인용)
+                MissionStatus.COMPLETED             // :completedStatus (완료 상태 기준)
+        );
 
-        int resetCount = 0;
-
-        for (MissionProgress dailyProgress : dailyLoginMissions) {
-            // 2. 미션 트랙이 DAILY이고, 완료하지 못했다면 -> 출석 실패
-            if (dailyProgress.getMission().getTrack() == MissionTrack.DAILY && !dailyProgress.isCompleted()) {
-                Member member = dailyProgress.getMember();
-
-                // [수정됨] 3. 여기서 새로 만든 'findAll...' 메서드를 호출! (List 반환)
-                // 7일, 15일, 30일, 트래커 미션 등 여러 개를 한꺼번에 가져옴
-                List<MissionProgress> streakProgressList = missionProgressRepository
-                        .findAllByMemberAndMissionTypeWithMission(member, MissionTrack.ACHIEVEMENT, MissionConditionType.LOGIN_STREAK);
-
-                // 4. 연속 출석 진행도 0으로 초기화
-                for (MissionProgress streak : streakProgressList) {
-                    if (streak.getCurrentValue() > 0) {
-                        streak.setCurrentValue(0);
-                        log.info("연속 출석 초기화: MemberId={}, MissionId={}", member.getMemberId(), streak.getMission().getId());
-                    }
-                }
-                resetCount++;
-            }
-        }
-        log.info("총 {}명의 연속 출석 기록이 초기화되었습니다.", resetCount);
+        log.info("총 {}건의 연속 출석 기록이 일괄 초기화되었습니다.", updatedCount);
     }
-
     // 대시보드용 요약 정보 조회
     @Transactional(readOnly = true)
     public MissionDashboardDto getMissionDashboard(String email) {
@@ -393,17 +374,34 @@ public class MissionService {
                 .build();
     }
 
-    // 트랙별 미션 리스트 조회 (필터링 기능 추가)
+    // 트랙별 미션 리스트 조회 (Enum 변환을 통한 안정성 확보)
     @Transactional(readOnly = true)
     public List<MissionListDto> getMissionsByTrack(String email, String trackName) {
         Member member = getMemberByEmail(email);
         List<MissionProgress> allProgress = missionProgressRepository.findByMemberWithMissionAndReward(member);
 
-        // trackName이 "ALL"이면 전체, 아니면 해당 트랙만 필터링
-        return allProgress.stream()
-                .filter(mp -> trackName.equals("ALL") || mp.getMission().getTrack().name().equals(trackName))
-                .map(MissionListDto::new)
-                .collect(Collectors.toList());
+        // 1. "ALL"인 경우 전체 반환 (대소문자 무시: all, ALL 등)
+        if (trackName == null || "ALL".equalsIgnoreCase(trackName)) {
+            return allProgress.stream()
+                    .map(MissionListDto::new)
+                    .collect(Collectors.toList());
+        }
+
+        // 2. 특정 트랙 필터링 (Enum 변환 시도)
+        try {
+            // 입력값을 대문자로 변환하여 Enum 매핑 (daily -> DAILY)
+            MissionTrack filterTrack = MissionTrack.valueOf(trackName.toUpperCase());
+
+            return allProgress.stream()
+                    .filter(mp -> mp.getMission().getTrack() == filterTrack) // Enum 타입 비교 (==)
+                    .map(MissionListDto::new)
+                    .collect(Collectors.toList());
+
+        } catch (IllegalArgumentException e) {
+            // 정의되지 않은 트랙 이름이 들어온 경우 (예: "ABCD")
+            log.warn("유효하지 않은 미션 트랙 요청: email={}, track={}", email, trackName);
+            return List.of(); // 빈 리스트 반환하여 에러 방지
+        }
     }
 
     // 보유 칭호 목록 조회

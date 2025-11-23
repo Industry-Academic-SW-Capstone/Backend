@@ -7,6 +7,7 @@ import grit.stockIt.domain.mission.enums.MissionConditionType;
 import grit.stockIt.domain.mission.enums.MissionStatus;
 import grit.stockIt.domain.mission.enums.MissionTrack;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -84,4 +85,30 @@ public interface MissionProgressRepository extends JpaRepository<MissionProgress
 
     // [추가] 조건 타입으로 모든 유저의 진행도 조회 (LOGIN_COUNT 조회용)
     List<MissionProgress> findAllByMission_ConditionType(MissionConditionType conditionType);
+
+    /**
+     * [리팩토링 완료] 연속 출석 초기화 벌크 연산
+     * - 문자열 하드코딩 제거 -> Enum 파라미터 바인딩 사용 (:paramName)
+     * - 불필요한 중복 조건 제거 (currentValue < goalValue)
+     */
+    @Modifying(clearAutomatically = true)
+    @Query("UPDATE MissionProgress mp " +
+            "SET mp.currentValue = 0 " +
+            "WHERE mp.mission.track = :streakTrack " +
+            "AND mp.mission.conditionType = :streakCondition " +
+            "AND mp.currentValue > 0 " +
+            "AND mp.member.memberId IN (" +
+            "SELECT dmp.member.memberId " +
+            "FROM MissionProgress dmp " +
+            "WHERE dmp.mission.track = :dailyTrack " +
+            "AND dmp.mission.conditionType = :dailyCondition " +
+            "AND dmp.status != :completedStatus" +
+            ")")
+    int bulkResetLoginStreakForAbsentees(
+            @Param("streakTrack") MissionTrack streakTrack,
+            @Param("streakCondition") MissionConditionType streakCondition,
+            @Param("dailyTrack") MissionTrack dailyTrack,
+            @Param("dailyCondition") MissionConditionType dailyCondition,
+            @Param("completedStatus") MissionStatus completedStatus
+    );
 }
