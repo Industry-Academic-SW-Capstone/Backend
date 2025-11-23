@@ -28,8 +28,11 @@ public class KakaoAuthController {
 
     @Operation(summary = "카카오 로그인 콜백", description = "카카오 OAuth 콜백 처리")
     @GetMapping("/callback")
-    public CompletableFuture<ResponseEntity<KakaoLoginResponse>> kakaoCallback(@RequestParam String code) {
-        return kakaoAuthService.login(code)
+    public CompletableFuture<ResponseEntity<KakaoLoginResponse>> kakaoCallback(
+            @RequestParam String code,
+            @RequestParam(name = "redirect_uri") String redirectUri,
+            @RequestParam(required = false) String state) {
+        return kakaoAuthService.login(code, redirectUri, state)
                 .thenApply(ResponseEntity::ok)
                 .exceptionally(ex -> {
                     log.error("카카오 로그인 처리 중 예외 발생: {}", ex.toString(), ex);
@@ -50,8 +53,7 @@ public class KakaoAuthController {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
         if (auth == null || !auth.isAuthenticated() || "anonymousUser".equals(auth.getPrincipal())) {
             return CompletableFuture.completedFuture(
-                ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("인증이 필요합니다.")
-            );
+                    ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("인증이 필요합니다."));
         }
 
         String email = auth.getName();
