@@ -381,7 +381,7 @@ public class MissionService {
         List<MissionProgress> allProgress = missionProgressRepository.findByMemberWithMissionAndReward(member);
 
         // 1. "ALL"인 경우 전체 반환 (대소문자 무시: all, ALL 등)
-        if ("ALL".equalsIgnoreCase(trackName)) {
+        if (trackName == null || "ALL".equalsIgnoreCase(trackName)) {
             return allProgress.stream()
                     .map(MissionListDto::new)
                     .collect(Collectors.toList());
