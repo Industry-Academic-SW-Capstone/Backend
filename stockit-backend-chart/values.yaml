@@ -84,6 +84,18 @@ db:
     enabled: true
     storageClass: ""
     size: 5Gi
+  exporter:
+    enabled: true
+    image: prometheuscommunity/postgres-exporter
+    tag: "v0.15.0"
+    port: 9187
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+      limits:
+        cpu: 200m
+        memory: 256Mi
 
 # --- 5. Cache (Redis) Configuration ---
 redis:
