@@ -25,3 +25,7 @@ data:
   # AI 서버는 Deployment와 Service를 통해 접근합니다.
   AI_SERVER_HOST: {{ include "stockit-backend-chart.fullname" . }}-{{ .Values.aiServer.name }}-service # AI Service의 렌더링된 이름
   AI_SERVER_PORT: {{ .Values.aiServer.service.port | quote }}
+  
+  # Python 분석 서버 URL (Spring Boot application.yml에서 사용)
+  # 별도 배포된 stock-analyze-svc 서비스에 연결 (ClusterIP, 내부 통신용)
+  PYTHON_ANALYSIS_URL: "http://stock-analyze-svc:8000"
