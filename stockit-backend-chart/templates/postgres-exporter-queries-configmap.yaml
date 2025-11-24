@@ -11,6 +11,7 @@ data:
       query: |
         SELECT 
           LEFT(MD5(query), 8) as queryid,
+          REPLACE(REPLACE(LEFT(query, 200), E'\n', ' '), E'\t', ' ') as query_text,
           calls,
           mean_exec_time,
           max_exec_time,
@@ -25,6 +26,9 @@ data:
         - queryid:
             usage: "LABEL"
             description: "Query hash ID"
+        - query_text:
+            usage: "LABEL"
+            description: "Query text (first 200 chars)"
         - calls:
             usage: "COUNTER"
             description: "Number of times executed"
