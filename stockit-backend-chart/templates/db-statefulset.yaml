@@ -19,6 +19,10 @@ spec:
       labels:
         {{- include "stockit-backend-chart.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/component: {{ .Values.db.name }}
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/path: "/metrics"
+        prometheus.io/port: "9187"
     spec:
       containers:
         - name: {{ .Values.db.name }}
@@ -61,6 +65,28 @@ spec:
             initialDelaySeconds: 15
             periodSeconds: 10
             timeoutSeconds: 5
+
+        # PostgreSQL Exporter (Sidecar)
+        - name: postgres-exporter
+          image: prometheuscommunity/postgres-exporter:v0.15.0
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 9187
+              name: metrics
+          env:
+            # PostgreSQL 연결 정보 (동일 Pod 내부이므로 localhost 사용)
+            - name: DATA_SOURCE_NAME
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "stockit-backend-chart.fullname" . }}-db-secret
+                  key: DATA_SOURCE_NAME
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 200m
+              memory: 256Mi
 
   # 영구 볼륨 클레임 템플릿 (PVC) - 데이터 영속성 보장
   volumeClaimTemplates:

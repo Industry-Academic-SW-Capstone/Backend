@@ -14,6 +14,10 @@ spec:
       targetPort: {{ .Values.db.service.port }}
       protocol: TCP
       name: postgres
+    - port: 9187
+      targetPort: 9187
+      protocol: TCP
+      name: metrics
   selector:
     {{- include "stockit-backend-chart.selectorLabels" . | nindent 4 }}
     app.kubernetes.io/component: {{ .Values.db.name }}
