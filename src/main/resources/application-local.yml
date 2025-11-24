@@ -27,3 +27,8 @@ spring:
   jackson:
     property-naming-strategy: SNAKE_CASE
 
+# Python 분석 서버 설정
+python:
+  analysis:
+    url: http://34.64.175.176
+

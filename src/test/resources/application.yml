@@ -23,3 +23,9 @@ kis:
     url: "https://openapivts.koreainvestment.com:29443"
     appkey: ${KIS_API_APPKEY:test_appkey}
     appsecret: ${KIS_API_APPSECRET:test_appsecret}
+
+# Python 서버 설정 (테스트 환경)
+python:
+  analysis:
+    url: ${PYTHON_ANALYSIS_URL:http://localhost:8000}
+    # 또는 배포 서버 고정: http://34.64.175.176
