@@ -56,7 +56,9 @@ spec:
 
           {{- if .Values.db.exporter.enabled }}
           # pg_stat_statements 확장 활성화 (쿼리 통계 수집)
-          command: ["postgres", "-c", "shared_preload_libraries=pg_stat_statements"]
+          args:
+            - "-c"
+            - "shared_preload_libraries=pg_stat_statements"
           {{- end }}
 
           # 볼륨 마운트: 데이터가 영구적으로 저장될 경로
