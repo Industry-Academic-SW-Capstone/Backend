@@ -1,0 +1,44 @@
+{{- if .Values.db.exporter.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "stockit-backend-chart.fullname" . }}-postgres-exporter-queries
+  labels:
+    {{- include "stockit-backend-chart.labels" . | nindent 4 }}
+data:
+  queries.yaml: |
+    pg_stat_statements:
+      query: |
+        SELECT 
+          LEFT(MD5(query), 8) as queryid,
+          calls,
+          mean_exec_time,
+          max_exec_time,
+          min_exec_time,
+          total_exec_time
+        FROM pg_stat_statements
+        WHERE datname = current_database()
+        AND calls > 0
+        ORDER BY mean_exec_time DESC
+        LIMIT 50
+      metrics:
+        - queryid:
+            usage: "LABEL"
+            description: "Query hash ID"
+        - calls:
+            usage: "COUNTER"
+            description: "Number of times executed"
+        - mean_exec_time:
+            usage: "GAUGE"
+            description: "Mean execution time in milliseconds"
+        - max_exec_time:
+            usage: "GAUGE"
+            description: "Maximum execution time in milliseconds"
+        - min_exec_time:
+            usage: "GAUGE"
+            description: "Minimum execution time in milliseconds"
+        - total_exec_time:
+            usage: "COUNTER"
+            description: "Total execution time in milliseconds"
+{{- end }}
+

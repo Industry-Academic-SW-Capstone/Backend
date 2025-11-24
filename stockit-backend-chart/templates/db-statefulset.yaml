@@ -89,9 +89,22 @@ spec:
                 secretKeyRef:
                   name: {{ include "stockit-backend-chart.fullname" . }}-db-secret
                   key: DATA_SOURCE_NAME
+            # 커스텀 쿼리 파일 경로
+            - name: PG_EXPORTER_EXTEND_QUERY_PATH
+              value: "/etc/postgres-exporter/queries.yaml"
+          volumeMounts:
+            - name: exporter-queries
+              mountPath: /etc/postgres-exporter
+              readOnly: true
           resources:
             {{- toYaml .Values.db.exporter.resources | nindent 12 }}
         {{- end }}
+      {{- if .Values.db.exporter.enabled }}
+      volumes:
+        - name: exporter-queries
+          configMap:
+            name: {{ include "stockit-backend-chart.fullname" . }}-postgres-exporter-queries
+      {{- end }}
 
   # 영구 볼륨 클레임 템플릿 (PVC) - 데이터 영속성 보장
   volumeClaimTemplates:
