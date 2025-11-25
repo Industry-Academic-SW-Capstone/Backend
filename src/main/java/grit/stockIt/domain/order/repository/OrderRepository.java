@@ -24,5 +24,19 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
             @Param("accountId") Long accountId,
             @Param("statuses") List<OrderStatus> statuses
     );
+
+    // 계좌와 종목 코드로 주문 목록 조회 (취소 포함 옵션)
+    @Query("SELECT o FROM Order o " +
+           "JOIN FETCH o.stock s " +
+           "WHERE o.account.accountId = :accountId " +
+           "AND s.code = :stockCode " +
+           "AND (:includeCancelled = true OR o.status != :cancelledStatus) " +
+           "ORDER BY o.createdAt DESC")
+    List<Order> findByAccountIdAndStockCode(
+            @Param("accountId") Long accountId,
+            @Param("stockCode") String stockCode,
+            @Param("includeCancelled") boolean includeCancelled,
+            @Param("cancelledStatus") OrderStatus cancelledStatus
+    );
 }
 
