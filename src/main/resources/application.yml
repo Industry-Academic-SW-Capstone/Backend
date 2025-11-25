@@ -62,6 +62,13 @@ python:
   analysis:
     url: ${PYTHON_ANALYSIS_URL:http://localhost:8000}
 
+# Gemini API 설정
+gemini:
+  api:
+    api-key: ${GEMINI_API_KEY:}
+    model-name: ${GEMINI_API_MODEL_NAME:models/gemini-2.5-flash}
+    base-url: ${GEMINI_API_BASE_URL:https://generativelanguage.googleapis.com/v1beta}
+
 kakao:
   rest-api-key: ${KAKAO_REST_API_KEY:}
   redirect-uri: ${KAKAO_REDIRECT_URI:http://localhost:8080/api/auth/kakao/callback}
