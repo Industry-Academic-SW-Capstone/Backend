@@ -127,17 +127,17 @@ public class ExecutionNotificationService {
     // FCM 푸시 알림 전송
     private void sendFcmPushNotification(Member member, ExecutionFilledEvent event) {
         if (fcmService == null) {
-            log.debug("FcmService를 사용할 수 없습니다. 알림을 전송하지 않습니다.");
+            log.info("FcmService를 사용할 수 없습니다. 알림을 전송하지 않습니다. (FirebaseMessaging Bean이 없을 수 있습니다)");
             return;
         }
         
         if (!member.hasFcmToken()) {
-            log.debug("FCM 토큰이 등록되지 않은 사용자: memberId={}", member.getMemberId());
+            log.info("FCM 토큰이 등록되지 않은 사용자: memberId={}", member.getMemberId());
             return;
         }
 
         if (!member.isExecutionNotificationEnabled()) {
-            log.debug("체결 알림이 비활성화된 사용자: memberId={}", member.getMemberId());
+            log.info("체결 알림이 비활성화된 사용자: memberId={}", member.getMemberId());
             return;
         }
 
