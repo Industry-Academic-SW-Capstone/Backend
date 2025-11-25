@@ -223,15 +223,15 @@ public class AssetService {
             return List.of();
         }
 
-        // 체결된 주문들의 Execution 조회 (체결 가격 계산용)
-        List<Long> filledOrderIds = orders.stream()
-                .filter(o -> o.getStatus() == OrderStatus.FILLED || o.getStatus() == OrderStatus.PARTIALLY_FILLED)
+        // 모든 주문의 Execution 조회 (체결 가격 계산용)
+        // 일부 체결 후 취소된 주문도 Execution이 존재할 수 있으므로 모든 주문에 대해 조회
+        List<Long> orderIds = orders.stream()
                 .map(Order::getOrderId)
                 .toList();
 
         Map<Long, List<Execution>> executionMap = new HashMap<>();
-        if (!filledOrderIds.isEmpty()) {
-            List<Execution> executions = executionRepository.findByOrderIdIn(filledOrderIds);
+        if (!orderIds.isEmpty()) {
+            List<Execution> executions = executionRepository.findByOrderIdIn(orderIds);
             executionMap = executions.stream()
                     .collect(Collectors.groupingBy(e -> e.getOrder().getOrderId()));
         }
