@@ -93,17 +93,17 @@ public class Member extends BaseEntity {
     private boolean notificationAgreement = false;
 
     // 튜토리얼 완료 여부들
-    @Column(name = "main_tutorial_completed", nullable = false)
+    @Column(name = "main_tutorial_completed", nullable = true)
     @Builder.Default
-    private boolean mainTutorialCompleted = false;
+    private Boolean mainTutorialCompleted = false;
 
-    @Column(name = "securities_depth_tutorial_completed", nullable = false)
+    @Column(name = "securities_depth_tutorial_completed", nullable = true)
     @Builder.Default
-    private boolean securitiesDepthTutorialCompleted = false;
+    private Boolean securitiesDepthTutorialCompleted = false;
 
-    @Column(name = "stock_detail_tutorial_completed", nullable = false)
+    @Column(name = "stock_detail_tutorial_completed", nullable = true)
     @Builder.Default
-    private boolean stockDetailTutorialCompleted = false;
+    private Boolean stockDetailTutorialCompleted = false;
 
     /**
      * 카카오 토큰 업데이트 또는 생성

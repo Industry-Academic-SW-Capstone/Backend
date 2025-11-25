@@ -50,5 +50,18 @@ public class CompanyDescriptionCacheRepository {
             log.error("Redis 캐시 저장 실패 (무시): companyName={}", companyName, e);
         }
     }
+
+    /**
+     * 캐시에서 기업 설명 삭제
+     */
+    public void delete(String companyName) {
+        try {
+            String key = String.format(CACHE_KEY_PATTERN, companyName);
+            redisTemplate.delete(key);
+            log.debug("캐시 삭제: companyName={}", companyName);
+        } catch (Exception e) {
+            log.error("Redis 캐시 삭제 실패 (무시): companyName={}", companyName, e);
+        }
+    }
 }
 

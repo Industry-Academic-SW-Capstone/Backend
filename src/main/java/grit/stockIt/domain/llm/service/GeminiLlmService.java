@@ -94,14 +94,25 @@ public class GeminiLlmService {
                 "contents", List.of(content)
         );
 
-        log.info("Gemini API 호출: companyName={}, model={}", companyName, geminiProperties.modelName());
+        log.info("Gemini API 호출: companyName={}, model={}, url={}", companyName, geminiProperties.modelName(), url);
 
         return webClientBuilder
                 .build()
                 .post()
                 .uri(url)
+                .header("Content-Type", "application/json")
                 .bodyValue(requestBody)
                 .retrieve()
+                .onStatus(status -> status.is4xxClientError() || status.is5xxServerError(),
+                        response -> response.bodyToMono(Map.class)
+                                .flatMap(errorBody -> {
+                                    log.error("Gemini API 에러 응답: status={}, body={}", response.statusCode(), errorBody);
+                                    return Mono.error(new RuntimeException(
+                                            String.format("Gemini API 호출 실패: HTTP %d - %s", 
+                                                    response.statusCode(), errorBody)
+                                    ));
+                                })
+                )
                 .bodyToMono(Map.class)
                 .map(this::parseResponse)
                 .retryWhen(Retry.backoff(3, Duration.ofSeconds(2))
@@ -110,7 +121,8 @@ public class GeminiLlmService {
                             return errorMsg != null && (
                                     errorMsg.contains("429") ||
                                     errorMsg.contains("503") ||
-                                    errorMsg.contains("RESOURCE_EXHAUSTED")
+                                    errorMsg.contains("RESOURCE_EXHAUSTED") ||
+                                    errorMsg.contains("500")
                             );
                         })
                         .doBeforeRetry(retry ->
@@ -156,6 +168,16 @@ public class GeminiLlmService {
         }
 
         return text.trim();
+    }
+
+    /**
+     * 캐시 삭제
+     */
+    public Mono<Void> clearCache(String companyName) {
+        return Mono.fromRunnable(() -> {
+            cacheRepository.delete(companyName);
+            log.info("캐시 삭제 완료: {}", companyName);
+        });
     }
 
     /**
