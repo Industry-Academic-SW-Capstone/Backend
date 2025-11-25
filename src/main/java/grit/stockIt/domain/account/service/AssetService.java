@@ -232,7 +232,7 @@ public class AssetService {
 
         Map<Long, List<Execution>> executionMap = new HashMap<>();
         if (!orderIds.isEmpty()) {
-            List<Execution> executions = executionRepository.findByOrderIdIn(orderIds);
+            List<Execution> executions = executionRepository.findByOrderIdInWithOrder(orderIds);
             executionMap = executions.stream()
                     .collect(Collectors.groupingBy(e -> e.getOrder().getOrderId()));
         }
@@ -314,7 +314,7 @@ public class AssetService {
 
         Map<Long, List<Execution>> executionMap = new HashMap<>();
         if (!orderIds.isEmpty()) {
-            List<Execution> executions = executionRepository.findByOrderIdIn(orderIds);
+            List<Execution> executions = executionRepository.findByOrderIdInWithOrder(orderIds);
             executionMap = executions.stream()
                     .collect(Collectors.groupingBy(e -> e.getOrder().getOrderId()));
         }

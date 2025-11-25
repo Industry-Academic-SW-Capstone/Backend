@@ -23,5 +23,12 @@ public interface ExecutionRepository extends JpaRepository<Execution, Long> {
            "WHERE e.order.orderId IN :orderIds " +
            "ORDER BY e.order.orderId, e.createdAt")
     List<Execution> findByOrderIdIn(@Param("orderIds") List<Long> orderIds);
+
+    // 주문 ID 리스트로 체결 목록 조회 (N+1 문제 방지를 위해 JOIN FETCH 사용)
+    @Query("SELECT e FROM Execution e " +
+           "JOIN FETCH e.order o " +
+           "WHERE o.orderId IN :orderIds " +
+           "ORDER BY o.orderId, e.createdAt")
+    List<Execution> findByOrderIdInWithOrder(@Param("orderIds") List<Long> orderIds);
 }
 
