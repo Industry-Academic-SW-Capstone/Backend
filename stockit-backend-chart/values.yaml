@@ -127,23 +127,11 @@ ingress:
     enabled: true
     name: ""
     domains:
-      - www.stockit.live # www 서브도메인 사용
+      - api.stockit.live # API 전용 서브도메인
   hosts:
-    - host: www.stockit.live # www 서브도메인 사용
+    - host: api.stockit.live # API 전용 서브도메인
       paths:
-        - path: /api
-          pathType: Prefix
-          backend:
-            service:
-              port:
-                number: 8080
-        - path: /actuator
-          pathType: Prefix
-          backend:
-            service:
-              port:
-                number: 8080
-        - path: /ws
+        - path: /
           pathType: Prefix
           backend:
             service:
