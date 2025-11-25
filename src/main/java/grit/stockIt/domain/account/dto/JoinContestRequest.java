@@ -14,4 +14,7 @@ import lombok.NoArgsConstructor;
 public class JoinContestRequest {
     @NotBlank(message = "계좌명은 필수입니다.")
     private String accountName;
+
+    // optional password for private contests
+    private String password;
 }

@@ -62,6 +62,13 @@ public class ContestResponse {
     @Schema(description = "대회 설명(노트)", example = "대회 규정 및 안내 등 상세 설명")
     private String contestNote;
 
+    @Schema(description = "본인 참여 여부", example = "false")
+    @lombok.Builder.Default
+    private Boolean isParticipating = false;
+
+    @Schema(description = "비공개 여부 (비밀번호 설정 여부)", example = "false")
+    @lombok.Builder.Default
+    private Boolean isPrivate = false;
     @Schema(description = "생성일시", example = "2025-01-01T00:00:00")
     private LocalDateTime createdAt;
 
@@ -69,6 +76,10 @@ public class ContestResponse {
     private LocalDateTime updatedAt;
 
     public static ContestResponse from(Contest contest) {
+        return from(contest, false);
+    }
+
+    public static ContestResponse from(Contest contest, boolean isParticipating) {
         return ContestResponse.builder()
                 .contestId(contest.getContestId())
                 .contestName(contest.getContestName())
@@ -85,6 +96,8 @@ public class ContestResponse {
                 .buyCooldownMinutes(contest.getBuyCooldownMinutes())
                 .sellCooldownMinutes(contest.getSellCooldownMinutes())
                 .contestNote(contest.getContestNote())
+            .isParticipating(isParticipating)
+            .isPrivate(contest.getPassword() != null && !contest.getPassword().isBlank())
                 .createdAt(contest.getCreatedAt())
                 .updatedAt(contest.getUpdatedAt())
                 .build();

@@ -7,6 +7,7 @@ import grit.stockIt.domain.contest.entity.Contest;
 import grit.stockIt.domain.contest.repository.ContestRepository;
 import grit.stockIt.domain.member.entity.Member;
 import grit.stockIt.domain.member.repository.MemberRepository;
+import grit.stockIt.domain.account.repository.AccountRepository;
 import grit.stockIt.global.exception.BadRequestException;
 import grit.stockIt.global.exception.ForbiddenException;
 import lombok.RequiredArgsConstructor;
@@ -25,6 +26,7 @@ public class ContestService {
 
     private final ContestRepository contestRepository;
     private final MemberRepository memberRepository;
+    private final AccountRepository accountRepository;
 
     /**
      * 대회 생성
@@ -48,7 +50,8 @@ public class ContestService {
                 .maxHoldingsCount(request.getMaxHoldingsCount())
                 .buyCooldownMinutes(request.getBuyCooldownMinutes())
                 .sellCooldownMinutes(request.getSellCooldownMinutes())
-                .contestNote(request.getContestNote())
+            .contestNote(request.getContestNote())
+            .password(request.getPassword() != null && !request.getPassword().isBlank() ? request.getPassword() : null)
                 .build();
 
         Contest saved = contestRepository.save(contest);
@@ -61,8 +64,22 @@ public class ContestService {
      * 대회 목록 조회 (기본 대회 제외)
      */
     public List<ContestResponse> getAllContests() {
+        return getAllContests(null);
+    }
+
+    public List<ContestResponse> getAllContests(String userEmail) {
+        java.util.Set<Long> joined = java.util.Collections.emptySet();
+        if (userEmail != null) {
+            var memberOpt = memberRepository.findByEmail(userEmail);
+            if (memberOpt.isPresent()) {
+                var accounts = accountRepository.findByMember(memberOpt.get());
+                joined = accounts.stream().map(a -> a.getContest().getContestId()).collect(Collectors.toSet());
+            }
+        }
+
+        final java.util.Set<Long> joinedFinal = joined;
         return contestRepository.findAllByIsDefaultFalse().stream()
-                .map(ContestResponse::from)
+                .map(c -> ContestResponse.from(c, joinedFinal.contains(c.getContestId())))
                 .collect(Collectors.toList());
     }
 
@@ -70,9 +87,23 @@ public class ContestService {
      * 대회 단건 조회
      */
     public ContestResponse getContest(Long contestId) {
+        return getContest(contestId, null);
+    }
+
+    public ContestResponse getContest(Long contestId, String userEmail) {
         Contest contest = contestRepository.findById(contestId)
                 .orElseThrow(() -> new BadRequestException("존재하지 않는 대회입니다."));
-        return ContestResponse.from(contest);
+
+        boolean isParticipating = false;
+        if (userEmail != null) {
+            var memberOpt = memberRepository.findByEmail(userEmail);
+            if (memberOpt.isPresent()) {
+                var accOpt = accountRepository.findByMemberAndContest(memberOpt.get(), contest);
+                isParticipating = accOpt.isPresent();
+            }
+        }
+
+        return ContestResponse.from(contest, isParticipating);
     }
 
     /**

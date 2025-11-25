@@ -53,4 +53,7 @@ public class ContestUpdateRequest {
 
     @Schema(description = "대회 설명(노트)", example = "대회 규정 및 안내 등 상세 설명")
     private String contestNote;
+
+    @Schema(description = "대회 비밀번호 (빈 값 또는 없음이면 공개대회 처리)", example = "secret123")
+    private String password;
 }

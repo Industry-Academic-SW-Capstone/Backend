@@ -87,6 +87,18 @@ public class LocalMemberService {
             member.setNotificationAgreement(request.getNotificationAgreement());
         }
 
+        if (request.getMainTutorialCompleted() != null) {
+            member.setMainTutorialCompleted(request.getMainTutorialCompleted());
+        }
+
+        if (request.getSecuritiesDepthTutorialCompleted() != null) {
+            member.setSecuritiesDepthTutorialCompleted(request.getSecuritiesDepthTutorialCompleted());
+        }
+
+        if (request.getStockDetailTutorialCompleted() != null) {
+            member.setStockDetailTutorialCompleted(request.getStockDetailTutorialCompleted());
+        }
+
         Member saved = memberRepository.save(member);
         return MemberResponse.from(saved);
     }

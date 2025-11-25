@@ -19,4 +19,9 @@ public class MemberUpdateRequest {
     // nullable booleans to indicate whether client wants to change them
     private Boolean twoFactorEnabled;
     private Boolean notificationAgreement;
+    
+    // tutorial completion flags (nullable -> only update when provided)
+    private Boolean mainTutorialCompleted;
+    private Boolean securitiesDepthTutorialCompleted;
+    private Boolean stockDetailTutorialCompleted;
 }

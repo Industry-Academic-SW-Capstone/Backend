@@ -14,6 +14,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.util.Optional;
+import grit.stockIt.global.exception.BadRequestException;
+import grit.stockIt.global.exception.ForbiddenException;
 
 @Slf4j
 @Service
@@ -61,9 +63,19 @@ public class AccountService {
      * - 초기 cash = contest.seedMoney
      */
     @Transactional
-    public Account createAccountForContest(Member member, Long contestId, String accountName) {
+    public Account createAccountForContest(Member member, Long contestId, String accountName, String providedPassword) {
         Contest contest = contestRepository.findById(contestId)
                 .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 대회입니다."));
+
+        // 비공개 대회인 경우 비밀번호 검증
+        if (contest.getPassword() != null && !contest.getPassword().isBlank()) {
+            if (providedPassword == null || providedPassword.isBlank()) {
+                throw new BadRequestException("비밀번호가 필요한 대회입니다.");
+            }
+            if (!contest.getPassword().equals(providedPassword)) {
+                throw new ForbiddenException("대회 비밀번호가 일치하지 않습니다.");
+            }
+        }
 
         Optional<Account> existing = accountRepository.findByMemberAndContest(member, contest);
         if (existing.isPresent()) {

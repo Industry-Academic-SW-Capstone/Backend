@@ -7,6 +7,8 @@ import grit.stockIt.domain.member.repository.FavoriteStockRepository;
 import grit.stockIt.domain.member.repository.MemberRepository;
 import grit.stockIt.domain.stock.entity.Stock;
 import grit.stockIt.domain.stock.repository.StockRepository;
+import grit.stockIt.domain.stock.service.StockDetailService;
+import grit.stockIt.domain.stock.dto.StockDetailDto;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -22,6 +24,7 @@ public class FavoriteStockService {
     private final FavoriteStockRepository favoriteStockRepository;
     private final MemberRepository memberRepository;
     private final StockRepository stockRepository;
+        private final StockDetailService stockDetailService;
 
     @Transactional
     public FavoriteStockDto addFavorite(String memberEmail, String stockCode) {
@@ -31,24 +34,15 @@ public class FavoriteStockService {
         Stock stock = stockRepository.findById(stockCode)
                 .orElseThrow(() -> new IllegalArgumentException("Stock not found: " + stockCode));
 
-        Optional<FavoriteStock> exist = favoriteStockRepository.findByMemberAndStock(member, stock);
-        if (exist.isPresent()) {
-            FavoriteStock f = exist.get();
-            return FavoriteStockDto.builder()
-                    .favoriteId(f.getFavoriteStockId())
-                    .stockCode(f.getStock().getCode())
-                    .stockName(f.getStock().getName())
-                    .addedAt(f.getCreatedAt())
-                    .build();
-        }
+                Optional<FavoriteStock> exist = favoriteStockRepository.findByMemberAndStock(member, stock);
+                if (exist.isPresent()) {
+                        FavoriteStock f = exist.get();
+                        // try to enrich with market data
+                        return buildFavoriteDtoWithMarketData(f.getFavoriteStockId(), f.getStock().getCode(), f.getStock().getName(), f.getCreatedAt());
+                }
 
         FavoriteStock saved = favoriteStockRepository.save(FavoriteStock.of(member, stock));
-        return FavoriteStockDto.builder()
-                .favoriteId(saved.getFavoriteStockId())
-                .stockCode(saved.getStock().getCode())
-                .stockName(saved.getStock().getName())
-                .addedAt(saved.getCreatedAt())
-                .build();
+        return buildFavoriteDtoWithMarketData(saved.getFavoriteStockId(), saved.getStock().getCode(), saved.getStock().getName(), saved.getCreatedAt());
     }
 
     @Transactional
@@ -80,11 +74,55 @@ public class FavoriteStockService {
                 .orElseThrow(() -> new IllegalArgumentException("Member not found: " + memberEmail));
 
         List<FavoriteStock> list = favoriteStockRepository.findAllByMember(member);
-        return list.stream().map(f -> FavoriteStockDto.builder()
-                .favoriteId(f.getFavoriteStockId())
-                .stockCode(f.getStock().getCode())
-                .stockName(f.getStock().getName())
-                .addedAt(f.getCreatedAt())
-                .build()).collect(Collectors.toList());
+                return list.stream().map(f -> buildFavoriteDtoWithMarketData(
+                                f.getFavoriteStockId(), f.getStock().getCode(), f.getStock().getName(), f.getCreatedAt()
+                )).collect(Collectors.toList());
     }
+
+        private FavoriteStockDto buildFavoriteDtoWithMarketData(Long favoriteId, String stockCode, String stockName, java.time.LocalDateTime addedAt) {
+                String marketType = null;
+                Integer currentPrice = null;
+                Double changeRate = null;
+                String changeSign = null;
+                Integer changeAmount = null;
+
+                try {
+                        StockDetailDto detail = stockDetailService.getStockDetail(stockCode).block();
+                        if (detail != null) {
+                                currentPrice = detail.currentPrice();
+                                changeAmount = detail.changeAmount();
+                                // changeRate in DTO is String, try parse
+                                try {
+                                        changeRate = Double.parseDouble(detail.changeRate());
+                                } catch (Exception e) {
+                                        changeRate = 0.0;
+                                }
+                                changeSign = detail.changeSign() != null ? detail.changeSign().name() : null;
+                        }
+                } catch (Exception ex) {
+                        // log at debug level; fall back to stock DB values
+                }
+
+                // marketType from DB stock entry if available
+                try {
+                        var stockOpt = stockRepository.findById(stockCode);
+                        if (stockOpt.isPresent()) {
+                                marketType = stockOpt.get().getMarketType();
+                        }
+                } catch (Exception e) {
+                        // ignore
+                }
+
+                return FavoriteStockDto.builder()
+                                .favoriteId(favoriteId)
+                                .stockCode(stockCode)
+                                .stockName(stockName)
+                                .addedAt(addedAt)
+                                .marketType(marketType)
+                                .currentPrice(currentPrice)
+                                .changeRate(changeRate)
+                                .changeSign(changeSign)
+                                .changeAmount(changeAmount)
+                                .build();
+        }
 }
