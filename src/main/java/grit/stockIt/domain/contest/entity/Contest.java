@@ -28,6 +28,7 @@ public class Contest extends BaseEntity {
     private String contestName;
 
     @Column(name = "is_default", nullable = false)
+    @Builder.Default
     private Boolean isDefault = false;
 
     @Column(name = "manager_member_id")
@@ -66,7 +67,11 @@ public class Contest extends BaseEntity {
     @Column(name = "contest_note", columnDefinition = "text")
     private String contestNote;
 
+    @Column(name = "password")
+    private String password;
+
     @OneToMany(mappedBy = "contest", cascade = CascadeType.ALL, orphanRemoval = true)
+    @Builder.Default
     private List<Account> accounts = new ArrayList<>();
 
     /**
@@ -108,6 +113,9 @@ public class Contest extends BaseEntity {
         }
         if (request.getContestNote() != null) {
             this.contestNote = request.getContestNote();
+        }
+        if (request.getPassword() != null) {
+            this.password = request.getPassword().isBlank() ? null : request.getPassword();
         }
     }
 }

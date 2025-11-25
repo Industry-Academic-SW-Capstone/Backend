@@ -54,8 +54,10 @@ public class ContestController {
 
     @Operation(summary = "대회 목록 조회", description = "모든 대회 목록을 조회합니다 (기본 대회 제외)")
     @GetMapping
-    public ResponseEntity<List<ContestResponse>> getAllContests() {
-        List<ContestResponse> contests = contestService.getAllContests();
+    public ResponseEntity<List<ContestResponse>> getAllContests(
+            @Parameter(hidden = true) @AuthenticationPrincipal UserDetails userDetails) {
+        String userEmail = userDetails != null ? userDetails.getUsername() : null;
+        List<ContestResponse> contests = contestService.getAllContests(userEmail);
         return ResponseEntity.ok(contests);
     }
 
@@ -63,9 +65,10 @@ public class ContestController {
     @GetMapping("/{contestId}")
     public ResponseEntity<ContestResponse> getContest(
             @Parameter(name = "contestId", description = "대회 ID", required = true)
-            @PathVariable("contestId") Long contestId) {
-        
-        ContestResponse response = contestService.getContest(contestId);
+            @PathVariable("contestId") Long contestId,
+            @Parameter(hidden = true) @AuthenticationPrincipal UserDetails userDetails) {
+        String userEmail = userDetails != null ? userDetails.getUsername() : null;
+        ContestResponse response = contestService.getContest(contestId, userEmail);
         return ResponseEntity.ok(response);
     }
 
@@ -132,11 +135,18 @@ public class ContestController {
         }
 
         try {
-            var account = accountService.createAccountForContest(memberOpt.get(), contestId, request.getAccountName());
+            var account = accountService.createAccountForContest(memberOpt.get(), contestId, request.getAccountName(), request.getPassword());
             var resp = AccountResponse.from(account);
             return ResponseEntity.status(HttpStatus.CREATED).body(resp);
+        } catch (grit.stockIt.global.exception.BadRequestException ex) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(ex.getMessage());
+        } catch (grit.stockIt.global.exception.ForbiddenException ex) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(ex.getMessage());
         } catch (IllegalArgumentException ex) {
             return ResponseEntity.status(HttpStatus.CONFLICT).body(ex.getMessage());
+        } catch (Exception ex) {
+            log.error("Error joining contest", ex);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("대회 참여 중 오류가 발생했습니다.");
         }
     }
 }
