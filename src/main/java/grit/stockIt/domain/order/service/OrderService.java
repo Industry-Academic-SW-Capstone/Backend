@@ -183,7 +183,7 @@ public class OrderService {
 
     @Transactional(readOnly = true)
     public OrderResponse getOrder(Long orderId) {
-        Order order = orderRepository.findById(orderId)
+        Order order = orderRepository.findByIdWithStockAndAccount(orderId)
                 .orElseThrow(() -> new BadRequestException("주문을 찾을 수 없습니다."));
         ensureAccountOwner(order.getAccount());
         return OrderResponse.from(order);
