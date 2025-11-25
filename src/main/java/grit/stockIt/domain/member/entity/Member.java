@@ -92,6 +92,19 @@ public class Member extends BaseEntity {
     @Builder.Default
     private boolean notificationAgreement = false;
 
+    // 튜토리얼 완료 여부들
+    @Column(name = "main_tutorial_completed", nullable = false)
+    @Builder.Default
+    private boolean mainTutorialCompleted = false;
+
+    @Column(name = "securities_depth_tutorial_completed", nullable = false)
+    @Builder.Default
+    private boolean securitiesDepthTutorialCompleted = false;
+
+    @Column(name = "stock_detail_tutorial_completed", nullable = false)
+    @Builder.Default
+    private boolean stockDetailTutorialCompleted = false;
+
     /**
      * 카카오 토큰 업데이트 또는 생성
      */
@@ -147,6 +160,30 @@ public class Member extends BaseEntity {
 
     public boolean isNotificationAgreement() {
         return notificationAgreement;
+    }
+
+    public void setMainTutorialCompleted(boolean completed) {
+        this.mainTutorialCompleted = completed;
+    }
+
+    public void setSecuritiesDepthTutorialCompleted(boolean completed) {
+        this.securitiesDepthTutorialCompleted = completed;
+    }
+
+    public void setStockDetailTutorialCompleted(boolean completed) {
+        this.stockDetailTutorialCompleted = completed;
+    }
+
+    public boolean isMainTutorialCompleted() {
+        return mainTutorialCompleted;
+    }
+
+    public boolean isSecuritiesDepthTutorialCompleted() {
+        return securitiesDepthTutorialCompleted;
+    }
+
+    public boolean isStockDetailTutorialCompleted() {
+        return stockDetailTutorialCompleted;
     }
 
     /**

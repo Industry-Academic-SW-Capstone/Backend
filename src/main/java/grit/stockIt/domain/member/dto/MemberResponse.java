@@ -31,6 +31,9 @@ public class MemberResponse {
     private LocalDateTime createdAt;
     private boolean twoFactorEnabled;
     private boolean notificationAgreement;
+        private boolean mainTutorialCompleted;
+        private boolean securitiesDepthTutorialCompleted;
+        private boolean stockDetailTutorialCompleted;
 
     // --- ⬇️ [수정] 칭호 및 잔액 필드 추가 ⬇️ ---
     private List<TitleResponseDto> titles;
@@ -63,6 +66,9 @@ public class MemberResponse {
                 .balance(currentBalance)
                 .twoFactorEnabled(member.isTwoFactorEnabled())
                 .notificationAgreement(member.isNotificationAgreement())
+                                .mainTutorialCompleted(member.isMainTutorialCompleted())
+                                .securitiesDepthTutorialCompleted(member.isSecuritiesDepthTutorialCompleted())
+                                .stockDetailTutorialCompleted(member.isStockDetailTutorialCompleted())
                 .build();
     }
 }
