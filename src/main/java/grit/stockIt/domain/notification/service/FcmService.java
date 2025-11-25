@@ -8,7 +8,6 @@ import com.google.firebase.messaging.WebpushConfig;
 import com.google.firebase.messaging.WebpushFcmOptions;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.stereotype.Service;
 
 import java.util.Map;
@@ -17,7 +16,7 @@ import java.util.Map;
 // FirebaseMessaging Bean이 있을 때만 활성화됨
 @Slf4j
 @Service
-@ConditionalOnBean(FirebaseMessaging.class)
+@org.springframework.context.annotation.DependsOn("firebaseMessaging")
 @RequiredArgsConstructor
 public class FcmService {
 

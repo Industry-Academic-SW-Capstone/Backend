@@ -37,9 +37,6 @@ public class ExecutionNotificationService {
         this.memberRepository = memberRepository;
         this.notificationRepository = notificationRepository;
         this.objectMapper = objectMapper;
-        if (fcmService == null) {
-            log.info("FcmService를 사용할 수 없습니다. 알림 기능이 비활성화됩니다.");
-        }
     }
 
     // 체결 완료 이벤트 수신
@@ -127,17 +124,17 @@ public class ExecutionNotificationService {
     // FCM 푸시 알림 전송
     private void sendFcmPushNotification(Member member, ExecutionFilledEvent event) {
         if (fcmService == null) {
-            log.info("FcmService를 사용할 수 없습니다. 알림을 전송하지 않습니다. (FirebaseMessaging Bean이 없을 수 있습니다)");
+            log.debug("FcmService를 사용할 수 없습니다. 알림을 전송하지 않습니다.");
             return;
         }
         
         if (!member.hasFcmToken()) {
-            log.info("FCM 토큰이 등록되지 않은 사용자: memberId={}", member.getMemberId());
+            log.debug("FCM 토큰이 등록되지 않은 사용자: memberId={}", member.getMemberId());
             return;
         }
 
         if (!member.isExecutionNotificationEnabled()) {
-            log.info("체결 알림이 비활성화된 사용자: memberId={}", member.getMemberId());
+            log.debug("체결 알림이 비활성화된 사용자: memberId={}", member.getMemberId());
             return;
         }
 
