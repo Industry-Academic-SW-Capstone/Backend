@@ -144,7 +144,17 @@ public class ExecutionNotificationService {
         String orderMethod = event.orderMethod(); // BUY, SELL
         String orderMethodKorean = "BUY".equals(orderMethod) ? "매수" : "매도";
         
+        // 알림 제목과 내용 생성
+        String title = String.format("%s %s 체결", event.stockName(), orderMethodKorean);
+        String body = String.format("%s %d주가 %s원에 체결되었습니다", 
+                orderMethodKorean, 
+                event.quantity(), 
+                formatPrice(event.price()));
+        
         Map<String, String> data = new HashMap<>();
+        // title, body를 data에 포함 (PWA Service Worker에서 사용)
+        data.put("title", title);
+        data.put("body", body);
         data.put("type", "EXECUTION");
         data.put("executionId", String.valueOf(event.executionId()));
         data.put("orderId", String.valueOf(event.orderId()));
@@ -158,12 +168,8 @@ public class ExecutionNotificationService {
         data.put("orderMethod", orderMethod);
         data.put("executedAt", String.valueOf(System.currentTimeMillis()));
 
-        boolean success = fcmService.sendExecutionNotification( // FCM 푸시 알림 전송
+        boolean success = fcmService.sendExecutionNotification( // FCM 푸시 알림 전송 (Data-Only)
                 member.getFcmToken(),
-                event.stockName(),
-                orderMethodKorean,
-                event.quantity(),
-                formatPrice(event.price()),
                 data
         );
 

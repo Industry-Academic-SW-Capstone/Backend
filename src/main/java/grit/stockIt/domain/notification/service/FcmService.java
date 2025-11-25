@@ -4,7 +4,8 @@ import com.google.firebase.messaging.FirebaseMessaging;
 import com.google.firebase.messaging.FirebaseMessagingException;
 import com.google.firebase.messaging.MessagingErrorCode;
 import com.google.firebase.messaging.Message;
-import com.google.firebase.messaging.Notification;
+import com.google.firebase.messaging.WebpushConfig;
+import com.google.firebase.messaging.WebpushFcmOptions;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
@@ -23,20 +24,13 @@ public class FcmService {
     private final FirebaseMessaging firebaseMessaging;
     private final FcmTokenService fcmTokenService;
 
-    public boolean sendExecutionNotification(String fcmToken, String stockName, String orderMethod, Integer quantity, String price, Map<String, String> data) {
-        String action = "매수".equals(orderMethod) ? "매수" : "매도";
-        String title = stockName + " " + action + " 체결";
-        String body = String.format("%s %d주가 %s원에 체결되었습니다", action, quantity, price);
-
-        Notification notification = Notification.builder()
-                .setTitle(title)
-                .setBody(body)
-                .build();
-
+    // Data-Only 메시지 전송 (PWA Service Worker에서 제어권 확보)
+    // title, body는 data Map에 포함되어 있어야 함
+    public boolean sendExecutionNotification(String fcmToken, Map<String, String> data) {
         Message message = Message.builder()
                 .setToken(fcmToken)
-                .setNotification(notification)
-                .putAllData(data)
+                // notification 필드 제거: PWA에서 Service Worker가 제어하도록
+                .putAllData(data)  // title, body가 data에 포함됨
                 .setAndroidConfig(com.google.firebase.messaging.AndroidConfig.builder() // 안드로이드 알림 설정
                         .setPriority(com.google.firebase.messaging.AndroidConfig.Priority.HIGH)
                         .setNotification(com.google.firebase.messaging.AndroidNotification.builder()
@@ -48,6 +42,12 @@ public class FcmService {
                         .setAps(com.google.firebase.messaging.Aps.builder()
                                 .setSound("default") // iOS 알림 사운드 설정
                                 .setBadge(1) // iOS 알림 배지 설정
+                                .build())
+                        .build())
+                .setWebpushConfig(WebpushConfig.builder() // PWA용 Web Push 설정
+                        .putHeader("Urgency", "high")
+                        .setFcmOptions(WebpushFcmOptions.builder()
+                                .setLink("/notifications")  // 알림 클릭 시 이동할 경로
                                 .build())
                         .build())
                 .build();
