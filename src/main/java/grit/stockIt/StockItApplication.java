@@ -12,7 +12,7 @@ import org.springframework.cache.annotation.EnableCaching;
 import org.springframework.scheduling.annotation.EnableAsync;
 import org.springframework.scheduling.annotation.EnableScheduling;
 
-@EnableConfigurationProperties({KisApiProperties.class, KakaoOAuthProperties.class, FirebaseProperties.class})
+@EnableConfigurationProperties({KisApiProperties.class, KakaoOAuthProperties.class, FirebaseProperties.class, grit.stockIt.global.config.GeminiApiProperties.class})
 @EnableScheduling
 @EnableAsync
 

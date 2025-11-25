@@ -79,6 +79,15 @@ spec:
                   name: stockit-secrets
                   {{- end }}
                   key: FIREBASE_CREDENTIALS_BASE64
+            - name: GEMINI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  {{- with (lookup "v1" "Secret" "default" "gemini-api-key") }}
+                  name: {{ .metadata.name }}
+                  {{- else }}
+                  name: gemini-api-key
+                  {{- end }}
+                  key: GEMINI_API_KEY
 
             # Spring Profile 설정 (values.yaml의 global.springProfile 참조)
             - name: SPRING_PROFILES_ACTIVE

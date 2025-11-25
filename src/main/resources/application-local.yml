@@ -4,11 +4,11 @@ spring:
 
   data:
     redis:
-      host: localhost  # 로컬 환경에서는 localhost 사용
+      host: localhost # 로컬 환경에서는 localhost 사용
       port: 6379
 
   datasource:
-    url: jdbc:postgresql://localhost:5432/database
+    url: jdbc:postgresql://34.50.8.33:5432/postgres
     username: ${POSTGRES_USER}
     password: ${POSTGRES_PASSWORD}
     driver-class-name: org.postgresql.Driver
@@ -32,3 +32,9 @@ python:
   analysis:
     url: http://34.64.175.176
 
+# Gemini API 설정
+gemini:
+  api:
+    api-key: ${GEMINI_API_KEY:AIzaSyDeaqI1mQkH73F7V6iUEfJle3Ld8bxXF1w}
+    model-name: ${GEMINI_API_MODEL_NAME:models/gemini-2.5-flash}
+    base-url: ${GEMINI_API_BASE_URL:https://generativelanguage.googleapis.com/v1beta}

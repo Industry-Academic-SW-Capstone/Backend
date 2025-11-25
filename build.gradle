@@ -86,6 +86,9 @@ dependencies {
 	// Firebase Admin SDK for FCM
 	implementation 'com.google.firebase:firebase-admin:9.3.0'
 
+	// Google Generative AI (Gemini) SDK
+	implementation 'com.google.cloud:google-cloud-vertexai:1.0.0'
+
 }
 
 tasks.named('test') {
