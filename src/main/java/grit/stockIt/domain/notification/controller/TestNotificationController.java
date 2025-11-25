@@ -1,15 +1,15 @@
 package grit.stockIt.domain.notification.controller;
 
-import grit.stockIt.domain.notification.event.ExecutionFilledEvent;
+import grit.stockIt.domain.member.entity.Member;
+import grit.stockIt.domain.member.repository.MemberRepository;
+import grit.stockIt.domain.notification.service.FcmService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
-import java.math.BigDecimal;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -20,48 +20,53 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class TestNotificationController {
 
-    private final ApplicationEventPublisher eventPublisher;
+    private final FcmService fcmService;
+    private final MemberRepository memberRepository;
 
     @Operation(
-            summary = "[테스트] 체결 알림 발행",
-            description = "간단하게 체결 알림을 테스트합니다. memberId만 입력하면 됩니다."
+            summary = "테스트 or 관리자 전용 알림 전송"
     )
-    @PostMapping("/execution")
-    public ResponseEntity<Map<String, Object>> testExecutionNotification(
-            @RequestParam Long memberId) {
+    @PostMapping
+    public ResponseEntity<Map<String, Object>> sendTestNotification(
+            @RequestParam Long memberId,
+            @RequestParam(required = false) String title,
+            @RequestParam(required = false) String body) {
 
-        log.info("=== 테스트 알림 API 호출: memberId={} ===", memberId);
+        log.info("=== 테스트 FCM 알림 전송 API 호출: memberId={}, title={}, body={} ===", memberId, title, body);
 
-        // 체결 이벤트 생성
-        ExecutionFilledEvent event = new ExecutionFilledEvent(
-                999L,                           // executionId
-                888L,                           // orderId
-                1L,                             // accountId
-                memberId,                       // memberId
-                1L,                             // contestId
-                "제 1회 테스트 대회",             // contestName
-                "005930",                       // stockCode
-                "삼성전자",                      // stockName
-                new BigDecimal("82000"),        // price
-                50,                             // quantity
-                "BUY"                           // orderMethod
-        );
+        // Member 조회
+        Member member = memberRepository.findById(memberId)
+                .orElseThrow(() -> new IllegalArgumentException("Member를 찾을 수 없습니다: memberId=" + memberId));
 
-        // 이벤트 발행
-        eventPublisher.publishEvent(event);
+        // FCM 토큰 확인
+        if (!member.hasFcmToken()) {
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", false);
+            response.put("message", "FCM 토큰이 등록되지 않은 사용자입니다.");
+            response.put("memberId", memberId);
+            return ResponseEntity.badRequest().body(response);
+        }
 
-        log.info("체결 알림 이벤트 발행 완료: memberId={}", memberId);
+        // FCM 메시지 데이터 구성
+        Map<String, String> data = new HashMap<>();
+        data.put("title", title);
+        data.put("body", body);
+        data.put("type", "SYSTEM");
+        data.put("test", "true");
+        data.put("timestamp", String.valueOf(System.currentTimeMillis()));
+
+        // FCM 푸시 알림 전송
+        boolean success = fcmService.sendExecutionNotification(member.getFcmToken(), data);
 
         // 응답
         Map<String, Object> response = new HashMap<>();
-        response.put("success", true);
-        response.put("message", "체결 알림이 발행되었습니다");
+        response.put("success", success);
+        response.put("message", success ? "FCM 알림이 전송되었습니다." : "FCM 알림 전송에 실패했습니다.");
         response.put("data", Map.of(
                 "memberId", memberId,
-                "stockName", "삼성전자",
-                "quantity", 50,
-                "price", 82000,
-                "orderMethod", "BUY"
+                "title", title,
+                "body", body,
+                "fcmToken", member.getFcmToken().substring(0, Math.min(20, member.getFcmToken().length())) + "..."
         ));
 
         return ResponseEntity.ok(response);
