@@ -78,7 +78,7 @@ db:
   service:
     port: 5432
     targetPort: 5432
-    externalPort: 5432  # 외부 접속용 포트 (LoadBalancer Service)
+    externalPort: 5432 # 외부 접속용 포트 (LoadBalancer Service)
     host: postgres-db-service
   persistence:
     enabled: true
@@ -127,9 +127,9 @@ ingress:
     enabled: true
     name: ""
     domains:
-      - www.stockit.live
+      - www.stockit.live # www 서브도메인 사용
   hosts:
-    - host: www.stockit.live
+    - host: www.stockit.live # www 서브도메인 사용
       paths:
         - path: /
           pathType: Prefix
