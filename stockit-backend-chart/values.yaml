@@ -43,7 +43,7 @@ backend:
 # --- 3. AI Server (Python) Configuration ---
 aiServer:
   enabled: false # stock-analyze-deployment가 별도로 배포되어 있으므로 비활성화
- name: python-ai-server
+  name: python-ai-server
   image:
     repository: choij17/stock-ai-analyze-server
     tag: "0.1.4"
