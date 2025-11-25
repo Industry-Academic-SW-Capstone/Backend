@@ -1,5 +1,6 @@
 package grit.stockIt.domain.account.service;
 
+import grit.stockIt.domain.account.dto.AllOrdersResponse;
 import grit.stockIt.domain.account.dto.AssetResponse;
 import grit.stockIt.domain.account.dto.MyStockResponse;
 import grit.stockIt.domain.account.entity.Account;
@@ -231,7 +232,7 @@ public class AssetService {
 
         Map<Long, List<Execution>> executionMap = new HashMap<>();
         if (!orderIds.isEmpty()) {
-            List<Execution> executions = executionRepository.findByOrderIdIn(orderIds);
+            List<Execution> executions = executionRepository.findByOrderIdInWithOrder(orderIds);
             executionMap = executions.stream()
                     .collect(Collectors.groupingBy(e -> e.getOrder().getOrderId()));
         }
@@ -287,6 +288,108 @@ public class AssetService {
         }
 
         return historyItems;
+    }
+
+    // 전체 주문 목록 조회 (날짜별 그룹화)
+    @Transactional(readOnly = true)
+    public AllOrdersResponse getAllOrders(Long accountId, boolean includeCancelled) {
+        // Account 조회 및 권한 확인
+        Account account = accountRepository.findById(accountId)
+                .orElseThrow(() -> new BadRequestException("계좌를 찾을 수 없습니다."));
+
+        ensureAccountOwner(account);
+
+        // 계좌의 모든 주문 조회
+        List<Order> orders = orderRepository.findByAccountId(
+                accountId, includeCancelled, OrderStatus.CANCELLED);
+
+        if (orders.isEmpty()) {
+            return new AllOrdersResponse(List.of());
+        }
+
+        // 모든 주문의 Execution 조회 (체결 가격 계산용)
+        List<Long> orderIds = orders.stream()
+                .map(Order::getOrderId)
+                .toList();
+
+        Map<Long, List<Execution>> executionMap = new HashMap<>();
+        if (!orderIds.isEmpty()) {
+            List<Execution> executions = executionRepository.findByOrderIdInWithOrder(orderIds);
+            executionMap = executions.stream()
+                    .collect(Collectors.groupingBy(e -> e.getOrder().getOrderId()));
+        }
+
+        // 주문별 평균 체결 가격 계산 (가중 평균)
+        Map<Long, BigDecimal> avgExecutionPriceMap = new HashMap<>();
+        Map<Long, Integer> totalExecutedQuantityMap = new HashMap<>();
+        
+        for (Map.Entry<Long, List<Execution>> entry : executionMap.entrySet()) {
+            List<Execution> execs = entry.getValue();
+            int totalQuantity = execs.stream().mapToInt(Execution::getQuantity).sum();
+            BigDecimal totalAmount = execs.stream()
+                    .map(e -> e.getPrice().multiply(BigDecimal.valueOf(e.getQuantity())))
+                    .reduce(BigDecimal.ZERO, BigDecimal::add);
+            
+            totalExecutedQuantityMap.put(entry.getKey(), totalQuantity);
+            if (totalQuantity > 0) {
+                avgExecutionPriceMap.put(entry.getKey(), 
+                        totalAmount.divide(BigDecimal.valueOf(totalQuantity), 2, RoundingMode.HALF_UP));
+            }
+        }
+
+        // 주문 항목 변환
+        List<AllOrdersResponse.OrderItem> orderItems = new ArrayList<>();
+        int currentYear = LocalDate.now().getYear();
+        
+        for (Order order : orders) {
+            BigDecimal executionPrice = avgExecutionPriceMap.get(order.getOrderId());
+            int executedQuantity = totalExecutedQuantityMap.getOrDefault(order.getOrderId(), order.getFilledQuantity());
+            BigDecimal totalAmount = (executionPrice != null && executedQuantity > 0)
+                    ? executionPrice.multiply(BigDecimal.valueOf(executedQuantity))
+                    : null;
+
+            orderItems.add(new AllOrdersResponse.OrderItem(
+                    order.getOrderId(),
+                    order.getStock().getCode(),
+                    order.getStock().getName(),
+                    order.getOrderType(),
+                    order.getOrderMethod(),
+                    order.getQuantity(),
+                    order.getOrderType() == grit.stockIt.domain.order.entity.OrderType.MARKET ? null : order.getPrice(),
+                    executionPrice,
+                    executedQuantity,
+                    totalAmount,
+                    order.getStatus(),
+                    order.getCreatedAt()
+            ));
+        }
+
+        // 날짜별 그룹화
+        Map<LocalDate, List<AllOrdersResponse.OrderItem>> ordersByDateMap = orderItems.stream()
+                .collect(Collectors.groupingBy(item -> item.createdAt().toLocalDate()));
+
+        // 날짜 내림차순 정렬 후 DateGroup 생성
+        List<AllOrdersResponse.DateGroup> dateGroups = ordersByDateMap.entrySet().stream()
+                .sorted(Map.Entry.<LocalDate, List<AllOrdersResponse.OrderItem>>comparingByKey().reversed())
+                .map(entry -> {
+                    LocalDate date = entry.getKey();
+                    List<AllOrdersResponse.OrderItem> items = entry.getValue();
+                    
+                    // 같은 날짜 내에서 시간 내림차순 정렬
+                    items.sort(Comparator.comparing(AllOrdersResponse.OrderItem::createdAt).reversed());
+                    
+                    int orderYear = date.getYear();
+                    Integer year = (orderYear == currentYear) ? null : orderYear;
+                    String dateStr = date.format(DateTimeFormatter.ofPattern("MM.dd"));
+                    
+                    return new AllOrdersResponse.DateGroup(year, dateStr, items);
+                })
+                .collect(Collectors.toList());
+
+        log.info("전체 주문 목록 조회 완료: accountId={}, totalOrders={}, dateGroups={}", 
+                accountId, orders.size(), dateGroups.size());
+
+        return new AllOrdersResponse(dateGroups);
     }
 }
 

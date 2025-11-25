@@ -44,5 +44,17 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
             @Param("includeCancelled") boolean includeCancelled,
             @Param("cancelledStatus") OrderStatus cancelledStatus
     );
+
+    // 계좌의 전체 주문 목록 조회
+    @Query("SELECT o FROM Order o " +
+           "JOIN FETCH o.stock s " +
+           "WHERE o.account.accountId = :accountId " +
+           "AND (:includeCancelled = true OR o.status != :cancelledStatus) " +
+           "ORDER BY o.createdAt DESC")
+    List<Order> findByAccountId(
+            @Param("accountId") Long accountId,
+            @Param("includeCancelled") boolean includeCancelled,
+            @Param("cancelledStatus") OrderStatus cancelledStatus
+    );
 }
 

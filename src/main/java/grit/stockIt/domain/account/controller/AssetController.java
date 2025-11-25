@@ -1,5 +1,6 @@
 package grit.stockIt.domain.account.controller;
 
+import grit.stockIt.domain.account.dto.AllOrdersResponse;
 import grit.stockIt.domain.account.dto.AssetResponse;
 import grit.stockIt.domain.account.dto.MyStockResponse;
 import grit.stockIt.domain.account.service.AssetService;
@@ -38,6 +39,16 @@ public class AssetController {
             @RequestParam(defaultValue = "true") boolean includeCancelled
     ) {
         return assetService.getMyStock(accountId, stockCode, includeCancelled);
+    }
+
+    @Operation(summary = "전체 주문 목록 조회", description = "계좌의 모든 주문 내역을 날짜별로 그룹화하여 조회합니다.")
+    @GetMapping("/{accountId}/orders")
+    public AllOrdersResponse getAllOrders(
+            @PathVariable Long accountId,
+            @Parameter(description = "취소된 주문 포함 여부", example = "true")
+            @RequestParam(defaultValue = "true") boolean includeCancelled
+    ) {
+        return assetService.getAllOrders(accountId, includeCancelled);
     }
 }
 
