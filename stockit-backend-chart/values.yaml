@@ -12,7 +12,7 @@ backend:
   name: spring-backend
   image:
     repository: choij17/stockit-backend
-    tag: "0.1.7-20251125-1641-amd64"
+    tag: "0.1.6-amd64"
     pullPolicy: Always
   service:
     port: 8080
@@ -20,9 +20,10 @@ backend:
     type: ClusterIP
   probe:
     path: /actuator/health
-    initialDelaySeconds: 60
+    initialDelaySeconds: 120
     periodSeconds: 10
     timeoutSeconds: 5
+    failureThreshold: 5
   env:
     # NOTE:
     #   JWT_SECRET는 Helm 차트에 포함되지 않습니다.
@@ -128,10 +129,64 @@ ingress:
     name: ""
     domains:
       - api.stockit.live # API 전용 서브도메인
+      - www.stockit.live # www 도메인 (API 경로만)
+      - stockit.live # 루트 도메인 (API 경로만)
   hosts:
     - host: api.stockit.live # API 전용 서브도메인
       paths:
         - path: /
+          pathType: Prefix
+          backend:
+            service:
+              port:
+                number: 8080
+    - host: www.stockit.live # www 도메인 (API 경로만 백엔드로)
+      paths:
+        - path: /api
+          pathType: Prefix
+          backend:
+            service:
+              port:
+                number: 8080
+        - path: /actuator
+          pathType: Prefix
+          backend:
+            service:
+              port:
+                number: 8080
+        - path: /ws
+          pathType: Prefix
+          backend:
+            service:
+              port:
+                number: 8080
+        - path: /swagger-ui
+          pathType: Prefix
+          backend:
+            service:
+              port:
+                number: 8080
+    - host: stockit.live # 루트 도메인 (API 경로만 백엔드로)
+      paths:
+        - path: /api
+          pathType: Prefix
+          backend:
+            service:
+              port:
+                number: 8080
+        - path: /actuator
+          pathType: Prefix
+          backend:
+            service:
+              port:
+                number: 8080
+        - path: /ws
+          pathType: Prefix
+          backend:
+            service:
+              port:
+                number: 8080
+        - path: /swagger-ui
           pathType: Prefix
           backend:
             service:

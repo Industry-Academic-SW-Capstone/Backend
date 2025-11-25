@@ -9,7 +9,7 @@ metadata:
 spec:
   # HPA 사용 여부에 따라 replicas는 1 또는 .Values.autoscaling.minReplicas로 설정
   replicas: 1
-  progressDeadlineSeconds: 600  # 10분 (배포 전 이전 Pod 삭제하므로 충분)
+  progressDeadlineSeconds: 900  # 15분 (Health check 실패 방지를 위해 증가)
   selector:
     matchLabels:
       {{- include "stockit-backend-chart.selectorLabels" . | nindent 6 }}
@@ -92,3 +92,8 @@ spec:
             initialDelaySeconds: {{ .Values.backend.probe.initialDelaySeconds }}
             periodSeconds: {{ .Values.backend.probe.periodSeconds }}
             timeoutSeconds: {{ default 1 .Values.backend.probe.timeoutSeconds }}
+            {{- if .Values.backend.probe.failureThreshold }}
+            failureThreshold: {{ .Values.backend.probe.failureThreshold }}
+            {{- else }}
+            failureThreshold: 5
+            {{- end }}
