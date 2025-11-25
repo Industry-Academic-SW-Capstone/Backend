@@ -131,7 +131,19 @@ ingress:
   hosts:
     - host: www.stockit.live # www 서브도메인 사용
       paths:
-        - path: /
+        - path: /api
+          pathType: Prefix
+          backend:
+            service:
+              port:
+                number: 8080
+        - path: /actuator
+          pathType: Prefix
+          backend:
+            service:
+              port:
+                number: 8080
+        - path: /ws
           pathType: Prefix
           backend:
             service:
