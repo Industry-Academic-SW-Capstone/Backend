@@ -82,13 +82,11 @@ public class KisWebSocketClient extends TextWebSocketHandler {
                 connectToKis();
             }
             
-            // 구독 메시지 전송 (중복 구독은 KIS API가 처리)
-            // subscribedStocks 체크를 제거하여 항상 구독 메시지 전송
-            // 이렇게 하면 연결이 끊어진 후 재연결 시에도 정상 작동
+            // 구독 메시지 전송
+            // subscribedStocks는 KIS 서버로부터 "SUBSCRIBE SUCCESS" 응답을 받은 후에만 추가됨
             sendSubscribeMessage(stockCode);
-            subscribedStocks.add(stockCode);
             
-            log.info("KIS 구독 완료: {} (총 {}개)", stockCode, subscribedStocks.size());
+            log.info("KIS 구독 요청 전송: {} (응답 대기 중)", stockCode);
             
         } catch (Exception e) {
             log.error("종목 구독 실패: {}", stockCode, e);
@@ -131,14 +129,11 @@ public class KisWebSocketClient extends TextWebSocketHandler {
                 connectToKis();
             }
             
-            // 구독 메시지 전송 (중복 구독은 KIS API가 처리)
-            // subscribedOrderBooks 체크를 제거하여 항상 구독 메시지 전송
-            // 클라이언트가 구독을 변경한 후 다시 구독할 때도 정상 작동
-            // KIS 연결이 끊어졌다가 재연결된 경우에도 안전하게 처리
+            // 구독 메시지 전송
+            // subscribedOrderBooks는 KIS 서버로부터 "SUBSCRIBE SUCCESS" 응답을 받은 후에만 추가됨
             sendOrderBookSubscribeMessage(stockCode);
-            subscribedOrderBooks.add(stockCode);
             
-            log.info("KIS 호가 구독 완료: {} (총 {}개)", stockCode, subscribedOrderBooks.size());
+            log.info("KIS 호가 구독 요청 전송: {} (응답 대기 중)", stockCode);
             
         } catch (Exception e) {
             log.error("호가 구독 실패: {}", stockCode, e);
@@ -271,15 +266,52 @@ public class KisWebSocketClient extends TextWebSocketHandler {
                 return;
             }
             
+            // 에러 응답 처리 (rtCd=1은 에러를 의미)
+            if (response != null && response.body() != null && "1".equals(response.body().rtCd())) {
+                String msg1 = response.body().msg1();
+                String trKey = response.header() != null ? response.header().trKey() : "unknown";
+                
+                if (msg1 != null) {
+                    if (msg1.contains("SUBSCRIBE ERROR")) {
+                        log.warn("KIS 구독 실패: {} - {}", trKey, msg1);
+                        // 구독 실패 시 상태에서 제거 (혹시 추가되어 있다면)
+                        subscribedStocks.remove(trKey);
+                        subscribedOrderBooks.remove(trKey);
+                        return;
+                    } else if (msg1.contains("UNSUBSCRIBE ERROR")) {
+                        log.warn("KIS 구독 해제 실패: {} - {} (이미 해제되었거나 구독되지 않은 종목일 수 있음)", trKey, msg1);
+                        // 구독 해제 실패는 상태 불일치를 의미하므로, 로컬 상태에서 제거
+                        subscribedStocks.remove(trKey);
+                        subscribedOrderBooks.remove(trKey);
+                        return;
+                    } else {
+                        log.warn("KIS 에러 응답: {} - {} ({})", trKey, msg1, response.body().msgCd());
+                        return;
+                    }
+                }
+            }
+            
             // 구독 성공 응답 처리
             if (response != null && response.body() != null && "SUBSCRIBE SUCCESS".equals(response.body().msg1())) {
-                log.info("KIS 구독 성공 확인: {} ({})", response.header().trKey(), response.body().msgCd());
+                String trKey = response.header() != null ? response.header().trKey() : null;
+                if (trKey != null) {
+                    // 구독 성공 확인 후 상태 업데이트
+                    String trId = response.header().trId();
+                    if ("H0STCNT0".equals(trId)) {
+                        subscribedStocks.add(trKey);
+                        log.info("KIS 구독 성공 확인: {} (체결가, 총 {}개)", trKey, subscribedStocks.size());
+                    } else if ("H0STASP0".equals(trId)) {
+                        subscribedOrderBooks.add(trKey);
+                        log.info("KIS 구독 성공 확인: {} (호가, 총 {}개)", trKey, subscribedOrderBooks.size());
+                    }
+                }
                 return;
             }
             
-            // Null 체크
+            // Null 체크 (output이 null인 경우는 에러 응답이거나 초기 응답이 아닌 경우)
             if (response == null || response.body() == null || response.body().output() == null) {
-                log.warn("KIS 응답 포맷이 예상과 다릅니다. response: {}", response);
+                // 에러 응답은 이미 위에서 처리했으므로, 여기서는 알 수 없는 형식만 로깅
+                log.debug("KIS 응답에 output이 없습니다 (에러 응답이거나 PINGPONG일 수 있음). response: {}", response);
                 return;
             }
             
@@ -587,11 +619,11 @@ public class KisWebSocketClient extends TextWebSocketHandler {
             subscribedOrderBooks.clear();
             
             // 체결가 재구독
+            // 구독 성공은 KIS 서버 응답을 통해 확인되므로, 여기서는 요청만 전송
             for (String stockCode : stocksToResubscribe) {
                 try {
                     sendSubscribeMessage(stockCode);
-                    subscribedStocks.add(stockCode);
-                    log.debug("체결가 재구독 완료: {}", stockCode);
+                    log.debug("체결가 재구독 요청 전송: {} (응답 대기 중)", stockCode);
                     Thread.sleep(100);
                 } catch (Exception e) {
                     log.error("체결가 재구독 실패: {}", stockCode, e);
@@ -599,11 +631,11 @@ public class KisWebSocketClient extends TextWebSocketHandler {
             }
             
             // 호가 재구독
+            // 구독 성공은 KIS 서버 응답을 통해 확인되므로, 여기서는 요청만 전송
             for (String stockCode : orderBooksToResubscribe) {
                 try {
                     sendOrderBookSubscribeMessage(stockCode);
-                    subscribedOrderBooks.add(stockCode);
-                    log.debug("호가 재구독 완료: {}", stockCode);
+                    log.debug("호가 재구독 요청 전송: {} (응답 대기 중)", stockCode);
                     Thread.sleep(100);
                 } catch (Exception e) {
                     log.error("호가 재구독 실패: {}", stockCode, e);
