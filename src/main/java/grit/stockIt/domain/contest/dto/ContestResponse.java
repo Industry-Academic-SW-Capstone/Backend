@@ -69,6 +69,11 @@ public class ContestResponse {
     @Schema(description = "비공개 여부 (비밀번호 설정 여부)", example = "false")
     @lombok.Builder.Default
     private Boolean isPrivate = false;
+
+    @Schema(description = "참여자 수", example = "10")
+    @lombok.Builder.Default
+    private Long participantCount = 0L;
+
     @Schema(description = "생성일시", example = "2025-01-01T00:00:00")
     private LocalDateTime createdAt;
 
@@ -76,10 +81,14 @@ public class ContestResponse {
     private LocalDateTime updatedAt;
 
     public static ContestResponse from(Contest contest) {
-        return from(contest, false);
+        return from(contest, false, 0L);
     }
 
     public static ContestResponse from(Contest contest, boolean isParticipating) {
+        return from(contest, isParticipating, 0L);
+    }
+
+    public static ContestResponse from(Contest contest, boolean isParticipating, Long participantCount) {
         return ContestResponse.builder()
                 .contestId(contest.getContestId())
                 .contestName(contest.getContestName())
@@ -98,6 +107,7 @@ public class ContestResponse {
                 .contestNote(contest.getContestNote())
             .isParticipating(isParticipating)
             .isPrivate(contest.getPassword() != null && !contest.getPassword().isBlank())
+                .participantCount(participantCount)
                 .createdAt(contest.getCreatedAt())
                 .updatedAt(contest.getUpdatedAt())
                 .build();

@@ -102,6 +102,20 @@ public class LocalMemberService {
             member.setStockDetailTutorialCompleted(request.getStockDetailTutorialCompleted());
         }
 
+        // 대표 칭호 장착
+        if (request.getRepresentativeTitleId() != null) {
+            Title title = titleRepository.findById(request.getRepresentativeTitleId())
+                    .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 칭호입니다."));
+            
+            // 해당 유저가 이 칭호를 보유하고 있는지 확인
+            boolean hasTitle = memberTitleRepository.existsByMemberAndTitle(member, title);
+            if (!hasTitle) {
+                throw new IllegalArgumentException("보유하지 않은 칭호는 장착할 수 없습니다.");
+            }
+            
+            member.updateRepresentativeTitle(title);
+        }
+
         Member saved = memberRepository.save(member);
         return MemberResponse.from(saved);
     }

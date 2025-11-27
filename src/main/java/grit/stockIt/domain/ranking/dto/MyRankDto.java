@@ -32,5 +32,14 @@ public class MyRankDto {
 
     @Schema(description = "내 수익률 (%) - 대회만, Main은 null", example = "25.00")
     private BigDecimal myReturnRate;
+
+    @Schema(description = "대표 칭호", example = "랭커")
+    private String representativeTitle;
+
+    @Schema(description = "대표 칭호 ID", example = "1")
+    private Long representativeTitleId;
+
+    @Schema(description = "티어", example = "GOLD 2")
+    private String tier;
 }
 
