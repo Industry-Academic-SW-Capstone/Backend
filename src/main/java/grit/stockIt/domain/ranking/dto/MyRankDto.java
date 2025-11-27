@@ -24,8 +24,11 @@ public class MyRankDto {
     @Schema(description = "전체 참가자 수", example = "150")
     private Long totalParticipants;
 
-    @Schema(description = "내 잔액", example = "12500000.00")
+    @Schema(description = "내 잔액 (현금만)", example = "12500000.00")
     private BigDecimal myBalance;
+
+    @Schema(description = "내 총자산 (잔액 + 보유주식 평가액)", example = "25000000.00")
+    private BigDecimal myTotalAssets;
 
     @Schema(description = "내 수익률 (%) - 대회만, Main은 null", example = "25.00")
     private BigDecimal myReturnRate;

@@ -83,6 +83,9 @@ dependencies {
 	// Caffeine 캐시
 	implementation 'com.github.ben-manes.caffeine:caffeine:3.1.8'
 
+	// Guava (RateLimiter 사용)
+	implementation 'com.google.guava:guava:33.0.0-jre'
+
 	// Firebase Admin SDK for FCM
 	implementation 'com.google.firebase:firebase-admin:9.3.0'
 
