@@ -12,5 +12,6 @@ import org.springframework.context.annotation.Primary;
 @Primary
 public class KakaoOAuthProperties {
     private String restApiKey;
+    private String clientSecret;
     private String redirectUri;
 }

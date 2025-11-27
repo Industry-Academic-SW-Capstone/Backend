@@ -32,6 +32,11 @@ public class KakaoOAuthClient {
             body += "&state=" + state;
         }
 
+        // client_secret이 있으면 추가
+        if (kakaoProperties.getClientSecret() != null && !kakaoProperties.getClientSecret().isEmpty()) {
+            body += "&client_secret=" + kakaoProperties.getClientSecret();
+        }
+
         return webClient.post()
                 .uri("https://kauth.kakao.com/oauth/token")
                 .header(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_FORM_URLENCODED_VALUE)
