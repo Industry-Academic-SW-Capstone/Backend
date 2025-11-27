@@ -713,7 +713,7 @@ public class MissionService {
         // 3. 총 자산 (현금 + 주식 원금)
         BigDecimal totalAsset = account.getCash().add(totalStockAsset);
 
-        // 4. 5만원 미만인지 확인
+        // 4. 100만원 미만인지 확인
         if (totalAsset.compareTo(BigDecimal.valueOf(1000000)) >= 0) {
             throw new IllegalStateException("아직 파산할 정도로 돈이 없지 않습니다. (자산: " + totalAsset + "원)");
         }
@@ -727,7 +727,7 @@ public class MissionService {
             throw new IllegalStateException("이미 구조 지원금을 받으셨습니다.");
         }
 
-        bankruptcyProgress.setCurrentValue(10000000); // 조건 충족 표시
+        bankruptcyProgress.setCurrentValue(bankruptcyProgress.getMission().getGoalValue()); // 조건 충족 표시
         bankruptcyProgress.complete();
         distributeReward(member, bankruptcyProgress.getMission().getReward());
 
