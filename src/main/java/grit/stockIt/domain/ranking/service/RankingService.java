@@ -8,6 +8,7 @@ import grit.stockIt.domain.contest.entity.Contest;
 import grit.stockIt.domain.contest.repository.ContestRepository;
 import grit.stockIt.domain.matching.repository.RedisMarketDataRepository;
 import grit.stockIt.domain.mission.service.MissionService;
+import grit.stockIt.domain.mission.dto.UserTierStatusDto;
 import grit.stockIt.domain.ranking.dto.MyRankDto;
 import grit.stockIt.domain.ranking.dto.RankingDto;
 import grit.stockIt.domain.ranking.dto.RankingResponse;
@@ -192,6 +193,16 @@ public class RankingService {
             RankingResponse mainRankings = getMainRankings();
             Long balanceRank = findMyRankInList(mainRankings.getRankings(), memberId);
             
+            // 티어 및 칭호 조회
+            grit.stockIt.domain.member.entity.Member member = myAccount.getMember();
+            String representativeTitle = member.getRepresentativeTitle() != null 
+                    ? member.getRepresentativeTitle().getName() 
+                    : null;
+            Long representativeTitleId = member.getRepresentativeTitle() != null
+                    ? member.getRepresentativeTitle().getId()
+                    : null;
+            String tier = getTierForMember(member);
+            
             return MyRankDto.builder()
                     .balanceRank(balanceRank)
                     .returnRateRank(null) // Main 계좌는 수익률 없음
@@ -199,6 +210,9 @@ public class RankingService {
                     .myBalance(myAccount.getCash())
                     .myTotalAssets(myTotalAssets)
                     .myReturnRate(null)
+                    .representativeTitle(representativeTitle)
+                    .representativeTitleId(representativeTitleId)
+                    .tier(tier)
                     .build();
         }
 
@@ -216,6 +230,16 @@ public class RankingService {
         Long balanceRank = findMyRankInList(balanceRankings.getRankings(), memberId);
         Long returnRateRank = findMyRankInList(returnRateRankings.getRankings(), memberId);
 
+        // 티어 및 칭호 조회
+        grit.stockIt.domain.member.entity.Member member = myAccount.getMember();
+        String representativeTitle = member.getRepresentativeTitle() != null 
+                ? member.getRepresentativeTitle().getName() 
+                : null;
+        Long representativeTitleId = member.getRepresentativeTitle() != null
+                ? member.getRepresentativeTitle().getId()
+                : null;
+        String tier = getTierForMember(member);
+
         return MyRankDto.builder()
                 .balanceRank(balanceRank)
                 .returnRateRank(returnRateRank)
@@ -223,6 +247,9 @@ public class RankingService {
                 .myBalance(myAccount.getCash())
                 .myTotalAssets(myTotalAssets)
                 .myReturnRate(myReturnRate)
+                .representativeTitle(representativeTitle)
+                .representativeTitleId(representativeTitleId)
+                .tier(tier)
                 .build();
     }
 
@@ -236,6 +263,19 @@ public class RankingService {
                 .findFirst()
                 .map(Integer::longValue)
                 .orElse(null);
+    }
+
+    /**
+     * 회원의 티어 정보 조회
+     */
+    private String getTierForMember(grit.stockIt.domain.member.entity.Member member) {
+        try {
+            UserTierStatusDto tierInfo = missionService.getTierInfo(member.getEmail());
+            return tierInfo.getCurrentTier();
+        } catch (Exception e) {
+            log.warn("티어 조회 실패 (memberId: {}): {}", member.getMemberId(), e.getMessage());
+            return null;
+        }
     }
 
     // ==================== Private 헬퍼 메서드 ====================
@@ -460,11 +500,23 @@ public class RankingService {
                 returnRate = calculateReturnRate(account, account.getContest());
             }
 
+            // 칭호와 티어 정보 조회
+            String representativeTitle = account.getMember().getRepresentativeTitle() != null 
+                    ? account.getMember().getRepresentativeTitle().getName() 
+                    : null;
+            Long representativeTitleId = account.getMember().getRepresentativeTitle() != null
+                    ? account.getMember().getRepresentativeTitle().getId()
+                    : null;
+            String tier = getTierForMember(account.getMember());
+
             RankingDto dto = RankingDto.builder()
                     .rank(rank)
                     .memberId(account.getMember().getMemberId())
                     .nickname(account.getMember().getName())
                     .profileImage(account.getMember().getProfileImage())
+                    .representativeTitle(representativeTitle)
+                    .representativeTitleId(representativeTitleId)
+                    .tier(tier)
                     .balance(account.getCash())  // 실제 잔액 (현금만)
                     .totalAssets(currentValue)   // 총자산 (잔액 + 주식)
                     .returnRate(returnRate)
@@ -507,11 +559,23 @@ public class RankingService {
                     ? account.getCash()
                     : calculateTotalAssets(account, currentPrices, accountStocksMap);
 
+            // 칭호와 티어 정보 조회
+            String representativeTitle = account.getMember().getRepresentativeTitle() != null 
+                    ? account.getMember().getRepresentativeTitle().getName() 
+                    : null;
+            Long representativeTitleId = account.getMember().getRepresentativeTitle() != null
+                    ? account.getMember().getRepresentativeTitle().getId()
+                    : null;
+            String tier = getTierForMember(account.getMember());
+
             RankingDto dto = RankingDto.builder()
                     .rank(rank)
                     .memberId(account.getMember().getMemberId())
                     .nickname(account.getMember().getName())
                     .profileImage(account.getMember().getProfileImage())
+                    .representativeTitle(representativeTitle)
+                    .representativeTitleId(representativeTitleId)
+                    .tier(tier)
                     .balance(account.getCash())       // 실제 잔액 (현금만)
                     .totalAssets(actualTotalAssets)   // 총자산 (잔액 + 주식)
                     .returnRate(returnRateValue)

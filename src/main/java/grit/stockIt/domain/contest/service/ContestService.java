@@ -79,7 +79,10 @@ public class ContestService {
 
         final java.util.Set<Long> joinedFinal = joined;
         return contestRepository.findAllByIsDefaultFalse().stream()
-                .map(c -> ContestResponse.from(c, joinedFinal.contains(c.getContestId())))
+                .map(c -> {
+                    Long participantCount = accountRepository.countByContest_ContestId(c.getContestId());
+                    return ContestResponse.from(c, joinedFinal.contains(c.getContestId()), participantCount);
+                })
                 .collect(Collectors.toList());
     }
 
@@ -103,7 +106,8 @@ public class ContestService {
             }
         }
 
-        return ContestResponse.from(contest, isParticipating);
+        Long participantCount = accountRepository.countByContest_ContestId(contestId);
+        return ContestResponse.from(contest, isParticipating, participantCount);
     }
 
     /**

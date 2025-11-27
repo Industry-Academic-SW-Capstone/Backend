@@ -37,6 +37,7 @@ public class MemberResponse {
 
     // --- ⬇️ [수정] 칭호 및 잔액 필드 추가 ⬇️ ---
     private List<TitleResponseDto> titles;
+    private Long representativeTitleId;
     private BigDecimal balance;
 
     public static MemberResponse from(Member member) {
@@ -63,6 +64,7 @@ public class MemberResponse {
                 .provider(member.getProvider() != null ? member.getProvider().name() : null)
                 .createdAt(member.getCreatedAt())
                 .titles(titlesList)
+                .representativeTitleId(member.getRepresentativeTitle() != null ? member.getRepresentativeTitle().getId() : null)
                 .balance(currentBalance)
                 .twoFactorEnabled(member.isTwoFactorEnabled())
                 .notificationAgreement(member.isNotificationAgreement())

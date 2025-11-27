@@ -27,6 +27,15 @@ public class RankingDto {
     @Schema(description = "프로필 이미지 URL", example = "https://example.com/profile.jpg")
     private String profileImage;
 
+    @Schema(description = "대표 칭호", example = "랭커")
+    private String representativeTitle;
+
+    @Schema(description = "대표 칭호 ID", example = "1")
+    private Long representativeTitleId;
+
+    @Schema(description = "티어", example = "GOLD 2")
+    private String tier;
+
     @Schema(description = "잔액 (현금만)", example = "5000000.00")
     private BigDecimal balance;
 

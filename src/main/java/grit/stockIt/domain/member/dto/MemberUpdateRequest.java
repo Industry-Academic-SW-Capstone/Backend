@@ -24,4 +24,7 @@ public class MemberUpdateRequest {
     private Boolean mainTutorialCompleted;
     private Boolean securitiesDepthTutorialCompleted;
     private Boolean stockDetailTutorialCompleted;
+    
+    // representative title ID (nullable)
+    private Long representativeTitleId;
 }
