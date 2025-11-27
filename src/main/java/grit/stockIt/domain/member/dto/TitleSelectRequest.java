@@ -11,6 +11,5 @@ import lombok.NoArgsConstructor;
 public class TitleSelectRequest {
 
     @Schema(description = "설정할 칭호 ID (null로 보낼 시 칭호 해제)", example = "103")
-    @JsonProperty("titleId") // [수정] JSON 키를 "titleId"로 고정
     private Long titleId;
 }
