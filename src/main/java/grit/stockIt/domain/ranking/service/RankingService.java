@@ -162,8 +162,9 @@ public class RankingService {
 
     /**
      * 내 랭킹 정보 조회
-     * - Main 계좌: 잔액 순위만 제공
-     * - 대회 계좌: 잔액 순위 + 수익률 순위 제공
+     * - 캐시된 랭킹 데이터에서 내 순위를 찾음
+     * - Main 계좌: 총자산 순위만 제공
+     * - 대회 계좌: 총자산 순위 + 수익률 순위 제공
      *
      * @param memberId  회원 ID
      * @param contestId 대회 ID (null이면 Main 계좌)
@@ -175,36 +176,7 @@ public class RankingService {
         // 1. 내 계좌 찾기
         Account myAccount = findMyAccount(memberId, contestId);
 
-        // 2. Main 계좌인 경우
-        if (contestId == null) {
-            // 2-1. 현재가 수집 및 총자산 계산
-            Set<String> requiredStockCodes = collectAllHeldStockCodes();
-            Map<String, BigDecimal> currentPrices = batchFetchCurrentPrices(requiredStockCodes);
-            
-            // AccountStock Map 조회
-            List<AccountStock> allAccountStocks = accountStockRepository.findAllByAccount(myAccount);
-            Map<Account, List<AccountStock>> accountStocksMap = Map.of(myAccount, allAccountStocks);
-            
-            BigDecimal myTotalAssets = calculateTotalAssets(myAccount, currentPrices, accountStocksMap);
-
-            Long balanceRank = accountRepository.findMyRankInMainByBalance(myAccount.getCash());
-            Long totalParticipants = accountRepository.countMainAccounts();
-
-            return MyRankDto.builder()
-                    .balanceRank(balanceRank)
-                    .returnRateRank(null) // Main 계좌는 수익률 없음
-                    .totalParticipants(totalParticipants)
-                    .myBalance(myAccount.getCash())
-                    .myTotalAssets(myTotalAssets)
-                    .myReturnRate(null)
-                    .build();
-        }
-
-        // 3. 대회 계좌인 경우
-        Contest contest = contestRepository.findById(contestId)
-                .orElseThrow(() -> new IllegalArgumentException("대회를 찾을 수 없습니다. (ID: " + contestId + ")"));
-
-        // 3-1. 현재가 수집 및 총자산 계산
+        // 2. 현재가 수집 및 총자산 계산
         Set<String> requiredStockCodes = collectAllHeldStockCodes();
         Map<String, BigDecimal> currentPrices = batchFetchCurrentPrices(requiredStockCodes);
         
@@ -214,26 +186,56 @@ public class RankingService {
         
         BigDecimal myTotalAssets = calculateTotalAssets(myAccount, currentPrices, accountStocksMap);
 
-        // 3-2. 내 잔액 순위
-        Long balanceRank = accountRepository.findMyRankInContestByBalance(contestId, myAccount.getCash());
+        // 3. Main 계좌인 경우
+        if (contestId == null) {
+            // 캐시된 Main 랭킹에서 내 순위 찾기
+            RankingResponse mainRankings = getMainRankings();
+            Long balanceRank = findMyRankInList(mainRankings.getRankings(), memberId);
+            
+            return MyRankDto.builder()
+                    .balanceRank(balanceRank)
+                    .returnRateRank(null) // Main 계좌는 수익률 없음
+                    .totalParticipants(mainRankings.getTotalParticipants())
+                    .myBalance(myAccount.getCash())
+                    .myTotalAssets(myTotalAssets)
+                    .myReturnRate(null)
+                    .build();
+        }
 
-        // 3-3. 내 수익률 계산 (총자산 기준)
+        // 4. 대회 계좌인 경우
+        Contest contest = contestRepository.findById(contestId)
+                .orElseThrow(() -> new IllegalArgumentException("대회를 찾을 수 없습니다. (ID: " + contestId + ")"));
+
+        // 4-1. 내 수익률 계산 (총자산 기준)
         BigDecimal myReturnRate = calculateReturnRateFromAssets(myTotalAssets, contest);
 
-        // 3-4. 내 수익률 순위
-        Long returnRateRank = accountRepository.findMyRankInContestByReturnRate(contestId, myReturnRate);
-
-        // 3-5. 전체 인원 수
-        Long totalParticipants = accountRepository.countByContest_ContestId(contestId);
+        // 4-2. 캐시된 대회 랭킹에서 내 순위 찾기
+        RankingResponse balanceRankings = getContestRankings(contestId, "totalAssets");
+        RankingResponse returnRateRankings = getContestRankings(contestId, "returnRate");
+        
+        Long balanceRank = findMyRankInList(balanceRankings.getRankings(), memberId);
+        Long returnRateRank = findMyRankInList(returnRateRankings.getRankings(), memberId);
 
         return MyRankDto.builder()
                 .balanceRank(balanceRank)
                 .returnRateRank(returnRateRank)
-                .totalParticipants(totalParticipants)
+                .totalParticipants(balanceRankings.getTotalParticipants())
                 .myBalance(myAccount.getCash())
                 .myTotalAssets(myTotalAssets)
                 .myReturnRate(myReturnRate)
                 .build();
+    }
+
+    /**
+     * 랭킹 리스트에서 특정 회원의 순위 찾기
+     */
+    private Long findMyRankInList(List<RankingDto> rankings, Long memberId) {
+        return rankings.stream()
+                .filter(dto -> dto.getMemberId().equals(memberId))
+                .map(RankingDto::getRank)
+                .findFirst()
+                .map(Integer::longValue)
+                .orElse(null);
     }
 
     // ==================== Private 헬퍼 메서드 ====================
