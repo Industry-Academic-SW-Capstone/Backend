@@ -39,9 +39,17 @@ public class KakaoAuthService {
      */
     @Transactional
     public CompletableFuture<KakaoLoginResponse> login(String code, String redirectUri, String state) {
+        log.info("카카오 로그인 시작: code={}, redirectUri={}, state={}", code, redirectUri, state);
         return kakaoOAuthClient.getAccessToken(code, redirectUri, state)
-                .flatMap(tokenResponse -> kakaoOAuthClient.getUserInfo(tokenResponse.getAccessToken())
-                        .map(userInfo -> processLogin(tokenResponse, userInfo)))
+                .flatMap(tokenResponse -> {
+                    log.info("카카오 액세스 토큰 발급 성공, 사용자 정보 조회 시작");
+                    return kakaoOAuthClient.getUserInfo(tokenResponse.getAccessToken())
+                            .map(userInfo -> {
+                                log.info("카카오 사용자 정보 조회 성공, 로그인 처리 시작");
+                                return processLogin(tokenResponse, userInfo);
+                            });
+                })
+                .doOnError(error -> log.error("카카오 로그인 처리 중 에러 발생", error))
                 .toFuture();
     }
 
