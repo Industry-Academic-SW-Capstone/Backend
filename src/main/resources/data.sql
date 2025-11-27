@@ -4,7 +4,7 @@
 INSERT INTO title (title_id, name, description, created_at, updated_at) VALUES
                                                                             (101, '시드 콜로니', '누적 미션 30회 완료한 자', NOW(), NOW()),
                                                                             (102, '달콤한 첫입', '최초로 모의투자 수익을 실현한 자', NOW(), NOW()),
-                                                                            (103, '강형욱', '"잡주(시총 1000억 미만)"로 누적 수익률 100%를 달성한 자', NOW(), NOW()),
+                                                                            (103, '주식의 신', 'Legend 티어(점수 3,600점) 달성한 자', NOW(), NOW()),
                                                                             (104, '카이팅 장인', '하루 동안 매수/매도 50회 이상 달성한 자', NOW(), NOW()),
                                                                             (105, '존 버', '단일 종목 30일 이상 보유하여 수익 실현한 자', NOW(), NOW()),
                                                                             (106, '주식 초보', '7일 연속 출석을 달성한 자', NOW(), NOW()),
@@ -22,38 +22,38 @@ DO UPDATE SET
 -- [기획] 트랙 난이도에 따른 보상 금액 세분화 (시드머니 100만원 기준)
 INSERT INTO reward (reward_id, description, money_amount, title_id, created_at, updated_at) VALUES
 -- [일일 미션] 수수료 방어 및 소소한 재미 (시드의 1%)
-(1, '일일 출석 보상', 10000, NULL, NOW(), NOW()),
-(2, '일일 미션 공통 보상', 10000, NULL, NOW(), NOW()),
+(1, '일일 출석 보상', 150000, NULL, NOW(), NOW()),
+(2, '일일 미션 공통 보상', 150000, NULL, NOW(), NOW()),
 
 -- [현실형/단타] 노동에 대한 대가 (시드의 3% ~ 20%)
-(11, '단타형 중급1(횟수) 보상', 30000, NULL, NOW(), NOW()),
-(12, '단타형 중급2(거래금) 보상', 50000, NULL, NOW(), NOW()),
-(13, '단타형 고급1(횟수) 보상', 100000, NULL, NOW(), NOW()),
-(14, '단타형 고급2(수익) 보상', 200000, NULL, NOW(), NOW()),
+(11, '단타형 중급1(횟수) 보상', 300000, NULL, NOW(), NOW()),
+(12, '단타형 중급2(거래금) 보상', 500000, NULL, NOW(), NOW()),
+(13, '단타형 고급1(횟수) 보상', 1000000, NULL, NOW(), NOW()),
+(14, '단타형 고급2(수익) 보상', 2000000, NULL, NOW(), NOW()),
 
 -- [탐구형/스윙] 분석과 기다림의 밸런스 (시드의 5% ~ 30%)
-(21, '스윙형 중급1(홀딩) 보상', 50000, NULL, NOW(), NOW()),
-(22, '스윙형 중급2(수익) 보상', 80000, NULL, NOW(), NOW()),
-(23, '스윙형 고급1(홀딩) 보상', 150000, NULL, NOW(), NOW()),
-(24, '스윙형 고급2(수익) 보상', 300000, NULL, NOW(), NOW()),
+(21, '스윙형 중급1(홀딩) 보상', 750000, NULL, NOW(), NOW()),
+(22, '스윙형 중급2(수익) 보상', 1000000, NULL, NOW(), NOW()),
+(23, '스윙형 고급1(홀딩) 보상', 2000000, NULL, NOW(), NOW()),
+(24, '스윙형 고급2(수익) 보상', 4000000, NULL, NOW(), NOW()),
 
 -- [정투형/장기] 자금 동결(존버)에 대한 확실한 보상 (시드의 10% ~ 50%)
-(31, '장투형 중급1(홀딩) 보상', 100000, NULL, NOW(), NOW()),
-(32, '장투형 중급2(수익) 보상', 150000, NULL, NOW(), NOW()),
-(33, '장투형 고급1(홀딩) 보상', 300000, NULL, NOW(), NOW()),
-(34, '장투형 고급2(수익) 보상', 500000, NULL, NOW(), NOW()),
+(31, '장투형 중급1(홀딩) 보상', 2000000, NULL, NOW(), NOW()),
+(32, '장투형 중급2(수익) 보상', 4000000, NULL, NOW(), NOW()),
+(33, '장투형 고급1(홀딩) 보상', 5000000, NULL, NOW(), NOW()),
+(34, '장투형 고급2(수익) 보상', 10000000, NULL, NOW(), NOW()),
 
 -- [업적/칭호] 시드 체급 업그레이드 및 명예 보상 (시드의 100% ~ 500%)
-(101, '칭호 + 5,000,000원 (시드 콜로니)', 5000000, 101, NOW(), NOW()),
-(102, '칭호 + 100,000원 (달콤한 첫입)', 100000, 102, NOW(), NOW()),
-(103, '칭호 + 1,000,000원 (강형욱)', 1000000, 103, NOW(), NOW()),
-(104, '칭호 + 1,500,000원 (카이팅)', 1500000, 104, NOW(), NOW()),
-(105, '칭호 + 1,500,000원 (존버)', 1500000, 105, NOW(), NOW()),
-(106, '칭호 + 500,000원 (주식 초보)', 500000, 106, NOW(), NOW()),
-(107, '칭호 + 1,000,000원 (주식 중수)', 1000000, 107, NOW(), NOW()),
-(108, '칭호 + 2,000,000원 (주식 고수)', 2000000, 108, NOW(), NOW()),
-(109, '칭호 + 5,000,000원 (랭커)', 5000000, 109, NOW(), NOW()),
-(111, '칭호 + 3,000,000원 (구조지원금)', 3000000, 111, NOW(), NOW()) -- 파산 시 300% 지원
+(101, '칭호 + 15,000,000원 (시드 콜로니)', 15000000, 101, NOW(), NOW()),
+(102, '칭호 + 1,000,000원 (달콤한 첫입)', 1000000, 102, NOW(), NOW()),
+(103, '칭호 + 200,000,000원 (주식의 신)', 200000000, 103, NOW(), NOW()),
+(104, '칭호 + 5,000,000원 (카이팅)', 5000000, 104, NOW(), NOW()),
+(105, '칭호 + 10,500,000원 (존버)', 10500000, 105, NOW(), NOW()),
+(106, '칭호 + 1,500,000원 (주식 초보)', 1500000, 106, NOW(), NOW()),
+(107, '칭호 + 3,000,000원 (주식 중수)', 3000000, 107, NOW(), NOW()),
+(108, '칭호 + 5,000,000원 (주식 고수)', 5000000, 108, NOW(), NOW()),
+(109, '칭호 + 15,000,000원 (랭커)', 15000000, 109, NOW(), NOW()),
+(111, '칭호 + 20,000,000원 (구조지원금)', 20000000, 111, NOW(), NOW()) -- 파산 시 300% 지원
 ON CONFLICT (reward_id)
 DO UPDATE SET
     description = EXCLUDED.description,
@@ -94,14 +94,16 @@ INSERT INTO mission (mission_id, name, track, type, condition_type, goal_value, 
 -- [업적 (ACHIEVEMENT)] 영구 달성 및 칭호 획득
 (901, '시드 콜로니', 'ACHIEVEMENT', 'COMMON', 'TOTAL_MISSION_COUNT', 30, 101, NULL, NOW(), NOW()),
 (902, '달콤한 첫입', 'ACHIEVEMENT', 'COMMON', 'FIRST_PROFIT', 1, 102, NULL, NOW(), NOW()),
-(903, '강형욱', 'ACHIEVEMENT', 'COMMON', 'JUNK_STOCK_JACKPOT', 1, 103, NULL, NOW(), NOW()),
+(903, '주식의 신', 'ACHIEVEMENT', 'COMMON', 'REACH_LEGEND', 1, 103, NULL, NOW(), NOW()),
 (904, '카이팅 장인', 'ACHIEVEMENT', 'COMMON', 'DAILY_TRADE_COUNT', 50, 104, NULL, NOW(), NOW()),
 (905, '존버는 승리한다', 'ACHIEVEMENT', 'COMMON', 'HOLD_FOR_DAYS_AND_SELL_PROFIT', 30, 105, NULL, NOW(), NOW()),
 (906, '주식 초보', 'ACHIEVEMENT', 'COMMON', 'LOGIN_STREAK', 7, 106, NULL, NOW(), NOW()),
 (907, '주식 중수', 'ACHIEVEMENT', 'COMMON', 'LOGIN_STREAK', 15, 107, NULL, NOW(), NOW()),
 (908, '주식 고수', 'ACHIEVEMENT', 'COMMON', 'LOGIN_STREAK', 30, 108, NULL, NOW(), NOW()),
 (909, '랭커', 'ACHIEVEMENT', 'COMMON', 'RANKING_TOP_10', 10, 109, NULL, NOW(), NOW()),
-(911, '인생 2회차', 'ACHIEVEMENT', 'COMMON', 'ASSET_UNDER_THRESHOLD', 50000, 111, NULL, NOW(), NOW())
+(911, '인생 2회차', 'ACHIEVEMENT', 'COMMON', 'ASSET_UNDER_THRESHOLD', 1000000, 111, NULL, NOW(), NOW()),
+(998, '활동 점수 트래커', 'ACHIEVEMENT', 'COMMON', 'ACTIVITY_SCORE', 2200, NULL, NULL, NOW(), NOW()),
+(999, '누적 수익금 트래커', 'ACHIEVEMENT', 'COMMON', 'SKILL_SCORE', 2000000000, NULL, NULL, NOW(), NOW())
 ON CONFLICT (mission_id)
 DO UPDATE SET
     name = EXCLUDED.name,

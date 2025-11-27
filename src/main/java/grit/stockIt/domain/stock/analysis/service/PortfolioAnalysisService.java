@@ -4,11 +4,13 @@ import grit.stockIt.domain.account.entity.Account;
 import grit.stockIt.domain.account.entity.AccountStock;
 import grit.stockIt.domain.account.repository.AccountRepository;
 import grit.stockIt.domain.account.repository.AccountStockRepository;
+import grit.stockIt.domain.mission.event.PortfolioAnalyzedEvent;
 import grit.stockIt.domain.stock.analysis.dto.*;
 import grit.stockIt.global.exception.BadRequestException;
 import grit.stockIt.global.exception.ForbiddenException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
@@ -32,16 +34,20 @@ public class PortfolioAnalysisService {
     private final AccountStockRepository accountStockRepository;
     private final StockAnalysisService stockAnalysisService;
     private final PythonAnalysisClient pythonAnalysisClient;
+    private final ApplicationEventPublisher eventPublisher;
 
     @Transactional(readOnly = true)
-    public Mono<PortfolioAnalysisResponse> analyzePortfolio(Long accountId) {
-        log.info("포트폴리오 분석 요청: accountId={}", accountId);
+    public Mono<PortfolioAnalysisResponse> analyzePortfolio(Long accountId, String email) {
+        log.info("포트폴리오 분석 요청: accountId={}, email={}", accountId, email);
 
         // 1. Account 조회 및 권한 확인
         Account account = accountRepository.findById(accountId)
                 .orElseThrow(() -> new BadRequestException("계좌를 찾을 수 없습니다."));
 
-        ensureAccountOwner(account);
+        // 검증 로직 수정 (파라미터 email 사용)
+        if (!account.getMember().getEmail().equals(email)) {
+            return Mono.error(new ForbiddenException("해당 계좌에 대한 권한이 없습니다."));
+        }
 
         // 2. AccountStock에서 보유 종목 조회
         List<AccountStock> accountStocks = accountStockRepository
@@ -82,6 +88,14 @@ public class PortfolioAnalysisService {
                     // 5. Python AI 서버로 POST 요청
                     PortfolioAnalysisRequest request = new PortfolioAnalysisRequest(stocks);
                     return pythonAnalysisClient.analyzePortfolio(request);
+                })
+                .doOnSuccess(response -> {
+                    // [수정] response.stocks() -> response.stockDetails() 로 변경
+                    // null 체크도 함께 해주면 더 안전합니다.
+                    if (response.stockDetails() != null && !response.stockDetails().isEmpty()) {
+                        log.info("포트폴리오 분석 성공 이벤트 발행: {}", email);
+                        eventPublisher.publishEvent(new PortfolioAnalyzedEvent(email, accountId));
+                    }
                 })
                 .onErrorResume(e -> {
                     log.error("포트폴리오 분석 실패: accountId={}", accountId, e);
@@ -135,16 +149,6 @@ public class PortfolioAnalysisService {
                             investmentAmount.doubleValue()
                     ));
                 });
-    }
-
-    /**
-     * 계좌 소유자 확인
-     */
-    private void ensureAccountOwner(Account account) {
-        String memberEmail = getAuthenticatedEmail();
-        if (!account.getMember().getEmail().equals(memberEmail)) {
-            throw new ForbiddenException("해당 계좌에 대한 권한이 없습니다.");
-        }
     }
 
     /**

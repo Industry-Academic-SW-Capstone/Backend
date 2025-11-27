@@ -1,10 +1,12 @@
 package grit.stockIt.domain.stock.analysis.service;
 
+import grit.stockIt.domain.mission.event.StockAnalyzedEvent;
 import grit.stockIt.domain.stock.analysis.dto.*;
 import grit.stockIt.domain.stock.analysis.repository.RedisStockAnalysisRepository;
 import grit.stockIt.domain.stock.service.StockDetailService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Mono;
 
@@ -19,10 +21,10 @@ public class StockAnalysisService {
     private final KisDividendService kisDividendService;
     private final PythonAnalysisClient pythonAnalysisClient;
     private final RedisStockAnalysisRepository redisStockAnalysisRepository;
-
+    private final ApplicationEventPublisher eventPublisher;
     // 종목분석 수행
-    public Mono<StockAnalysisResponse> analyzeStock(String stockCode) {
-        log.info("종목분석 시작: stockCode={}", stockCode);
+    public Mono<StockAnalysisResponse> analyzeStock(String stockCode, String email) {
+        log.info("종목분석 시작: stockCode={}, requestUser={}", stockCode, email);
 
         // 1. 데이터 수집 (병렬 처리)
         Mono<MarketData> marketDataMono = getMarketData(stockCode);
@@ -49,6 +51,14 @@ public class StockAnalysisService {
 
                     // 4. Python 서버 호출
                     return pythonAnalysisClient.analyze(request);
+                })
+                .doOnSuccess(response -> {
+                    // [핵심] 분석 성공 시 이벤트 발행
+                    // email이 있는 경우(로그인 유저)에만 발행
+                    if (email != null) {
+                        log.info("종목 분석 성공 이벤트 발행: {}", email);
+                        eventPublisher.publishEvent(new StockAnalyzedEvent(email, stockCode));
+                    }
                 })
                 .doOnError(e -> log.error("종목분석 실패: stockCode={}", stockCode, e))
                 .onErrorMap(throwable -> {

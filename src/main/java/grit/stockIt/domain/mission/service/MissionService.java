@@ -9,6 +9,7 @@ import grit.stockIt.domain.member.repository.MemberRepository;
 import grit.stockIt.domain.mission.dto.MemberTitleDto;
 import grit.stockIt.domain.mission.dto.MissionDashboardDto;
 import grit.stockIt.domain.mission.dto.MissionListDto;
+import grit.stockIt.domain.mission.dto.UserTierStatusDto;
 import grit.stockIt.domain.mission.entity.Mission;
 import grit.stockIt.domain.mission.entity.MissionProgress;
 import grit.stockIt.domain.mission.entity.Reward;
@@ -54,6 +55,7 @@ public class MissionService {
     private final StockRepository stockRepository;
 
     private static final long JUNK_STOCK_MARKET_CAP_THRESHOLD = 100000000000L;
+    private static final int MISSION_COMPLETION_ACTIVITY_POINTS = 10;
     /**
      * [1] (이벤트 수신) 거래 이벤트 발생 시 미션 진행도 업데이트
      * - 일반 미션 갱신 로직
@@ -62,6 +64,23 @@ public class MissionService {
     public void updateMissionProgress(TradeCompletionEvent event) {
         log.info("수신된 거래 이벤트: MemberId={}, Method={}, Qty={}",
                 event.getMemberId(), event.getOrderMethod(), event.getFilledQuantity());
+
+        // 🛑 [신규 추가] 기본 계좌 검증 로직
+        // 1. 이벤트에 계좌 ID가 없거나, 기본 계좌가 아니면 미션 집계에서 제외
+        if (event.getAccountId() != null) {
+            boolean isDefaultAccount = accountRepository.findById(event.getAccountId())
+                    .map(Account::getIsDefault)
+                    .orElse(false); // 계좌가 없으면 false 취급
+
+            if (!isDefaultAccount) {
+                log.info("⚠️ 보조 계좌 거래 감지: 미션 및 랭킹 집계에서 제외합니다. (AccountId={})", event.getAccountId());
+                return; // 여기서 메서드 종료!
+            }
+        } else {
+            // (선택 사항) AccountId가 null인 옛날 코드 호환성을 위해 경고만 찍고 진행할지, 막을지 결정
+            // 여기서는 안전하게 로그 찍고 진행 (혹은 return으로 막으셔도 됨)
+            log.warn("⚠️ 거래 이벤트에 AccountId가 없습니다. 기본 계좌 여부를 확인할 수 없습니다.");
+        }
 
         Member member = memberRepository.findById(event.getMemberId())
                 .orElseThrow(() -> new EntityNotFoundException("회원을 찾을 수 없습니다."));
@@ -92,8 +111,202 @@ public class MissionService {
         }
         // 2. [신규] 특수 업적 미션 체크 (달콤한 첫입, 강형욱)
         checkSpecialAchievement(member, event);
+
+        // ⬇️ [추가] 매도(SELL) 발생 시 실력 점수 반영
+        if (event.getOrderMethod() == OrderMethod.SELL) {
+            updateSkillScore(event);
+        }
     }
 
+    /**
+     * [수정] 실력 점수 로직 -> "누적 수익금 업데이트"로 변경
+     * - 매도 시 발생한 수익금(손실금)을 있는 그대로 더함
+     * - 점수 변환(제곱근)은 조회 시점에 수행
+     */
+    private void updateSkillScore(TradeCompletionEvent event) {
+        Member member = memberRepository.findById(event.getMemberId()).orElseThrow();
+
+        // 1. 이번 거래의 수익금 계산
+        BigDecimal sellAmount = event.getFilledAmount();
+        BigDecimal buyCost = event.getBuyAveragePrice().multiply(BigDecimal.valueOf(event.getFilledQuantity()));
+        BigDecimal profit = sellAmount.subtract(buyCost);
+
+        int profitInt = profit.intValue(); // 억 단위 이상이 아니라면 int로 충분
+        if (profitInt == 0) return;
+
+        // 2. 트래커(ID 999)에 수익금 누적
+        missionProgressRepository.findByMemberAndMissionTypeWithMission(member, MissionTrack.ACHIEVEMENT, MissionConditionType.SKILL_SCORE)
+                .ifPresent(tracker -> {
+                    int currentTotalProfit = tracker.getCurrentValue();
+                    int newTotalProfit = currentTotalProfit + profitInt;
+
+                    // 순수 수익금 저장 (마이너스 수익이면 전체 수익금이 깎임)
+                    tracker.setCurrentValue(newTotalProfit);
+
+                    log.info("누적 수익금 갱신: Member={}, 이번수익={}원, 총누적={}원",
+                            member.getName(), profitInt, newTotalProfit);
+
+                    // Legend 달성 체크 (현재 총 수익금 기반으로 점수 환산하여 체크)
+                    checkLegendTier(member, getActivityScore(member) + calculateScoreFromProfit(newTotalProfit));
+                });
+    }
+
+    // 레전드 미션(903) 달성 체크
+    private void checkLegendTier(Member member, int totalScore) {
+        if (totalScore >= 3600) { // Legend 기준 점수
+            missionRepository.findAllByTrackAndConditionType(MissionTrack.ACHIEVEMENT, MissionConditionType.REACH_LEGEND)
+                    .stream().findFirst().ifPresent(legendMission -> {
+                        missionProgressRepository.findByMemberAndMission(member, legendMission)
+                                .ifPresent(progress -> {
+                                    if (!progress.isCompleted()) {
+                                        progress.setCurrentValue(1);
+                                        checkMissionCompletion(progress); // 칭호 및 1억 지급
+                                    }
+                                });
+                    });
+        }
+    }
+    /**
+     * [Helper] 현재 활동 점수(Activity Score) 조회
+     * - 트래커 미션(998번)의 현재 값을 가져옴
+     * - 없으면 0점 반환
+     */
+    private int getActivityScore(Member member) {
+        return missionProgressRepository.findByMemberAndMissionTypeWithMission(
+                        member,
+                        MissionTrack.ACHIEVEMENT,
+                        MissionConditionType.ACTIVITY_SCORE
+                )
+                .map(MissionProgress::getCurrentValue)
+                .orElse(0);
+    }
+    @Transactional(readOnly = true)
+    public UserTierStatusDto getTierInfo(String email) {
+        Member member = getMemberByEmail(email);
+
+        // 1. 활동 점수
+        int activityScore = missionProgressRepository.findByMemberAndMissionTypeWithMission(member, MissionTrack.ACHIEVEMENT, MissionConditionType.ACTIVITY_SCORE)
+                .map(MissionProgress::getCurrentValue).orElse(0);
+
+        // 2. 실력 점수
+        int totalProfit = missionProgressRepository.findByMemberAndMissionTypeWithMission(member, MissionTrack.ACHIEVEMENT, MissionConditionType.SKILL_SCORE)
+                .map(MissionProgress::getCurrentValue).orElse(0);
+
+        int skillScore = calculateScoreFromProfit(totalProfit);
+        int totalScore = activityScore + skillScore;
+
+        // 3. 티어 계산
+        String currentTier;
+        String nextTier;
+        int nextTierScore;        // 다음 티어 승급 점수 (목표)
+        int currentTierStartScore; // [신규] 현재 티어 시작 점수 (진행도 계산용)
+
+        if (totalScore < 800) {
+            currentTier = "BRONZE 1";
+            nextTier = "BRONZE 2";
+            currentTierStartScore = 0;   // 0 ~ 799
+            nextTierScore = 800;
+        } else if (totalScore < 1000) {
+            currentTier = "BRONZE 2";
+            nextTier = "BRONZE 3";
+            currentTierStartScore = 800; // 800 ~ 999
+            nextTierScore = 1000;
+        } else if (totalScore < 1200) {
+            currentTier = "BRONZE 3";
+            nextTier = "SILVER 1";
+            currentTierStartScore = 1000; // 1000 ~ 1199
+            nextTierScore = 1200;
+        } else if (totalScore < 1400) {
+            currentTier = "SILVER 1";
+            nextTier = "SILVER 2";
+            currentTierStartScore = 1200; // 1200 ~ 1399 (신규 유저 시작 구간)
+            nextTierScore = 1400;
+        } else if (totalScore < 1600) {
+            currentTier = "SILVER 2";
+            nextTier = "SILVER 3";
+            currentTierStartScore = 1400;
+            nextTierScore = 1600;
+        } else if (totalScore < 1800) {
+            currentTier = "SILVER 3";
+            nextTier = "GOLD 1";
+            currentTierStartScore = 1600;
+            nextTierScore = 1800;
+        } else if (totalScore < 2000) {
+            currentTier = "GOLD 1";
+            nextTier = "GOLD 2";
+            currentTierStartScore = 1800;
+            nextTierScore = 2000;
+        } else if (totalScore < 2200) {
+            currentTier = "GOLD 2";
+            nextTier = "GOLD 3";
+            currentTierStartScore = 2000;
+            nextTierScore = 2200;
+        } else if (totalScore < 2400) {
+            currentTier = "GOLD 3";
+            nextTier = "MASTER 1";
+            currentTierStartScore = 2200;
+            nextTierScore = 2400;
+        } else if (totalScore < 2600) {
+            currentTier = "MASTER 1";
+            nextTier = "MASTER 2";
+            currentTierStartScore = 2400;
+            nextTierScore = 2600;
+        } else if (totalScore < 2800) {
+            currentTier = "MASTER 2";
+            nextTier = "MASTER 3";
+            currentTierStartScore = 2600;
+            nextTierScore = 2800;
+        } else if (totalScore < 3000) {
+            currentTier = "MASTER 3";
+            nextTier = "GRANDMASTER 1";
+            currentTierStartScore = 2800;
+            nextTierScore = 3000;
+        } else if (totalScore < 3200) {
+            currentTier = "GRANDMASTER 1";
+            nextTier = "GRANDMASTER 2";
+            currentTierStartScore = 3000;
+            nextTierScore = 3200;
+        } else if (totalScore < 3400) {
+            currentTier = "GRANDMASTER 2";
+            nextTier = "GRANDMASTER 3";
+            currentTierStartScore = 3200;
+            nextTierScore = 3400;
+        } else if (totalScore < 3600) {
+            currentTier = "GRANDMASTER 3";
+            nextTier = "LEGEND";
+            currentTierStartScore = 3400;
+            nextTierScore = 3600;
+        } else {
+            currentTier = "LEGEND";
+            nextTier = "MAX";
+            currentTierStartScore = 3600;
+            nextTierScore = totalScore; // Legend는 목표치가 없으므로 현재 점수와 동일시
+        }
+
+        // 4. 진행도 계산 (현재 구간 내에서의 %)
+        double progress = 0.0;
+        if (!"MAX".equals(nextTier)) {
+            // 공식: (현재점수 - 시작점수) / (목표점수 - 시작점수) * 100
+            double gainedInCurrentTier = (double) (totalScore - currentTierStartScore);
+            double rangeOfCurrentTier = (double) (nextTierScore - currentTierStartScore);
+
+            if (rangeOfCurrentTier > 0) {
+                progress = (gainedInCurrentTier / rangeOfCurrentTier) * 100.0;
+            }
+        } else {
+            progress = 100.0;
+        }
+
+        return UserTierStatusDto.builder()
+                .currentTier(currentTier)
+                .nextTier(nextTier)
+                .totalScore(totalScore)
+                .activityScore(activityScore)
+                .skillScore(skillScore)
+                .scoreToNextTier(nextTierScore - totalScore)
+                .progressPercentage(progress)
+                .build();
+    }
     /**
      * [신규] 특수 조건 업적 처리
      * - 달콤한 첫입 (FIRST_PROFIT)
@@ -427,8 +640,30 @@ public class MissionService {
         activateNextMission(progress);
         handleMissionChain(progress);
         checkSeedCopierAchievement(progress.getMember());
-    }
 
+        // ⬇️ [추가] 3. 활동 점수(Activity Score) 반영
+        updateActivityScore(progress.getMember());
+    }
+    /**
+     * [신규] 활동 점수 업데이트
+     * - 미션 1개 완료 시 +10점 (예시)
+     * - 최대 점수(GoalValue)를 넘을 수 없음
+     */
+    private void updateActivityScore(Member member) {
+        // 활동 점수 트래커 조회 (ID 998 or Type=ACTIVITY_SCORE)
+        missionProgressRepository.findByMemberAndMissionTypeWithMission(member, MissionTrack.ACHIEVEMENT, MissionConditionType.ACTIVITY_SCORE)
+                .ifPresent(tracker -> {
+                    int maxScore = tracker.getMission().getGoalValue(); // 예: 1000점
+                    int currentScore = tracker.getCurrentValue();
+
+                    if (currentScore < maxScore) {
+                        int pointsToAdd = MISSION_COMPLETION_ACTIVITY_POINTS; // 미션 당 점수 (기획에 따라 조정)
+                        int newScore = Math.min(currentScore + pointsToAdd, maxScore);
+                        tracker.setCurrentValue(newScore);
+                        log.info("활동 점수 획득: Member={}, Current={}, Max={}", member.getName(), newScore, maxScore);
+                    }
+                });
+    }
     /**
      * [신규] 시드 복사기 (누적 미션 30회) 체크
      */
@@ -478,8 +713,8 @@ public class MissionService {
         // 3. 총 자산 (현금 + 주식 원금)
         BigDecimal totalAsset = account.getCash().add(totalStockAsset);
 
-        // 4. 5만원 미만인지 확인
-        if (totalAsset.compareTo(BigDecimal.valueOf(50000)) >= 0) {
+        // 4. 100만원 미만인지 확인
+        if (totalAsset.compareTo(BigDecimal.valueOf(1000000)) >= 0) {
             throw new IllegalStateException("아직 파산할 정도로 돈이 없지 않습니다. (자산: " + totalAsset + "원)");
         }
 
@@ -492,12 +727,31 @@ public class MissionService {
             throw new IllegalStateException("이미 구조 지원금을 받으셨습니다.");
         }
 
-        bankruptcyProgress.setCurrentValue(50000); // 조건 충족 표시
+        bankruptcyProgress.setCurrentValue(bankruptcyProgress.getMission().getGoalValue()); // 조건 충족 표시
         bankruptcyProgress.complete();
         distributeReward(member, bankruptcyProgress.getMission().getReward());
 
         log.info("파산 신청 승인! 구조지원금 지급 완료. Member={}", member.getName());
+
+        // ⬇️ [추가] 2. 티어 점수 완전 초기화 (Bronze 0점으로 강등)
+        missionProgressRepository.findByMemberAndMissionTypeWithMission(member, MissionTrack.ACHIEVEMENT, MissionConditionType.ACTIVITY_SCORE)
+                .ifPresent(p -> p.setCurrentValue(0));
+
+        missionProgressRepository.findByMemberAndMissionTypeWithMission(member, MissionTrack.ACHIEVEMENT, MissionConditionType.SKILL_SCORE)
+                .ifPresent(p -> p.setCurrentValue(0));
+
+        log.info("파산 승인 및 티어 초기화 완료: Member={}", member.getName());
         return bankruptcyProgress.getMission().getReward();
+    }
+
+    /**
+     * [신규] 수익금을 점수로 환산하는 헬퍼 메서드
+     * - 공식: Score = sqrt(max(0, TotalProfit))
+     * - 수익금이 마이너스(손실 중)라면 0점으로 처리
+     */
+    private int calculateScoreFromProfit(int totalProfit) {
+        if (totalProfit <= 0) return 0;
+        return (int) Math.sqrt(totalProfit / 10.0);
     }
 
     private void distributeReward(Member member, Reward reward) {
@@ -653,6 +907,14 @@ public class MissionService {
         for (Mission mission : allMissions) {
             MissionStatus initialStatus = MissionStatus.INACTIVE;
 
+            // 1. 초기값 설정 (기본 0)
+            int initialValue = 0;
+
+            // 🚨 [수정] 활동 점수 트래커(ACTIVITY_SCORE)는 1200점부터 시작 (Silver 1티어)
+            if (mission.getConditionType() == MissionConditionType.ACTIVITY_SCORE) {
+                initialValue = 1200;
+            }
+
             // 1. 일일 미션 & 업적 미션 -> 기본 진행 중
             if (mission.getTrack() == MissionTrack.DAILY || mission.getTrack() == MissionTrack.ACHIEVEMENT) {
                 initialStatus = MissionStatus.IN_PROGRESS;
@@ -665,7 +927,7 @@ public class MissionService {
             MissionProgress newProgress = MissionProgress.builder()
                     .member(newMember)
                     .mission(mission)
-                    .currentValue(0)
+                    .currentValue(initialValue)
                     .status(initialStatus)
                     .build();
             newMember.addMissionProgress(newProgress);

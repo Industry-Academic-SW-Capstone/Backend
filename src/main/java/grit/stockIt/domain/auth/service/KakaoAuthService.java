@@ -22,6 +22,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDateTime;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
+import grit.stockIt.domain.mission.service.MissionService;
 
 @Slf4j
 @Service
@@ -33,6 +34,7 @@ public class KakaoAuthService {
     private final MemberRepository memberRepository;
     private final JwtService jwtService;
     private final AccountService accountService;
+    private final MissionService missionService;
 
     /**
      * 카카오 로그인 (비동기 처리)
@@ -102,6 +104,9 @@ public class KakaoAuthService {
 
             // 디폴트 계좌 생성 (회원당 1개 보장)
             accountService.createDefaultAccountForMember(savedMember);
+
+            // 미션 초기화
+            missionService.initializeMissionsForNewMember(savedMember);
 
             String jwt = jwtService.generateToken(savedMember.getEmail());
             return JwtToken.builder().accessToken(jwt).build();

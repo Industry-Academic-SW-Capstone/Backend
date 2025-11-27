@@ -81,38 +81,6 @@ public class MissionController {
     }
 
     /**
-     * POST /api/missions/view-report
-     * '종목 리포트 보기' 미션의 진행도를 1 증가시킵니다.
-     */
-    @PostMapping("/view-report")
-    @ResponseStatus(HttpStatus.OK)
-    public void trackReportView(
-            @AuthenticationPrincipal UserDetails userDetails
-    ) {
-        String email = userDetails.getUsername();
-        log.info("Request: trackReportView for Email={}", email);
-
-        // 서비스 호출
-        missionService.handleReportView(email);
-    }
-
-    /**
-     * POST /api/missions/analyze-portfolio
-     * '포트폴리오 분석' 미션의 진행도를 1 증가시킵니다.
-     */
-    @PostMapping("/analyze-portfolio")
-    @ResponseStatus(HttpStatus.OK)
-    public void trackPortfolioAnalysis(
-            @AuthenticationPrincipal UserDetails userDetails
-    ) {
-        String email = userDetails.getUsername();
-        log.info("Request: trackPortfolioAnalysis for Email={}", email);
-
-        // 서비스 호출
-        missionService.handlePortfolioAnalysis(email);
-    }
-
-    /**
      * POST /api/missions/bankruptcy
      * [신규] 인생 2회차(파산 신청)
      */
@@ -128,5 +96,14 @@ public class MissionController {
         Reward reward = missionService.applyForBankruptcy(email);
 
         return ResponseEntity.ok(new RewardResponseDto(reward));
+    }
+
+    /**
+     * [신규] 내 티어 및 점수 현황 조회
+     */
+    @GetMapping("/tier")
+    @Operation(summary = "티어 및 점수 조회", description = "활동 점수와 실력 점수를 합산한 현재 티어 정보를 반환합니다.")
+    public ResponseEntity<UserTierStatusDto> getMyTierStatus(@AuthenticationPrincipal UserDetails userDetails) {
+        return ResponseEntity.ok(missionService.getTierInfo(userDetails.getUsername()));
     }
 }
