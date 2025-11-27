@@ -19,6 +19,7 @@ import grit.stockIt.domain.mission.enums.MissionTrack;
 import grit.stockIt.domain.mission.enums.MissionType;
 import grit.stockIt.domain.mission.repository.MissionProgressRepository;
 import grit.stockIt.domain.mission.repository.MissionRepository;
+import grit.stockIt.domain.notification.event.MissionCompletedEvent;
 import grit.stockIt.domain.order.entity.OrderMethod;
 import grit.stockIt.domain.order.event.TradeCompletionEvent;
 import grit.stockIt.domain.title.entity.MemberTitle;
@@ -27,6 +28,7 @@ import grit.stockIt.domain.title.repository.MemberTitleRepository;
 import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import grit.stockIt.domain.stock.entity.Stock;
@@ -53,6 +55,7 @@ public class MissionService {
     private final AccountRepository accountRepository;
     private final AccountStockRepository accountStockRepository; // [추가됨] 홀딩 여부 확인용
     private final StockRepository stockRepository;
+    private final ApplicationEventPublisher eventPublisher;
 
     private static final long JUNK_STOCK_MARKET_CAP_THRESHOLD = 100000000000L;
     private static final int MISSION_COMPLETION_ACTIVITY_POINTS = 10;
@@ -636,7 +639,18 @@ public class MissionService {
         progress.complete();
         log.info("미션 완료: MemberId={}, MissionId={}", progress.getMember().getMemberId(), progress.getMission().getId());
 
-        distributeReward(progress.getMember(), progress.getMission().getReward());
+        Mission mission = progress.getMission();
+        Reward reward = mission.getReward();
+        
+        // 보상 지급
+        distributeReward(progress.getMember(), reward);
+        
+        // 출석 미션은 알림 발송 제외
+        if (mission.getConditionType() != MissionConditionType.LOGIN_COUNT) {
+            // 미션 완료 알림 이벤트 발행
+            publishMissionCompletedEvent(progress.getMember(), mission, reward);
+        }
+        
         activateNextMission(progress);
         handleMissionChain(progress);
         checkSeedCopierAchievement(progress.getMember());
@@ -777,6 +791,31 @@ public class MissionService {
                 log.info("칭호 지급: {}", reward.getTitleToGrant().getName());
             }
         }
+    }
+
+    /**
+     * 미션 완료 알림 이벤트 발행
+     */
+    private void publishMissionCompletedEvent(Member member, Mission mission, Reward reward) {
+        Long rewardId = reward != null ? reward.getId() : null;
+        Long moneyAmount = reward != null ? reward.getMoneyAmount() : 0L;
+        String titleName = (reward != null && reward.getTitleToGrant() != null) 
+                ? reward.getTitleToGrant().getName() 
+                : null;
+
+        MissionCompletedEvent event = new MissionCompletedEvent(
+                member.getMemberId(),
+                mission.getId(),
+                mission.getName(),
+                mission.getTrack(),
+                rewardId,
+                moneyAmount,
+                titleName
+        );
+
+        eventPublisher.publishEvent(event);
+        log.debug("미션 완료 이벤트 발행: memberId={}, missionId={}, missionName={}", 
+                member.getMemberId(), mission.getId(), mission.getName());
     }
 
     /**
