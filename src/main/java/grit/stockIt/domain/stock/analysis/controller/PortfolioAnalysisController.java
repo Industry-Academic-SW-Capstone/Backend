@@ -7,6 +7,8 @@ import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.web.bind.annotation.*;
 import reactor.core.publisher.Mono;
 
@@ -29,10 +31,10 @@ public class PortfolioAnalysisController {
     @GetMapping("/analyze")
     public Mono<PortfolioAnalysisResponse> analyzePortfolio(
             @Parameter(description = "계좌 ID", required = true)
-            @RequestParam Long accountId
+            @RequestParam Long accountId, @AuthenticationPrincipal UserDetails userDetails
     ) {
         log.info("포트폴리오 분석 요청: accountId={}", accountId);
-        return portfolioAnalysisService.analyzePortfolio(accountId);
+        return portfolioAnalysisService.analyzePortfolio(accountId, userDetails.getUsername());
     }
 }
 

@@ -31,5 +31,9 @@ public enum MissionConditionType {
     HOLD_FOR_DAYS_AND_SELL_PROFIT, // (905: 존버는 승리한다)
     LOGIN_STREAK,               // (906, 907, 908: 출석 7/15/30일)
     RANKING_TOP_10,             // (909: 랭커)
-    ASSET_UNDER_THRESHOLD       // [신규] (911: 인생 2회차 - 잔고 5만원 미만)
+    ASSET_UNDER_THRESHOLD,       // [신규] (911: 인생 2회차 - 잔고 5만원 미만)
+
+    ACTIVITY_SCORE, // [신규] 활동 점수 누적용
+    SKILL_SCORE,    // [신규] 실력 점수(수익금) 누적용
+    REACH_LEGEND    // [신규] 레전드 달성 체크용 (Mission 903)
 }

@@ -4,7 +4,7 @@
 INSERT INTO title (title_id, name, description, created_at, updated_at) VALUES
                                                                             (101, '시드 콜로니', '누적 미션 30회 완료한 자', NOW(), NOW()),
                                                                             (102, '달콤한 첫입', '최초로 모의투자 수익을 실현한 자', NOW(), NOW()),
-                                                                            (103, '강형욱', '"잡주(시총 1000억 미만)"로 누적 수익률 100%를 달성한 자', NOW(), NOW()),
+                                                                            (103, '주식의 신', 'Legend 티어(점수 3,600점) 달성한 자', NOW(), NOW()),
                                                                             (104, '카이팅 장인', '하루 동안 매수/매도 50회 이상 달성한 자', NOW(), NOW()),
                                                                             (105, '존 버', '단일 종목 30일 이상 보유하여 수익 실현한 자', NOW(), NOW()),
                                                                             (106, '주식 초보', '7일 연속 출석을 달성한 자', NOW(), NOW()),
@@ -46,7 +46,7 @@ INSERT INTO reward (reward_id, description, money_amount, title_id, created_at, 
 -- [업적/칭호] 시드 체급 업그레이드 및 명예 보상 (시드의 100% ~ 500%)
 (101, '칭호 + 5,000,000원 (시드 콜로니)', 5000000, 101, NOW(), NOW()),
 (102, '칭호 + 100,000원 (달콤한 첫입)', 100000, 102, NOW(), NOW()),
-(103, '칭호 + 1,000,000원 (강형욱)', 1000000, 103, NOW(), NOW()),
+(103, '칭호 + 100,000,000원 (주식의 신)', 100000000, 103, NOW(), NOW()),
 (104, '칭호 + 1,500,000원 (카이팅)', 1500000, 104, NOW(), NOW()),
 (105, '칭호 + 1,500,000원 (존버)', 1500000, 105, NOW(), NOW()),
 (106, '칭호 + 500,000원 (주식 초보)', 500000, 106, NOW(), NOW()),
@@ -94,14 +94,16 @@ INSERT INTO mission (mission_id, name, track, type, condition_type, goal_value, 
 -- [업적 (ACHIEVEMENT)] 영구 달성 및 칭호 획득
 (901, '시드 콜로니', 'ACHIEVEMENT', 'COMMON', 'TOTAL_MISSION_COUNT', 30, 101, NULL, NOW(), NOW()),
 (902, '달콤한 첫입', 'ACHIEVEMENT', 'COMMON', 'FIRST_PROFIT', 1, 102, NULL, NOW(), NOW()),
-(903, '강형욱', 'ACHIEVEMENT', 'COMMON', 'JUNK_STOCK_JACKPOT', 1, 103, NULL, NOW(), NOW()),
+(903, '주식의 신', 'ACHIEVEMENT', 'COMMON', 'REACH_LEGEND', 1, 103, NULL, NOW(), NOW()),
 (904, '카이팅 장인', 'ACHIEVEMENT', 'COMMON', 'DAILY_TRADE_COUNT', 50, 104, NULL, NOW(), NOW()),
 (905, '존버는 승리한다', 'ACHIEVEMENT', 'COMMON', 'HOLD_FOR_DAYS_AND_SELL_PROFIT', 30, 105, NULL, NOW(), NOW()),
 (906, '주식 초보', 'ACHIEVEMENT', 'COMMON', 'LOGIN_STREAK', 7, 106, NULL, NOW(), NOW()),
 (907, '주식 중수', 'ACHIEVEMENT', 'COMMON', 'LOGIN_STREAK', 15, 107, NULL, NOW(), NOW()),
 (908, '주식 고수', 'ACHIEVEMENT', 'COMMON', 'LOGIN_STREAK', 30, 108, NULL, NOW(), NOW()),
 (909, '랭커', 'ACHIEVEMENT', 'COMMON', 'RANKING_TOP_10', 10, 109, NULL, NOW(), NOW()),
-(911, '인생 2회차', 'ACHIEVEMENT', 'COMMON', 'ASSET_UNDER_THRESHOLD', 50000, 111, NULL, NOW(), NOW())
+(911, '인생 2회차', 'ACHIEVEMENT', 'COMMON', 'ASSET_UNDER_THRESHOLD', 50000, 111, NULL, NOW(), NOW()),
+(998, '활동 점수 트래커', 'ACHIEVEMENT', 'COMMON', 'ACTIVITY_SCORE', 10000, NULL, NULL, NOW(), NOW()),
+(999, '누적 수익금 트래커', 'ACHIEVEMENT', 'COMMON', 'SKILL_SCORE', 2000000000, NULL, NULL, NOW(), NOW())
 ON CONFLICT (mission_id)
 DO UPDATE SET
     name = EXCLUDED.name,
