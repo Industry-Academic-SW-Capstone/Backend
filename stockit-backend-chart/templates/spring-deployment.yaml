@@ -79,7 +79,6 @@ spec:
                   name: stockit-secrets
                   {{- end }}
                   key: FIREBASE_CREDENTIALS_BASE64
-<<<<<<< HEAD
             - name: GEMINI_API_KEY
               valueFrom:
                 secretKeyRef:
@@ -89,7 +88,6 @@ spec:
                   name: gemini-api-key
                   {{- end }}
                   key: GEMINI_API_KEY
-=======
             - name: KAKAO_CLIENT_SECRET
               valueFrom:
                 secretKeyRef:
@@ -99,7 +97,6 @@ spec:
                   name: stockit-secrets
                   {{- end }}
                   key: KAKAO_CLIENT_SECRET
->>>>>>> dbc6dbf (feat: 카카오 OAuth 클라이언트 시크릿 추가 및 설정)
 
             # Spring Profile 설정 (values.yaml의 global.springProfile 참조)
             - name: SPRING_PROFILES_ACTIVE
