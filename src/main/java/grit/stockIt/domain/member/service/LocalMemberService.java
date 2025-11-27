@@ -1,14 +1,14 @@
 package grit.stockIt.domain.member.service;
 
 import grit.stockIt.domain.account.service.AccountService;
-import grit.stockIt.domain.member.dto.MemberLoginRequest;
-import grit.stockIt.domain.member.dto.MemberResponse;
-import grit.stockIt.domain.member.dto.MemberSignupRequest;
-import grit.stockIt.domain.member.dto.MemberUpdateRequest;
+import grit.stockIt.domain.member.dto.*;
 import grit.stockIt.domain.member.entity.AuthProvider;
 import grit.stockIt.domain.member.entity.Member;
 import grit.stockIt.domain.member.repository.MemberRepository;
 import grit.stockIt.domain.mission.service.MissionService;
+import grit.stockIt.domain.title.entity.Title;
+import grit.stockIt.domain.title.repository.MemberTitleRepository;
+import grit.stockIt.domain.title.repository.TitleRepository;
 import grit.stockIt.global.jwt.JwtService;
 import grit.stockIt.global.jwt.JwtToken;
 import lombok.RequiredArgsConstructor;
@@ -27,6 +27,9 @@ public class LocalMemberService {
     private final JwtService jwtService;
     private final AccountService accountService;
     private final MissionService missionService; // 미션 보상 지급용
+    private final TitleRepository titleRepository;
+    private final MemberTitleRepository memberTitleRepository;
+
     /**
      * 로컬 회원가입 (이메일 기준)
      */
@@ -195,5 +198,42 @@ public class LocalMemberService {
             member.disableExecutionNotification();
         }
         memberRepository.save(member);
+    }
+
+    @Transactional
+    public void updateRepresentativeTitle(String email, Long titleId) {
+        Member member = memberRepository.findByEmail(email)
+                .orElseThrow(() -> new IllegalArgumentException("회원을 찾을 수 없습니다."));
+
+        // 1. 해제 요청
+        if (titleId == null) {
+            member.updateRepresentativeTitle(null);
+            // memberRepository.save(member); // 확실하게 하려면 추가
+            return;
+        }
+
+        // 2. 칭호 조회
+        Title title = titleRepository.findById(titleId)
+                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 칭호입니다."));
+
+        // 3. 보유 여부 검증
+        boolean hasTitle = memberTitleRepository.existsByMemberAndTitle(member, title);
+        if (!hasTitle) {
+            throw new IllegalArgumentException("획득하지 않은 칭호는 장착할 수 없습니다.");
+        }
+
+        // 4. 업데이트 수행
+        member.updateRepresentativeTitle(title);
+
+        // [추가 권장] 명시적 저장으로 변경사항 즉시 반영 보장
+        memberRepository.save(member);
+    }
+
+    @Transactional(readOnly = true)
+    public RepresentativeTitleResponse getRepresentativeTitle(String email) {
+        Member member = memberRepository.findByEmail(email)
+                .orElseThrow(() -> new IllegalArgumentException("회원을 찾을 수 없습니다."));
+
+        return RepresentativeTitleResponse.from(member.getRepresentativeTitle());
     }
 }

@@ -4,6 +4,7 @@ package grit.stockIt.domain.member.entity;
 import grit.stockIt.domain.account.entity.Account;
 import grit.stockIt.domain.mission.entity.MissionProgress;
 import grit.stockIt.domain.title.entity.MemberTitle;
+import grit.stockIt.domain.title.entity.Title;
 import grit.stockIt.global.common.BaseEntity;
 import grit.stockIt.domain.auth.entity.KakaoToken;
 import jakarta.persistence.*;
@@ -106,6 +107,14 @@ public class Member extends BaseEntity {
     private boolean stockDetailTutorialCompleted = false;
 
     /**
+     * [신규] 사용자가 선택한 대표 칭호 (없을 수도 있음 -> nullable)
+     * 여러 멤버가 동일한 Title을 대표 칭호로 설정할 수 있으므로 ManyToOne
+     */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "representative_title_id")
+    private Title representativeTitle;
+
+    /**
      * 카카오 토큰 업데이트 또는 생성
      */
     public void updateKakaoToken(KakaoToken kakaoToken) {
@@ -206,4 +215,11 @@ public class Member extends BaseEntity {
         }
     }
     // --- ⬆️ [병합 4] 완료 ⬆️ ---
+
+    /**
+     * [신규] 대표 칭호 변경 메서드
+     */
+    public void updateRepresentativeTitle(Title title) {
+        this.representativeTitle = title;
+    }
 }
