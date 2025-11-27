@@ -51,29 +51,29 @@ public class RankingController {
     /**
      * 대회 계좌 전체 랭킹 조회
      * - sortBy 파라미터로 정렬 기준 선택
-     *   - balance: 잔액순 (기본값)
+     *   - totalAssets: 총자산순 (기본값)
      *   - returnRate: 수익률순
      *
-     * GET /api/rankings/contest/{contestId}?sortBy=balance
+     * GET /api/rankings/contest/{contestId}?sortBy=totalAssets
      * GET /api/rankings/contest/{contestId}?sortBy=returnRate
      */
     @GetMapping("/contest/{contestId}")
     @Operation(
             summary = "대회 계좌 랭킹 조회",
-            description = "특정 대회의 랭킹을 조회합니다. sortBy 파라미터로 잔액순/수익률순 선택 가능합니다."
+            description = "특정 대회의 랭킹을 조회합니다. sortBy 파라미터로 총자산순/수익률순 선택 가능합니다."
     )
     public ResponseEntity<RankingResponse> getContestRankings(
             @Parameter(description = "대회 ID", example = "1", required = true)
-            @PathVariable Long contestId,
+            @PathVariable("contestId") Long contestId,
 
-            @Parameter(description = "정렬 기준 (balance: 잔액순, returnRate: 수익률순)", example = "balance")
-            @RequestParam(defaultValue = "balance") String sortBy
+            @Parameter(description = "정렬 기준 (totalAssets: 총자산순, returnRate: 수익률순)", example = "totalAssets")
+            @RequestParam(name = "sortBy", defaultValue = "totalAssets") String sortBy
     ) {
         log.info("📊 [API 호출] 대회 [{}] 랭킹 조회 (sortBy: {})", contestId, sortBy);
 
         // sortBy 유효성 검사
-        if (!sortBy.equalsIgnoreCase("balance") && !sortBy.equalsIgnoreCase("returnRate")) {
-            throw new IllegalArgumentException("sortBy는 'balance' 또는 'returnRate'여야 합니다. (현재: " + sortBy + ")");
+        if (!sortBy.equalsIgnoreCase("totalAssets") && !sortBy.equalsIgnoreCase("returnRate")) {
+            throw new IllegalArgumentException("sortBy는 'totalAssets' 또는 'returnRate'여야 합니다. (현재: " + sortBy + ")");
         }
 
         RankingResponse response = rankingService.getContestRankings(contestId, sortBy);
@@ -97,10 +97,10 @@ public class RankingController {
     )
     public ResponseEntity<MyRankDto> getMyRank(
             @Parameter(description = "회원 ID", example = "42", required = true)
-            @RequestParam Long memberId,
+            @RequestParam(name = "memberId") Long memberId,
 
             @Parameter(description = "대회 ID (없으면 Main 계좌)", example = "1")
-            @RequestParam(required = false) Long contestId
+            @RequestParam(name = "contestId", required = false) Long contestId
     ) {
         log.info("🔍 [API 호출] 내 랭킹 조회 (memberId: {}, contestId: {})", memberId, contestId);
         MyRankDto response = rankingService.getMyRank(memberId, contestId);

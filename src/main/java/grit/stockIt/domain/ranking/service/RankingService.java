@@ -92,8 +92,8 @@ public class RankingService {
             log.info("📊 진행 중인 대회 수: {}", activeContests.size());
 
             for (Contest contest : activeContests) {
-                // 잔액순 랭킹 (총자산 기준)
-                getContestRankingsWithPrices(contest.getContestId(), "balance", currentPrices);
+                // 총자산순 랭킹
+                getContestRankingsWithPrices(contest.getContestId(), "totalAssets", currentPrices);
                 // 수익률순 랭킹
                 getContestRankingsWithPrices(contest.getContestId(), "returnRate", currentPrices);
                 log.info("✅ 대회 [{}] 랭킹 갱신 완료", contest.getContestName());
@@ -144,6 +144,11 @@ public class RankingService {
     public RankingResponse getContestRankings(Long contestId, String sortBy) {
         log.info("📊 대회 [{}] 랭킹 조회 (sortBy: {}) - 총자산 기준 DB 로드", contestId, sortBy);
 
+        // sortBy 정규화: balance → totalAssets (하위 호환성)
+        if ("balance".equalsIgnoreCase(sortBy)) {
+            sortBy = "totalAssets";
+        }
+
         // 1. 모든 보유 종목의 현재가 배치 수집
         Set<String> requiredStockCodes = collectAllHeldStockCodes();
         Map<String, BigDecimal> currentPrices = batchFetchCurrentPrices(requiredStockCodes);
@@ -172,6 +177,16 @@ public class RankingService {
 
         // 2. Main 계좌인 경우
         if (contestId == null) {
+            // 2-1. 현재가 수집 및 총자산 계산
+            Set<String> requiredStockCodes = collectAllHeldStockCodes();
+            Map<String, BigDecimal> currentPrices = batchFetchCurrentPrices(requiredStockCodes);
+            
+            // AccountStock Map 조회
+            List<AccountStock> allAccountStocks = accountStockRepository.findAllByAccount(myAccount);
+            Map<Account, List<AccountStock>> accountStocksMap = Map.of(myAccount, allAccountStocks);
+            
+            BigDecimal myTotalAssets = calculateTotalAssets(myAccount, currentPrices, accountStocksMap);
+
             Long balanceRank = accountRepository.findMyRankInMainByBalance(myAccount.getCash());
             Long totalParticipants = accountRepository.countMainAccounts();
 
@@ -180,6 +195,7 @@ public class RankingService {
                     .returnRateRank(null) // Main 계좌는 수익률 없음
                     .totalParticipants(totalParticipants)
                     .myBalance(myAccount.getCash())
+                    .myTotalAssets(myTotalAssets)
                     .myReturnRate(null)
                     .build();
         }
@@ -188,16 +204,26 @@ public class RankingService {
         Contest contest = contestRepository.findById(contestId)
                 .orElseThrow(() -> new IllegalArgumentException("대회를 찾을 수 없습니다. (ID: " + contestId + ")"));
 
-        // 3-1. 내 잔액 순위
+        // 3-1. 현재가 수집 및 총자산 계산
+        Set<String> requiredStockCodes = collectAllHeldStockCodes();
+        Map<String, BigDecimal> currentPrices = batchFetchCurrentPrices(requiredStockCodes);
+        
+        // AccountStock Map 조회
+        List<AccountStock> allAccountStocks = accountStockRepository.findAllByAccount(myAccount);
+        Map<Account, List<AccountStock>> accountStocksMap = Map.of(myAccount, allAccountStocks);
+        
+        BigDecimal myTotalAssets = calculateTotalAssets(myAccount, currentPrices, accountStocksMap);
+
+        // 3-2. 내 잔액 순위
         Long balanceRank = accountRepository.findMyRankInContestByBalance(contestId, myAccount.getCash());
 
-        // 3-2. 내 수익률 계산
-        BigDecimal myReturnRate = calculateReturnRate(myAccount, contest);
+        // 3-3. 내 수익률 계산 (총자산 기준)
+        BigDecimal myReturnRate = calculateReturnRateFromAssets(myTotalAssets, contest);
 
-        // 3-3. 내 수익률 순위
+        // 3-4. 내 수익률 순위
         Long returnRateRank = accountRepository.findMyRankInContestByReturnRate(contestId, myReturnRate);
 
-        // 3-4. 전체 인원 수
+        // 3-5. 전체 인원 수
         Long totalParticipants = accountRepository.countByContest_ContestId(contestId);
 
         return MyRankDto.builder()
@@ -205,6 +231,7 @@ public class RankingService {
                 .returnRateRank(returnRateRank)
                 .totalParticipants(totalParticipants)
                 .myBalance(myAccount.getCash())
+                .myTotalAssets(myTotalAssets)
                 .myReturnRate(myReturnRate)
                 .build();
     }
@@ -283,13 +310,11 @@ public class RankingService {
 
     /**
      * 모든 계좌의 보유 종목 코드 수집 (중복 제거)
+     * JPQL로 DISTINCT 조회하여 DB 레벨에서 중복 제거
      */
     private Set<String> collectAllHeldStockCodes() {
-        List<AccountStock> allAccountStocks = accountStockRepository.findAll();
-        return allAccountStocks.stream()
-                .filter(as -> as.getQuantity() > 0)
-                .map(as -> as.getStock().getCode())
-                .collect(Collectors.toSet());
+        List<String> stockCodes = accountStockRepository.findDistinctStockCodes();
+        return new HashSet<>(stockCodes);
     }
 
     /**
@@ -369,13 +394,15 @@ public class RankingService {
      * 
      * @param account       계좌
      * @param currentPrices 종목코드별 현재가 Map
+     * @param accountStocksMap Account별 AccountStock 리스트 Map
      * @return 총자산
      */
-    private BigDecimal calculateTotalAssets(Account account, Map<String, BigDecimal> currentPrices) {
+    private BigDecimal calculateTotalAssets(Account account, Map<String, BigDecimal> currentPrices, 
+                                           Map<Account, List<AccountStock>> accountStocksMap) {
         BigDecimal cash = account.getCash();
         BigDecimal stockValue = BigDecimal.ZERO;
 
-        List<AccountStock> holdings = accountStockRepository.findAllByAccount(account);
+        List<AccountStock> holdings = accountStocksMap.getOrDefault(account, Collections.emptyList());
         for (AccountStock holding : holdings) {
             if (holding.getQuantity() <= 0) {
                 continue;
@@ -453,7 +480,8 @@ public class RankingService {
      * - totalAssets에는 실제 총자산, returnRate에는 수익률 표시
      */
     private List<RankingDto> convertToRankingDtosWithAssetsForReturnRate(
-            List<AccountWithAssets> accountsWithAssets, Contest contest, Map<String, BigDecimal> currentPrices) {
+            List<AccountWithAssets> accountsWithAssets, Contest contest, Map<String, BigDecimal> currentPrices,
+            Map<Account, List<AccountStock>> accountStocksMap) {
         
         List<RankingDto> rankings = new ArrayList<>();
         int rank = 1;
@@ -475,7 +503,7 @@ public class RankingService {
             // 실제 총자산 계산
             BigDecimal actualTotalAssets = currentPrices.isEmpty()
                     ? account.getCash()
-                    : calculateTotalAssets(account, currentPrices);
+                    : calculateTotalAssets(account, currentPrices, accountStocksMap);
 
             RankingDto dto = RankingDto.builder()
                     .rank(rank)
@@ -503,28 +531,33 @@ public class RankingService {
         // 1. DB에서 Main 계좌 전체 조회
         List<Account> accounts = accountRepository.findMainAccountsOrderByBalance();
 
-        // 2. 각 계좌의 총자산 계산
+        // 2. 모든 계좌의 AccountStock을 한 번에 조회 (N+1 해결)
+        List<AccountStock> allAccountStocks = accountStockRepository.findAll();
+        Map<Account, List<AccountStock>> accountStocksMap = allAccountStocks.stream()
+                .collect(Collectors.groupingBy(AccountStock::getAccount));
+
+        // 3. 각 계좌의 총자산 계산
         List<AccountWithAssets> accountsWithAssets = accounts.stream()
                 .map(account -> {
                     BigDecimal totalAssets = currentPrices.isEmpty() 
                             ? account.getCash()  // 현재가 없으면 잔액만 사용 (레거시)
-                            : calculateTotalAssets(account, currentPrices);
+                            : calculateTotalAssets(account, currentPrices, accountStocksMap);
                     return new AccountWithAssets(account, totalAssets);
                 })
                 .sorted((a, b) -> b.totalAssets.compareTo(a.totalAssets)) // 총자산 내림차순
                 .collect(Collectors.toList());
 
-        // 3. Account → RankingDto 변환 (순위 부여)
+        // 4. Account → RankingDto 변환 (순위 부여)
         List<RankingDto> rankings = convertToRankingDtosWithAssets(accountsWithAssets, false);
 
-        // 4. 전체 인원 수
+        // 5. 전체 인원 수
         Long totalParticipants = accountRepository.countMainAccounts();
 
         // 5. 응답 생성
         return RankingResponse.builder()
                 .contestId(null) // Main 계좌는 contestId 없음
                 .contestName("Main 계좌")
-                .sortBy("balance")
+                .sortBy("totalAssets")
                 .rankings(rankings)
                 .totalParticipants(totalParticipants)
                 .lastUpdated(LocalDateTime.now())
@@ -544,7 +577,12 @@ public class RankingService {
         // 2. 대회의 모든 계좌 조회
         List<Account> accounts = accountRepository.findByContest(contest);
 
-        // 3. sortBy에 따라 처리
+        // 3. 모든 계좌의 AccountStock을 한 번에 조회 (N+1 해결)
+        List<AccountStock> allAccountStocks = accountStockRepository.findAll();
+        Map<Account, List<AccountStock>> accountStocksMap = allAccountStocks.stream()
+                .collect(Collectors.groupingBy(AccountStock::getAccount));
+
+        // 4. sortBy에 따라 처리
         boolean isReturnRate = "returnRate".equalsIgnoreCase(sortBy);
 
         List<AccountWithAssets> accountsWithAssets;
@@ -555,7 +593,7 @@ public class RankingService {
                     .map(account -> {
                         BigDecimal totalAssets = currentPrices.isEmpty()
                                 ? account.getCash()
-                                : calculateTotalAssets(account, currentPrices);
+                                : calculateTotalAssets(account, currentPrices, accountStocksMap);
                         BigDecimal returnRate = calculateReturnRateFromAssets(totalAssets, contest);
                         return new AccountWithAssets(account, returnRate);  // returnRate로 정렬
                     })
@@ -567,7 +605,7 @@ public class RankingService {
                     .map(account -> {
                         BigDecimal totalAssets = currentPrices.isEmpty()
                                 ? account.getCash()
-                                : calculateTotalAssets(account, currentPrices);
+                                : calculateTotalAssets(account, currentPrices, accountStocksMap);
                         return new AccountWithAssets(account, totalAssets);
                     })
                     .sorted((a, b) -> b.totalAssets.compareTo(a.totalAssets))
@@ -576,7 +614,7 @@ public class RankingService {
 
         // 4. Account → RankingDto 변환
         List<RankingDto> rankings = isReturnRate
-                ? convertToRankingDtosWithAssetsForReturnRate(accountsWithAssets, contest, currentPrices)
+                ? convertToRankingDtosWithAssetsForReturnRate(accountsWithAssets, contest, currentPrices, accountStocksMap)
                 : convertToRankingDtosWithAssets(accountsWithAssets, false);
 
         // 5. 전체 인원 수
@@ -586,7 +624,7 @@ public class RankingService {
         return RankingResponse.builder()
                 .contestId(contestId)
                 .contestName(contest.getContestName())
-                .sortBy(isReturnRate ? "returnRate" : "balance")
+                .sortBy(isReturnRate ? "returnRate" : "totalAssets")
                 .rankings(rankings)
                 .totalParticipants(totalParticipants)
                 .lastUpdated(LocalDateTime.now())

@@ -29,4 +29,8 @@ public interface AccountStockRepository extends JpaRepository<AccountStock, Long
     boolean existsByAccount_MemberAndQuantityGreaterThan(Member member, int quantity);
     // --- ⬇️ [추가] 특정 계좌의 보유 주식 목록 전체 조회 ⬇️ ---
     List<AccountStock> findAllByAccount(Account account);
+
+    // --- ⬇️ [추가] 모든 보유 주식의 중복 제거된 종목 코드 조회 ⬇️ ---
+    @Query("SELECT DISTINCT ast.stock.code FROM AccountStock ast WHERE ast.quantity > 0")
+    List<String> findDistinctStockCodes();
 }
