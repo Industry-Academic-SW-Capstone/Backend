@@ -102,7 +102,7 @@ INSERT INTO mission (mission_id, name, track, type, condition_type, goal_value, 
 (908, '주식 고수', 'ACHIEVEMENT', 'COMMON', 'LOGIN_STREAK', 30, 108, NULL, NOW(), NOW()),
 (909, '랭커', 'ACHIEVEMENT', 'COMMON', 'RANKING_TOP_10', 10, 109, NULL, NOW(), NOW()),
 (911, '인생 2회차', 'ACHIEVEMENT', 'COMMON', 'ASSET_UNDER_THRESHOLD', 50000, 111, NULL, NOW(), NOW()),
-(998, '활동 점수 트래커', 'ACHIEVEMENT', 'COMMON', 'ACTIVITY_SCORE', 10000, NULL, NULL, NOW(), NOW()),
+(998, '활동 점수 트래커', 'ACHIEVEMENT', 'COMMON', 'ACTIVITY_SCORE', 2200, NULL, NULL, NOW(), NOW()),
 (999, '누적 수익금 트래커', 'ACHIEVEMENT', 'COMMON', 'SKILL_SCORE', 2000000000, NULL, NULL, NOW(), NOW())
 ON CONFLICT (mission_id)
 DO UPDATE SET

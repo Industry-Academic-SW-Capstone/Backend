@@ -55,6 +55,7 @@ public class MissionService {
     private final StockRepository stockRepository;
 
     private static final long JUNK_STOCK_MARKET_CAP_THRESHOLD = 100000000000L;
+    private static final int MISSION_COMPLETION_ACTIVITY_POINTS = 10;
     /**
      * [1] (이벤트 수신) 거래 이벤트 발생 시 미션 진행도 업데이트
      * - 일반 미션 갱신 로직
@@ -135,7 +136,7 @@ public class MissionService {
 
     // 레전드 미션(903) 달성 체크
     private void checkLegendTier(Member member, int totalScore) {
-        if (totalScore >= 10000) { // Legend 기준 점수
+        if (totalScore >= 3600) { // Legend 기준 점수
             missionRepository.findAllByTrackAndConditionType(MissionTrack.ACHIEVEMENT, MissionConditionType.REACH_LEGEND)
                     .stream().findFirst().ifPresent(legendMission -> {
                         missionProgressRepository.findByMemberAndMission(member, legendMission)
@@ -177,82 +178,104 @@ public class MissionService {
         int skillScore = calculateScoreFromProfit(totalProfit);
         int totalScore = activityScore + skillScore;
 
-        // 3. 티어 계산 (1200점 시작 -> 실버1)
+        // 3. 티어 계산
         String currentTier;
         String nextTier;
-        int nextTierScore; // 다음 티어 승급을 위한 최소 점수
+        int nextTierScore;        // 다음 티어 승급 점수 (목표)
+        int currentTierStartScore; // [신규] 현재 티어 시작 점수 (진행도 계산용)
 
         if (totalScore < 800) {
             currentTier = "BRONZE 1";
             nextTier = "BRONZE 2";
+            currentTierStartScore = 0;   // 0 ~ 799
             nextTierScore = 800;
         } else if (totalScore < 1000) {
             currentTier = "BRONZE 2";
             nextTier = "BRONZE 3";
+            currentTierStartScore = 800; // 800 ~ 999
             nextTierScore = 1000;
-        } else if (totalScore < 1200) { // 1199점까지 여기 포함
+        } else if (totalScore < 1200) {
             currentTier = "BRONZE 3";
             nextTier = "SILVER 1";
+            currentTierStartScore = 1000; // 1000 ~ 1199
             nextTierScore = 1200;
-        } else if (totalScore < 1400) { // 1200점부터 여기 포함 (시작점)
+        } else if (totalScore < 1400) {
             currentTier = "SILVER 1";
             nextTier = "SILVER 2";
+            currentTierStartScore = 1200; // 1200 ~ 1399 (신규 유저 시작 구간)
             nextTierScore = 1400;
         } else if (totalScore < 1600) {
             currentTier = "SILVER 2";
             nextTier = "SILVER 3";
+            currentTierStartScore = 1400;
             nextTierScore = 1600;
         } else if (totalScore < 1800) {
             currentTier = "SILVER 3";
             nextTier = "GOLD 1";
+            currentTierStartScore = 1600;
             nextTierScore = 1800;
         } else if (totalScore < 2000) {
             currentTier = "GOLD 1";
             nextTier = "GOLD 2";
+            currentTierStartScore = 1800;
             nextTierScore = 2000;
         } else if (totalScore < 2200) {
             currentTier = "GOLD 2";
             nextTier = "GOLD 3";
+            currentTierStartScore = 2000;
             nextTierScore = 2200;
         } else if (totalScore < 2400) {
             currentTier = "GOLD 3";
             nextTier = "MASTER 1";
+            currentTierStartScore = 2200;
             nextTierScore = 2400;
         } else if (totalScore < 2600) {
             currentTier = "MASTER 1";
             nextTier = "MASTER 2";
+            currentTierStartScore = 2400;
             nextTierScore = 2600;
         } else if (totalScore < 2800) {
             currentTier = "MASTER 2";
             nextTier = "MASTER 3";
+            currentTierStartScore = 2600;
             nextTierScore = 2800;
         } else if (totalScore < 3000) {
             currentTier = "MASTER 3";
             nextTier = "GRANDMASTER 1";
+            currentTierStartScore = 2800;
             nextTierScore = 3000;
         } else if (totalScore < 3200) {
             currentTier = "GRANDMASTER 1";
             nextTier = "GRANDMASTER 2";
+            currentTierStartScore = 3000;
             nextTierScore = 3200;
         } else if (totalScore < 3400) {
             currentTier = "GRANDMASTER 2";
             nextTier = "GRANDMASTER 3";
+            currentTierStartScore = 3200;
             nextTierScore = 3400;
         } else if (totalScore < 3600) {
             currentTier = "GRANDMASTER 3";
             nextTier = "LEGEND";
+            currentTierStartScore = 3400;
             nextTierScore = 3600;
         } else {
             currentTier = "LEGEND";
             nextTier = "MAX";
-            nextTierScore = totalScore;
+            currentTierStartScore = 3600;
+            nextTierScore = totalScore; // Legend는 목표치가 없으므로 현재 점수와 동일시
         }
 
-        // 4. 진행도 계산
+        // 4. 진행도 계산 (현재 구간 내에서의 %)
         double progress = 0.0;
         if (!"MAX".equals(nextTier)) {
-            // 전체 점수 기준 진행도 (0% ~ 100%)
-            progress = ((double) totalScore / nextTierScore) * 100.0;
+            // 공식: (현재점수 - 시작점수) / (목표점수 - 시작점수) * 100
+            double gainedInCurrentTier = (double) (totalScore - currentTierStartScore);
+            double rangeOfCurrentTier = (double) (nextTierScore - currentTierStartScore);
+
+            if (rangeOfCurrentTier > 0) {
+                progress = (gainedInCurrentTier / rangeOfCurrentTier) * 100.0;
+            }
         } else {
             progress = 100.0;
         }
@@ -617,7 +640,7 @@ public class MissionService {
                     int currentScore = tracker.getCurrentValue();
 
                     if (currentScore < maxScore) {
-                        int pointsToAdd = 10; // 미션 당 점수 (기획에 따라 조정)
+                        int pointsToAdd = MISSION_COMPLETION_ACTIVITY_POINTS; // 미션 당 점수 (기획에 따라 조정)
                         int newScore = Math.min(currentScore + pointsToAdd, maxScore);
                         tracker.setCurrentValue(newScore);
                         log.info("활동 점수 획득: Member={}, Current={}, Max={}", member.getName(), newScore, maxScore);
@@ -870,7 +893,7 @@ public class MissionService {
             // 1. 초기값 설정 (기본 0)
             int initialValue = 0;
 
-            // 🚨 [수정] 활동 점수 트래커(ACTIVITY_SCORE)는 1200점부터 시작 (Iron 티어)
+            // 🚨 [수정] 활동 점수 트래커(ACTIVITY_SCORE)는 1200점부터 시작 (Silver 1티어)
             if (mission.getConditionType() == MissionConditionType.ACTIVITY_SCORE) {
                 initialValue = 1200;
             }
