@@ -6,7 +6,7 @@ import lombok.Getter;
 @Getter
 @Builder
 public class UserTierStatusDto {
-    private String currentTier;      // BRONZE, SILVER, GOLD, PLATINUM, LEGEND
+    private String currentTier;      // BRONZE, SILVER, GOLD, MASTER, GRANDMAStER, LEGEND
     private String nextTier;         // 다음 티어 (LEGEND면 null 혹은 "MAX")
 
     private int totalScore;          // 총점

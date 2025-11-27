@@ -65,6 +65,23 @@ public class MissionService {
         log.info("수신된 거래 이벤트: MemberId={}, Method={}, Qty={}",
                 event.getMemberId(), event.getOrderMethod(), event.getFilledQuantity());
 
+        // 🛑 [신규 추가] 기본 계좌 검증 로직
+        // 1. 이벤트에 계좌 ID가 없거나, 기본 계좌가 아니면 미션 집계에서 제외
+        if (event.getAccountId() != null) {
+            boolean isDefaultAccount = accountRepository.findById(event.getAccountId())
+                    .map(Account::getIsDefault)
+                    .orElse(false); // 계좌가 없으면 false 취급
+
+            if (!isDefaultAccount) {
+                log.info("⚠️ 보조 계좌 거래 감지: 미션 및 랭킹 집계에서 제외합니다. (AccountId={})", event.getAccountId());
+                return; // 여기서 메서드 종료!
+            }
+        } else {
+            // (선택 사항) AccountId가 null인 옛날 코드 호환성을 위해 경고만 찍고 진행할지, 막을지 결정
+            // 여기서는 안전하게 로그 찍고 진행 (혹은 return으로 막으셔도 됨)
+            log.warn("⚠️ 거래 이벤트에 AccountId가 없습니다. 기본 계좌 여부를 확인할 수 없습니다.");
+        }
+
         Member member = memberRepository.findById(event.getMemberId())
                 .orElseThrow(() -> new EntityNotFoundException("회원을 찾을 수 없습니다."));
 
@@ -697,7 +714,7 @@ public class MissionService {
         BigDecimal totalAsset = account.getCash().add(totalStockAsset);
 
         // 4. 5만원 미만인지 확인
-        if (totalAsset.compareTo(BigDecimal.valueOf(50000)) >= 0) {
+        if (totalAsset.compareTo(BigDecimal.valueOf(1000000)) >= 0) {
             throw new IllegalStateException("아직 파산할 정도로 돈이 없지 않습니다. (자산: " + totalAsset + "원)");
         }
 
@@ -710,7 +727,7 @@ public class MissionService {
             throw new IllegalStateException("이미 구조 지원금을 받으셨습니다.");
         }
 
-        bankruptcyProgress.setCurrentValue(50000); // 조건 충족 표시
+        bankruptcyProgress.setCurrentValue(10000000); // 조건 충족 표시
         bankruptcyProgress.complete();
         distributeReward(member, bankruptcyProgress.getMission().getReward());
 
@@ -734,7 +751,7 @@ public class MissionService {
      */
     private int calculateScoreFromProfit(int totalProfit) {
         if (totalProfit <= 0) return 0;
-        return (int) Math.sqrt(totalProfit);
+        return (int) Math.sqrt(totalProfit / 10.0);
     }
 
     private void distributeReward(Member member, Reward reward) {
