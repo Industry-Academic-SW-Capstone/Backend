@@ -10,12 +10,14 @@
     kubectl create secret generic stockit-secrets \
       --from-literal=JWT_SECRET=<랜덤-값> \
       --from-literal=KIS_API_APPKEY=<한국투자증권-앱키> \
-      --from-literal=KIS_API_APPSECRET=<한국투자증권-앱시크릿>
+      --from-literal=KIS_API_APPSECRET=<한국투자증권-앱시크릿> \
+      --from-literal=KAKAO_CLIENT_SECRET=<카카오-클라이언트-시크릿>
     ```
   - 각 값 설명:
     - `JWT_SECRET`: 충분히 긴 난수/문자열 (JWT 토큰 서명용)
     - `KIS_API_APPKEY`: 한국투자증권 Open API 앱키
     - `KIS_API_APPSECRET`: 한국투자증권 Open API 앱시크릿
+    - `KAKAO_CLIENT_SECRET`: 카카오 OAuth 클라이언트 시크릿
   - 절대 버전 관리 저장소에 커밋하지 마세요.
   - 시크릿 이름 `stockit-secrets`는 애플리케이션 배포 시 그대로 사용됩니다.
 

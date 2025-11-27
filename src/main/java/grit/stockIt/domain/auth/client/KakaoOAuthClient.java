@@ -32,6 +32,7 @@ public class KakaoOAuthClient {
             body += "&state=" + state;
         }
 
+        // client_secret이 있으면 추가
         if (kakaoProperties.getClientSecret() != null && !kakaoProperties.getClientSecret().isEmpty()) {
             body += "&client_secret=" + kakaoProperties.getClientSecret();
         }
