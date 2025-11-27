@@ -32,10 +32,17 @@ public class KakaoAuthController {
             @RequestParam String code,
             @RequestParam(name = "redirect_uri") String redirectUri,
             @RequestParam(required = false) String state) {
+        log.info("카카오 로그인 콜백 요청 수신: code={}, redirectUri={}, state={}", code, redirectUri, state);
         return kakaoAuthService.login(code, redirectUri, state)
-                .thenApply(ResponseEntity::ok)
+                .thenApply(response -> {
+                    log.info("카카오 로그인 성공");
+                    return ResponseEntity.ok(response);
+                })
                 .exceptionally(ex -> {
-                    log.error("카카오 로그인 처리 중 예외 발생: {}", ex.toString(), ex);
+                    log.error("카카오 로그인 처리 중 예외 발생: {}", ex.getMessage(), ex);
+                    if (ex.getCause() != null) {
+                        log.error("원인: {}", ex.getCause().getMessage(), ex.getCause());
+                    }
                     return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
                 });
     }

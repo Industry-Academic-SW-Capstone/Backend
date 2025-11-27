@@ -97,6 +97,24 @@ spec:
                   name: stockit-secrets
                   {{- end }}
                   key: KAKAO_CLIENT_SECRET
+            - name: KAKAO_REST_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  {{- with (lookup "v1" "Secret" "default" "stockit-secrets") }}
+                  name: {{ .metadata.name }}
+                  {{- else }}
+                  name: stockit-secrets
+                  {{- end }}
+                  key: KAKAO_REST_API_KEY
+            - name: KAKAO_REDIRECT_URI
+              valueFrom:
+                secretKeyRef:
+                  {{- with (lookup "v1" "Secret" "default" "stockit-secrets") }}
+                  name: {{ .metadata.name }}
+                  {{- else }}
+                  name: stockit-secrets
+                  {{- end }}
+                  key: KAKAO_REDIRECT_URI
 
             # Spring Profile 설정 (values.yaml의 global.springProfile 참조)
             - name: SPRING_PROFILES_ACTIVE
