@@ -21,6 +21,13 @@ spring:
       hibernate:
         default_batch_fetch_size: 100
 
+  # Flyway 설정 (FlywayConfig에서 수동 초기화하므로 자동 실행 비활성화)
+  flyway:
+    enabled: false
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+    init-sqls: []
+
 management:
   endpoints:
     web:
