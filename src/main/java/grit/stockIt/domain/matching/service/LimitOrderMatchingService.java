@@ -177,28 +177,30 @@ public class LimitOrderMatchingService {
                 continue;
             }
 
+            // 계좌를 한 번만 조회하고 락을 겁니다 (동일 주문 내 중복 락 획득 방지)
+            Account account = accountRepository.findByIdWithLock(order.getAccount().getAccountId())
+                    .orElseThrow(() -> new IllegalStateException("계좌를 찾을 수 없습니다. accountId=" + order.getAccount().getAccountId()));
+
             int desiredFillQuantity = command.fillQuantity();
-            int actualFillQuantity = desiredFillQuantity;
             BigDecimal fillPrice = event.price();
 
             if (order.getOrderMethod() == OrderMethod.BUY) {
-                int affordableQuantity = calculateAffordableQuantity(order, fillPrice, desiredFillQuantity);
+                int affordableQuantity = calculateAffordableQuantity(account, fillPrice, desiredFillQuantity);
                 if (affordableQuantity <= 0) {
                     log.warn("계좌 현금 부족으로 주문을 취소합니다. orderId={} accountId={} requiredUnitPrice={} cash={}",
-                            orderId, order.getAccount().getAccountId(), fillPrice, order.getAccount().getCash());
-                    cancelDueToInsufficientFunds(order, stockCode);
+                            orderId, order.getAccount().getAccountId(), fillPrice, account.getCash());
+                    cancelDueToInsufficientFunds(order, stockCode, account);
                     updatedOrders.add(order);
                     cancelledQuantity += desiredFillQuantity;
                     continue;
                 }
-                actualFillQuantity = affordableQuantity;
             }
 
             // 매도(SELL)라면 로직 실행 전에 현재 평단가를 미리 조회해서 임시 저장
             BigDecimal currentAvgPrice = BigDecimal.ZERO;
             if (order.getOrderMethod() == OrderMethod.SELL) {
                 currentAvgPrice = accountStockRepository
-                        .findByAccountAndStock(order.getAccount(), order.getStock())
+                        .findByAccountAndStock(account, order.getStock())
                         .map(AccountStock::getAveragePrice)
                         .orElse(BigDecimal.ZERO);
             }
@@ -211,12 +213,12 @@ public class LimitOrderMatchingService {
                 publishExecutionFilledEvent(execution, order, stockCode);
 
                 // 계좌/재고 반영 (여기서 전량 매도 시 AccountStock의 평단가가 0이 될 수 있음)
-                handleAccountOnFill(order, event.price(), command.fillQuantity());
+                handleAccountOnFill(order, event.price(), command.fillQuantity(), account);
 
                 updatedOrders.add(order);
 
                 if (order.getRemainingQuantity() <= 0) {
-                    finalizeFilledOrder(order);
+                    finalizeFilledOrder(order, account);
 
                     try {
                         TradeCompletionEvent missionEvent = new TradeCompletionEvent(
@@ -278,11 +280,7 @@ public class LimitOrderMatchingService {
     }
 
     // 주문 체결 처리
-    private void handleAccountOnFill(Order order, BigDecimal price, int fillQuantity) {
-        // 비관적 락으로 계좌 조회 (동시성 문제 방지)
-        Account account = accountRepository.findByIdWithLock(order.getAccount().getAccountId())
-                .orElseThrow(() -> new IllegalStateException("계좌를 찾을 수 없습니다. accountId=" + order.getAccount().getAccountId()));
-        
+    private void handleAccountOnFill(Order order, BigDecimal price, int fillQuantity, Account account) {
         BigDecimal fillAmount = price.multiply(BigDecimal.valueOf(fillQuantity));
 
         if (order.getOrderMethod() == OrderMethod.BUY) {
@@ -317,14 +315,10 @@ public class LimitOrderMatchingService {
         }
     }
 
-    private int calculateAffordableQuantity(Order order, BigDecimal price, int desiredQuantity) {
+    private int calculateAffordableQuantity(Account account, BigDecimal price, int desiredQuantity) {
         if (price == null || price.signum() <= 0) {
             return 0;
         }
-        // 비관적 락으로 계좌 조회 (정확한 잔고 확인)
-        Account account = accountRepository.findByIdWithLock(order.getAccount().getAccountId())
-                .orElseThrow(() -> new IllegalStateException("계좌를 찾을 수 없습니다. accountId=" + order.getAccount().getAccountId()));
-        
         BigDecimal cash = account.getCash();
         if (cash.compareTo(price) < 0) {
             return 0;
@@ -337,16 +331,12 @@ public class LimitOrderMatchingService {
         return Math.min(affordable, desiredQuantity);
     }
 
-    private void cancelDueToInsufficientFunds(Order order, String stockCode) {
+    private void cancelDueToInsufficientFunds(Order order, String stockCode, Account account) {
         order.markCancelled();
         redisOrderBookRepository.removeOrder(order.getOrderId(), stockCode, order.getOrderMethod());
         orderSubscriptionCoordinator.unregisterLimitOrder(stockCode);
         orderHoldRepository.findById(order.getOrderId())
                 .ifPresent(hold -> {
-                    // 비관적 락으로 계좌 조회 (홀딩 금액 해제 시 동시성 문제 방지)
-                    Account account = accountRepository.findByIdWithLock(order.getAccount().getAccountId())
-                            .orElseThrow(() -> new IllegalStateException("계좌를 찾을 수 없습니다. accountId=" + order.getAccount().getAccountId()));
-                    
                     BigDecimal remaining = hold.getHoldAmount();
                     if (remaining.signum() > 0) {
                         account.decreaseHoldAmount(remaining);
@@ -378,14 +368,10 @@ public class LimitOrderMatchingService {
     }
 
     // 주문 체결 완료 후 주문 해제 처리
-    private void finalizeFilledOrder(Order order) {
+    private void finalizeFilledOrder(Order order, Account account) {
         orderSubscriptionCoordinator.unregisterLimitOrder(order.getStock().getCode());
         orderHoldRepository.findById(order.getOrderId())
                 .ifPresent(hold -> {
-                    // 비관적 락으로 계좌 조회 (홀딩 금액 해제 시 동시성 문제 방지)
-                    Account account = accountRepository.findByIdWithLock(order.getAccount().getAccountId())
-                            .orElseThrow(() -> new IllegalStateException("계좌를 찾을 수 없습니다. accountId=" + order.getAccount().getAccountId()));
-                    
                     BigDecimal remaining = hold.getHoldAmount();
                     if (remaining.signum() > 0) {
                         account.decreaseHoldAmount(remaining);
