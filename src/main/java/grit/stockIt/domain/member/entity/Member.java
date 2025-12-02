@@ -106,6 +106,11 @@ public class Member extends BaseEntity {
     @Builder.Default
     private boolean stockDetailTutorialCompleted = false;
 
+    // 설문조사 완료 여부
+    @Column(name = "survey_completed", nullable = false)
+    @Builder.Default
+    private boolean surveyCompleted = false;
+
     /**
      * [신규] 사용자가 선택한 대표 칭호 (없을 수도 있음 -> nullable)
      * 여러 멤버가 동일한 Title을 대표 칭호로 설정할 수 있으므로 ManyToOne
@@ -193,6 +198,14 @@ public class Member extends BaseEntity {
 
     public boolean isStockDetailTutorialCompleted() {
         return stockDetailTutorialCompleted;
+    }
+
+    public void setSurveyCompleted(boolean completed) {
+        this.surveyCompleted = completed;
+    }
+
+    public boolean isSurveyCompleted() {
+        return surveyCompleted;
     }
 
     /**
