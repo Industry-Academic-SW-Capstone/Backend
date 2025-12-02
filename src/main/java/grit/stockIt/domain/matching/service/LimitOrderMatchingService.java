@@ -182,6 +182,7 @@ public class LimitOrderMatchingService {
                     .orElseThrow(() -> new IllegalStateException("계좌를 찾을 수 없습니다. accountId=" + order.getAccount().getAccountId()));
 
             int desiredFillQuantity = command.fillQuantity();
+            int actualFillQuantity = desiredFillQuantity;
             BigDecimal fillPrice = event.price();
 
             if (order.getOrderMethod() == OrderMethod.BUY) {
@@ -194,6 +195,12 @@ public class LimitOrderMatchingService {
                     cancelledQuantity += desiredFillQuantity;
                     continue;
                 }
+                actualFillQuantity = affordableQuantity;
+                
+                // 미체결 수량 처리
+                if (actualFillQuantity < desiredFillQuantity) {
+                    cancelledQuantity += (desiredFillQuantity - actualFillQuantity);
+                }
             }
 
             // 매도(SELL)라면 로직 실행 전에 현재 평단가를 미리 조회해서 임시 저장
@@ -205,15 +212,15 @@ public class LimitOrderMatchingService {
                         .orElse(BigDecimal.ZERO);
             }
             try {
-                order.applyFill(command.fillQuantity());
-                Execution execution = executionService.record(order, event.price(), command.fillQuantity());
+                order.applyFill(actualFillQuantity);
+                Execution execution = executionService.record(order, event.price(), actualFillQuantity);
                 executions.add(execution);
 
                 // 체결 완료 알림 이벤트 발행
                 publishExecutionFilledEvent(execution, order, stockCode);
 
                 // 계좌/재고 반영 (여기서 전량 매도 시 AccountStock의 평단가가 0이 될 수 있음)
-                handleAccountOnFill(order, event.price(), command.fillQuantity(), account);
+                handleAccountOnFill(order, event.price(), actualFillQuantity, account);
 
                 updatedOrders.add(order);
 
@@ -241,7 +248,7 @@ public class LimitOrderMatchingService {
                     }
                 }
             } catch (IllegalArgumentException ex) {
-                log.error("주문 체결 처리 중 오류 발생. orderId={} fillQuantity={}", orderId, command.fillQuantity(), ex);
+                log.error("주문 체결 처리 중 오류 발생. orderId={} fillQuantity={}", orderId, actualFillQuantity, ex);
                 redisOrderBookRepository.removeOrder(orderId, stockCode, order.getOrderMethod());
                 orderSubscriptionCoordinator.unregisterLimitOrder(order.getStock().getCode());
             }
@@ -290,12 +297,10 @@ public class LimitOrderMatchingService {
                             hold -> {
                                 account.decreaseHoldAmount(fillAmount);
                                 hold.decreaseHoldAmount(fillAmount);
-                                orderHoldRepository.save(hold);
                             },
                             () -> log.warn("OrderHold를 찾을 수 없습니다. orderId={}", order.getOrderId())
                     );
             updateAccountStockOnBuy(account, order.getStock(), fillQuantity, price);
-            accountRepository.save(account);
             return;
         }
 
@@ -306,12 +311,10 @@ public class LimitOrderMatchingService {
                             accountStock -> {
                                 accountStock.decreaseHoldQuantity(fillQuantity);
                                 accountStock.decreaseQuantity(fillQuantity);
-                                accountStockRepository.save(accountStock);
                             },
                             () -> log.warn("AccountStock을 찾을 수 없습니다. orderId={} accountId={} stockCode={}",
                                     order.getOrderId(), account.getAccountId(), order.getStock().getCode())
                     );
-            accountRepository.save(account);
         }
     }
 
@@ -340,10 +343,8 @@ public class LimitOrderMatchingService {
                     BigDecimal remaining = hold.getHoldAmount();
                     if (remaining.signum() > 0) {
                         account.decreaseHoldAmount(remaining);
-                        accountRepository.save(account);
                     }
                     hold.release();
-                    orderHoldRepository.save(hold);
                 });
     }
 
@@ -375,10 +376,8 @@ public class LimitOrderMatchingService {
                     BigDecimal remaining = hold.getHoldAmount();
                     if (remaining.signum() > 0) {
                         account.decreaseHoldAmount(remaining);
-                        accountRepository.save(account);
                     }
                     hold.release();
-                    orderHoldRepository.save(hold);
                 });
     }
 
@@ -387,7 +386,6 @@ public class LimitOrderMatchingService {
                 .ifPresentOrElse(
                         accountStock -> {
                             accountStock.increaseQuantity(fillQuantity, price);
-                            accountStockRepository.save(accountStock);
                         },
                         () -> accountStockRepository.save(
                                 AccountStock.create(account, stock, fillQuantity, price)
