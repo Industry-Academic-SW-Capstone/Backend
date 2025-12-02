@@ -210,4 +210,22 @@ public class MemberController {
         memberService.updateRepresentativeTitle(userDetails.getUsername(), request.getTitleId());
         return ResponseEntity.ok("대표 칭호가 변경되었습니다.");
     }
+
+    // 설문조사 완료 여부 조회
+    @GetMapping("/survey")
+    @Operation(summary = "설문조사 완료 여부 조회", description = "현재 로그인한 사용자의 설문조사 완료 여부를 반환합니다.")
+    public ResponseEntity<java.util.Map<String, Boolean>> getSurveyCompleted(
+            @AuthenticationPrincipal UserDetails userDetails) {
+        boolean completed = memberService.getSurveyCompleted(userDetails.getUsername());
+        return ResponseEntity.ok(java.util.Collections.singletonMap("survey_completed", completed));
+    }
+
+    // 설문조사 완료 처리
+    @PatchMapping("/survey")
+    @Operation(summary = "설문조사 완료 처리", description = "설문조사를 완료한 것으로 표시합니다.")
+    public ResponseEntity<String> completeSurvey(
+            @AuthenticationPrincipal UserDetails userDetails) {
+        memberService.completeSurvey(userDetails.getUsername());
+        return ResponseEntity.ok("설문조사가 완료 처리되었습니다.");
+    }
 }
