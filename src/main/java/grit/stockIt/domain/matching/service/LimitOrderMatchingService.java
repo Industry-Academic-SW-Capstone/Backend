@@ -1,7 +1,9 @@
 package grit.stockIt.domain.matching.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import grit.stockIt.domain.account.entity.Account;
 import grit.stockIt.domain.account.entity.AccountStock;
+import grit.stockIt.domain.account.repository.AccountRepository;
 import grit.stockIt.domain.account.repository.AccountStockRepository;
 import grit.stockIt.domain.execution.entity.Execution;
 import grit.stockIt.domain.execution.service.ExecutionService;
@@ -13,6 +15,7 @@ import grit.stockIt.domain.order.entity.OrderMethod;
 import grit.stockIt.domain.order.entity.OrderStatus;
 import grit.stockIt.domain.order.repository.OrderRepository;
 import grit.stockIt.domain.order.repository.OrderHoldRepository;
+import grit.stockIt.domain.stock.entity.Stock;
 import grit.stockIt.domain.notification.event.ExecutionFilledEvent;
 import grit.stockIt.global.websocket.manager.OrderSubscriptionCoordinator;
 import lombok.RequiredArgsConstructor;
@@ -63,6 +66,7 @@ public class LimitOrderMatchingService {
     private final RedisOrderBookRepository redisOrderBookRepository;
     private final OrderSubscriptionCoordinator orderSubscriptionCoordinator;
     private final OrderHoldRepository orderHoldRepository;
+    private final AccountRepository accountRepository;
     private final AccountStockRepository accountStockRepository;
     private final ApplicationEventPublisher eventPublisher;
 
@@ -275,26 +279,31 @@ public class LimitOrderMatchingService {
 
     // 주문 체결 처리
     private void handleAccountOnFill(Order order, BigDecimal price, int fillQuantity) {
+        // 비관적 락으로 계좌 조회 (동시성 문제 방지)
+        Account account = accountRepository.findByIdWithLock(order.getAccount().getAccountId())
+                .orElseThrow(() -> new IllegalStateException("계좌를 찾을 수 없습니다. accountId=" + order.getAccount().getAccountId()));
+        
         BigDecimal fillAmount = price.multiply(BigDecimal.valueOf(fillQuantity));
 
         if (order.getOrderMethod() == OrderMethod.BUY) {
-            order.getAccount().decreaseCash(fillAmount);
+            account.decreaseCash(fillAmount);
             orderHoldRepository.findById(order.getOrderId())
                     .ifPresentOrElse(
                             hold -> {
-                                order.getAccount().decreaseHoldAmount(fillAmount);
+                                account.decreaseHoldAmount(fillAmount);
                                 hold.decreaseHoldAmount(fillAmount);
                                 orderHoldRepository.save(hold);
                             },
                             () -> log.warn("OrderHold를 찾을 수 없습니다. orderId={}", order.getOrderId())
                     );
-            updateAccountStockOnBuy(order, fillQuantity, price);
+            updateAccountStockOnBuy(account, order.getStock(), fillQuantity, price);
+            accountRepository.save(account);
             return;
         }
 
         if (order.getOrderMethod() == OrderMethod.SELL) {
-            order.getAccount().increaseCash(fillAmount);
-            accountStockRepository.findByAccountAndStock(order.getAccount(), order.getStock())
+            account.increaseCash(fillAmount);
+            accountStockRepository.findByAccountAndStock(account, order.getStock())
                     .ifPresentOrElse(
                             accountStock -> {
                                 accountStock.decreaseHoldQuantity(fillQuantity);
@@ -302,8 +311,9 @@ public class LimitOrderMatchingService {
                                 accountStockRepository.save(accountStock);
                             },
                             () -> log.warn("AccountStock을 찾을 수 없습니다. orderId={} accountId={} stockCode={}",
-                                    order.getOrderId(), order.getAccount().getAccountId(), order.getStock().getCode())
+                                    order.getOrderId(), account.getAccountId(), order.getStock().getCode())
                     );
+            accountRepository.save(account);
         }
     }
 
@@ -311,7 +321,11 @@ public class LimitOrderMatchingService {
         if (price == null || price.signum() <= 0) {
             return 0;
         }
-        BigDecimal cash = order.getAccount().getCash();
+        // 비관적 락으로 계좌 조회 (정확한 잔고 확인)
+        Account account = accountRepository.findByIdWithLock(order.getAccount().getAccountId())
+                .orElseThrow(() -> new IllegalStateException("계좌를 찾을 수 없습니다. accountId=" + order.getAccount().getAccountId()));
+        
+        BigDecimal cash = account.getCash();
         if (cash.compareTo(price) < 0) {
             return 0;
         }
@@ -329,9 +343,14 @@ public class LimitOrderMatchingService {
         orderSubscriptionCoordinator.unregisterLimitOrder(stockCode);
         orderHoldRepository.findById(order.getOrderId())
                 .ifPresent(hold -> {
+                    // 비관적 락으로 계좌 조회 (홀딩 금액 해제 시 동시성 문제 방지)
+                    Account account = accountRepository.findByIdWithLock(order.getAccount().getAccountId())
+                            .orElseThrow(() -> new IllegalStateException("계좌를 찾을 수 없습니다. accountId=" + order.getAccount().getAccountId()));
+                    
                     BigDecimal remaining = hold.getHoldAmount();
                     if (remaining.signum() > 0) {
-                        order.getAccount().decreaseHoldAmount(remaining);
+                        account.decreaseHoldAmount(remaining);
+                        accountRepository.save(account);
                     }
                     hold.release();
                     orderHoldRepository.save(hold);
@@ -363,24 +382,29 @@ public class LimitOrderMatchingService {
         orderSubscriptionCoordinator.unregisterLimitOrder(order.getStock().getCode());
         orderHoldRepository.findById(order.getOrderId())
                 .ifPresent(hold -> {
+                    // 비관적 락으로 계좌 조회 (홀딩 금액 해제 시 동시성 문제 방지)
+                    Account account = accountRepository.findByIdWithLock(order.getAccount().getAccountId())
+                            .orElseThrow(() -> new IllegalStateException("계좌를 찾을 수 없습니다. accountId=" + order.getAccount().getAccountId()));
+                    
                     BigDecimal remaining = hold.getHoldAmount();
                     if (remaining.signum() > 0) {
-                        order.getAccount().decreaseHoldAmount(remaining);
+                        account.decreaseHoldAmount(remaining);
+                        accountRepository.save(account);
                     }
                     hold.release();
                     orderHoldRepository.save(hold);
                 });
     }
 
-    private void updateAccountStockOnBuy(Order order, int fillQuantity, BigDecimal price) {
-        accountStockRepository.findByAccountAndStock(order.getAccount(), order.getStock())
+    private void updateAccountStockOnBuy(Account account, Stock stock, int fillQuantity, BigDecimal price) {
+        accountStockRepository.findByAccountAndStock(account, stock)
                 .ifPresentOrElse(
                         accountStock -> {
                             accountStock.increaseQuantity(fillQuantity, price);
                             accountStockRepository.save(accountStock);
                         },
                         () -> accountStockRepository.save(
-                                AccountStock.create(order.getAccount(), order.getStock(), fillQuantity, price)
+                                AccountStock.create(account, stock, fillQuantity, price)
                         )
                 );
     }
