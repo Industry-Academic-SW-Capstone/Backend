@@ -1,7 +1,9 @@
 package grit.stockIt.domain.matching.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import grit.stockIt.domain.account.entity.Account;
 import grit.stockIt.domain.account.entity.AccountStock;
+import grit.stockIt.domain.account.repository.AccountRepository;
 import grit.stockIt.domain.account.repository.AccountStockRepository;
 import grit.stockIt.domain.execution.entity.Execution;
 import grit.stockIt.domain.execution.service.ExecutionService;
@@ -13,6 +15,7 @@ import grit.stockIt.domain.order.entity.OrderMethod;
 import grit.stockIt.domain.order.entity.OrderStatus;
 import grit.stockIt.domain.order.repository.OrderRepository;
 import grit.stockIt.domain.order.repository.OrderHoldRepository;
+import grit.stockIt.domain.stock.entity.Stock;
 import grit.stockIt.domain.notification.event.ExecutionFilledEvent;
 import grit.stockIt.global.websocket.manager.OrderSubscriptionCoordinator;
 import lombok.RequiredArgsConstructor;
@@ -63,6 +66,7 @@ public class LimitOrderMatchingService {
     private final RedisOrderBookRepository redisOrderBookRepository;
     private final OrderSubscriptionCoordinator orderSubscriptionCoordinator;
     private final OrderHoldRepository orderHoldRepository;
+    private final AccountRepository accountRepository;
     private final AccountStockRepository accountStockRepository;
     private final ApplicationEventPublisher eventPublisher;
 
@@ -173,51 +177,60 @@ public class LimitOrderMatchingService {
                 continue;
             }
 
+            // 계좌를 한 번만 조회하고 락을 겁니다 (동일 주문 내 중복 락 획득 방지)
+            Account account = accountRepository.findByIdWithLock(order.getAccount().getAccountId())
+                    .orElseThrow(() -> new IllegalStateException("계좌를 찾을 수 없습니다. accountId=" + order.getAccount().getAccountId()));
+
             int desiredFillQuantity = command.fillQuantity();
             int actualFillQuantity = desiredFillQuantity;
             BigDecimal fillPrice = event.price();
 
             if (order.getOrderMethod() == OrderMethod.BUY) {
-                int affordableQuantity = calculateAffordableQuantity(order, fillPrice, desiredFillQuantity);
+                int affordableQuantity = calculateAffordableQuantity(account, fillPrice, desiredFillQuantity);
                 if (affordableQuantity <= 0) {
                     log.warn("계좌 현금 부족으로 주문을 취소합니다. orderId={} accountId={} requiredUnitPrice={} cash={}",
-                            orderId, order.getAccount().getAccountId(), fillPrice, order.getAccount().getCash());
-                    cancelDueToInsufficientFunds(order, stockCode);
+                            orderId, account.getAccountId(), fillPrice, account.getCash());
+                    cancelDueToInsufficientFunds(order, stockCode, account);
                     updatedOrders.add(order);
                     cancelledQuantity += desiredFillQuantity;
                     continue;
                 }
                 actualFillQuantity = affordableQuantity;
+                
+                // 미체결 수량 처리
+                if (actualFillQuantity < desiredFillQuantity) {
+                    cancelledQuantity += (desiredFillQuantity - actualFillQuantity);
+                }
             }
 
             // 매도(SELL)라면 로직 실행 전에 현재 평단가를 미리 조회해서 임시 저장
             BigDecimal currentAvgPrice = BigDecimal.ZERO;
             if (order.getOrderMethod() == OrderMethod.SELL) {
                 currentAvgPrice = accountStockRepository
-                        .findByAccountAndStock(order.getAccount(), order.getStock())
+                        .findByAccountAndStock(account, order.getStock())
                         .map(AccountStock::getAveragePrice)
                         .orElse(BigDecimal.ZERO);
             }
             try {
-                order.applyFill(command.fillQuantity());
-                Execution execution = executionService.record(order, event.price(), command.fillQuantity());
+                order.applyFill(actualFillQuantity);
+                Execution execution = executionService.record(order, event.price(), actualFillQuantity);
                 executions.add(execution);
 
                 // 체결 완료 알림 이벤트 발행
-                publishExecutionFilledEvent(execution, order, stockCode);
+                publishExecutionFilledEvent(execution, order, stockCode, account);
 
                 // 계좌/재고 반영 (여기서 전량 매도 시 AccountStock의 평단가가 0이 될 수 있음)
-                handleAccountOnFill(order, event.price(), command.fillQuantity());
+                handleAccountOnFill(order, event.price(), actualFillQuantity, account);
 
                 updatedOrders.add(order);
 
                 if (order.getRemainingQuantity() <= 0) {
-                    finalizeFilledOrder(order);
+                    finalizeFilledOrder(order, account);
 
                     try {
                         TradeCompletionEvent missionEvent = new TradeCompletionEvent(
-                                order.getAccount().getMember().getMemberId(),
-                                order.getAccount().getAccountId(),
+                                account.getMember().getMemberId(),
+                                account.getAccountId(),
                                 order.getStock().getCode(),
                                 order.getOrderMethod(),
                                 order.getQuantity(),         // 총 주문 수량
@@ -235,7 +248,7 @@ public class LimitOrderMatchingService {
                     }
                 }
             } catch (IllegalArgumentException ex) {
-                log.error("주문 체결 처리 중 오류 발생. orderId={} fillQuantity={}", orderId, command.fillQuantity(), ex);
+                log.error("주문 체결 처리 중 오류 발생. orderId={} fillQuantity={}", orderId, actualFillQuantity, ex);
                 redisOrderBookRepository.removeOrder(orderId, stockCode, order.getOrderMethod());
                 orderSubscriptionCoordinator.unregisterLimitOrder(order.getStock().getCode());
             }
@@ -274,44 +287,42 @@ public class LimitOrderMatchingService {
     }
 
     // 주문 체결 처리
-    private void handleAccountOnFill(Order order, BigDecimal price, int fillQuantity) {
+    private void handleAccountOnFill(Order order, BigDecimal price, int fillQuantity, Account account) {
         BigDecimal fillAmount = price.multiply(BigDecimal.valueOf(fillQuantity));
 
         if (order.getOrderMethod() == OrderMethod.BUY) {
-            order.getAccount().decreaseCash(fillAmount);
+            account.decreaseCash(fillAmount);
             orderHoldRepository.findById(order.getOrderId())
                     .ifPresentOrElse(
                             hold -> {
-                                order.getAccount().decreaseHoldAmount(fillAmount);
+                                account.decreaseHoldAmount(fillAmount);
                                 hold.decreaseHoldAmount(fillAmount);
-                                orderHoldRepository.save(hold);
                             },
                             () -> log.warn("OrderHold를 찾을 수 없습니다. orderId={}", order.getOrderId())
                     );
-            updateAccountStockOnBuy(order, fillQuantity, price);
+            updateAccountStockOnBuy(account, order.getStock(), fillQuantity, price);
             return;
         }
 
         if (order.getOrderMethod() == OrderMethod.SELL) {
-            order.getAccount().increaseCash(fillAmount);
-            accountStockRepository.findByAccountAndStock(order.getAccount(), order.getStock())
+            account.increaseCash(fillAmount);
+            accountStockRepository.findByAccountAndStock(account, order.getStock())
                     .ifPresentOrElse(
                             accountStock -> {
                                 accountStock.decreaseHoldQuantity(fillQuantity);
                                 accountStock.decreaseQuantity(fillQuantity);
-                                accountStockRepository.save(accountStock);
                             },
                             () -> log.warn("AccountStock을 찾을 수 없습니다. orderId={} accountId={} stockCode={}",
-                                    order.getOrderId(), order.getAccount().getAccountId(), order.getStock().getCode())
+                                    order.getOrderId(), account.getAccountId(), order.getStock().getCode())
                     );
         }
     }
 
-    private int calculateAffordableQuantity(Order order, BigDecimal price, int desiredQuantity) {
+    private int calculateAffordableQuantity(Account account, BigDecimal price, int desiredQuantity) {
         if (price == null || price.signum() <= 0) {
             return 0;
         }
-        BigDecimal cash = order.getAccount().getCash();
+        BigDecimal cash = account.getCash();
         if (cash.compareTo(price) < 0) {
             return 0;
         }
@@ -323,7 +334,7 @@ public class LimitOrderMatchingService {
         return Math.min(affordable, desiredQuantity);
     }
 
-    private void cancelDueToInsufficientFunds(Order order, String stockCode) {
+    private void cancelDueToInsufficientFunds(Order order, String stockCode, Account account) {
         order.markCancelled();
         redisOrderBookRepository.removeOrder(order.getOrderId(), stockCode, order.getOrderMethod());
         orderSubscriptionCoordinator.unregisterLimitOrder(stockCode);
@@ -331,10 +342,9 @@ public class LimitOrderMatchingService {
                 .ifPresent(hold -> {
                     BigDecimal remaining = hold.getHoldAmount();
                     if (remaining.signum() > 0) {
-                        order.getAccount().decreaseHoldAmount(remaining);
+                        account.decreaseHoldAmount(remaining);
                     }
                     hold.release();
-                    orderHoldRepository.save(hold);
                 });
     }
 
@@ -359,28 +369,26 @@ public class LimitOrderMatchingService {
     }
 
     // 주문 체결 완료 후 주문 해제 처리
-    private void finalizeFilledOrder(Order order) {
+    private void finalizeFilledOrder(Order order, Account account) {
         orderSubscriptionCoordinator.unregisterLimitOrder(order.getStock().getCode());
         orderHoldRepository.findById(order.getOrderId())
                 .ifPresent(hold -> {
                     BigDecimal remaining = hold.getHoldAmount();
                     if (remaining.signum() > 0) {
-                        order.getAccount().decreaseHoldAmount(remaining);
+                        account.decreaseHoldAmount(remaining);
                     }
                     hold.release();
-                    orderHoldRepository.save(hold);
                 });
     }
 
-    private void updateAccountStockOnBuy(Order order, int fillQuantity, BigDecimal price) {
-        accountStockRepository.findByAccountAndStock(order.getAccount(), order.getStock())
+    private void updateAccountStockOnBuy(Account account, Stock stock, int fillQuantity, BigDecimal price) {
+        accountStockRepository.findByAccountAndStock(account, stock)
                 .ifPresentOrElse(
                         accountStock -> {
                             accountStock.increaseQuantity(fillQuantity, price);
-                            accountStockRepository.save(accountStock);
                         },
                         () -> accountStockRepository.save(
-                                AccountStock.create(order.getAccount(), order.getStock(), fillQuantity, price)
+                                AccountStock.create(account, stock, fillQuantity, price)
                         )
                 );
     }
@@ -424,15 +432,15 @@ public class LimitOrderMatchingService {
     }
 
     // 체결 완료 이벤트 발행
-    private void publishExecutionFilledEvent(Execution execution, Order order, String stockCode) {
+    private void publishExecutionFilledEvent(Execution execution, Order order, String stockCode, Account account) {
         try {
             ExecutionFilledEvent event = new ExecutionFilledEvent(
                     execution.getExecutionId(),
                     order.getOrderId(),
-                    order.getAccount().getAccountId(),
-                    order.getAccount().getMember().getMemberId(),  // Member ID 추가
-                    order.getAccount().getContest().getContestId(),  // Contest ID 추가
-                    order.getAccount().getContest().getContestName(),  // Contest 이름 추가
+                    account.getAccountId(),
+                    account.getMember().getMemberId(),  // Member ID 추가
+                    account.getContest().getContestId(),  // Contest ID 추가
+                    account.getContest().getContestName(),  // Contest 이름 추가
                     stockCode,
                     execution.getStock().getName(),
                     execution.getPrice(),
