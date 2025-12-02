@@ -89,8 +89,11 @@ public interface AccountRepository extends JpaRepository<Account, Long> {
     Optional<Account> findByMemberIdAndContestId(@Param("memberId") Long memberId, 
                                                  @Param("contestId") Long contestId);
 
-    // 계좌 조회 (비관적 락)
+    // 계좌 조회 (비관적 락, Member와 Contest 함께 조회하여 N+1 문제 방지)
     @Lock(LockModeType.PESSIMISTIC_WRITE)
-    @Query("SELECT a FROM Account a WHERE a.accountId = :accountId")
+    @Query("SELECT a FROM Account a " +
+           "JOIN FETCH a.member m " +
+           "JOIN FETCH a.contest c " +
+           "WHERE a.accountId = :accountId")
     Optional<Account> findByIdWithLock(@Param("accountId") Long accountId);
 }

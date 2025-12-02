@@ -189,7 +189,7 @@ public class LimitOrderMatchingService {
                 int affordableQuantity = calculateAffordableQuantity(account, fillPrice, desiredFillQuantity);
                 if (affordableQuantity <= 0) {
                     log.warn("계좌 현금 부족으로 주문을 취소합니다. orderId={} accountId={} requiredUnitPrice={} cash={}",
-                            orderId, order.getAccount().getAccountId(), fillPrice, account.getCash());
+                            orderId, account.getAccountId(), fillPrice, account.getCash());
                     cancelDueToInsufficientFunds(order, stockCode, account);
                     updatedOrders.add(order);
                     cancelledQuantity += desiredFillQuantity;
@@ -217,7 +217,7 @@ public class LimitOrderMatchingService {
                 executions.add(execution);
 
                 // 체결 완료 알림 이벤트 발행
-                publishExecutionFilledEvent(execution, order, stockCode);
+                publishExecutionFilledEvent(execution, order, stockCode, account);
 
                 // 계좌/재고 반영 (여기서 전량 매도 시 AccountStock의 평단가가 0이 될 수 있음)
                 handleAccountOnFill(order, event.price(), actualFillQuantity, account);
@@ -229,8 +229,8 @@ public class LimitOrderMatchingService {
 
                     try {
                         TradeCompletionEvent missionEvent = new TradeCompletionEvent(
-                                order.getAccount().getMember().getMemberId(),
-                                order.getAccount().getAccountId(),
+                                account.getMember().getMemberId(),
+                                account.getAccountId(),
                                 order.getStock().getCode(),
                                 order.getOrderMethod(),
                                 order.getQuantity(),         // 총 주문 수량
@@ -432,15 +432,15 @@ public class LimitOrderMatchingService {
     }
 
     // 체결 완료 이벤트 발행
-    private void publishExecutionFilledEvent(Execution execution, Order order, String stockCode) {
+    private void publishExecutionFilledEvent(Execution execution, Order order, String stockCode, Account account) {
         try {
             ExecutionFilledEvent event = new ExecutionFilledEvent(
                     execution.getExecutionId(),
                     order.getOrderId(),
-                    order.getAccount().getAccountId(),
-                    order.getAccount().getMember().getMemberId(),  // Member ID 추가
-                    order.getAccount().getContest().getContestId(),  // Contest ID 추가
-                    order.getAccount().getContest().getContestName(),  // Contest 이름 추가
+                    account.getAccountId(),
+                    account.getMember().getMemberId(),  // Member ID 추가
+                    account.getContest().getContestId(),  // Contest ID 추가
+                    account.getContest().getContestName(),  // Contest 이름 추가
                     stockCode,
                     execution.getStock().getName(),
                     execution.getPrice(),
