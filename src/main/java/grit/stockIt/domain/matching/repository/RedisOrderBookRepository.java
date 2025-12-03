@@ -8,6 +8,8 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataAccessException;
 import org.springframework.data.redis.connection.RedisConnection;
+import org.springframework.data.redis.core.Cursor;
+import org.springframework.data.redis.core.ScanOptions;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.serializer.RedisSerializer;
 import org.springframework.stereotype.Repository;
@@ -191,6 +193,68 @@ public class RedisOrderBookRepository {
             return redisTemplate.getStringSerializer().deserialize(bytes);
         }
         return value.toString();
+    }
+
+    // 주문이 Redis에 존재하는지 확인
+    public boolean exists(Long orderId, String stockCode, OrderMethod orderMethod) {
+        String queueKey = queueKey(stockCode, orderMethod);
+        Double score = redisTemplate.opsForZSet().score(queueKey, orderId.toString());
+        return score != null;
+    }
+
+    // 종목별 Redis에 있는 모든 주문 ID 조회
+    public Map<String, Set<Long>> getAllOrderIdsByStock() {
+        Map<String, Set<Long>> result = new HashMap<>();
+        
+        String pattern = "sim:order:book:*";
+        RedisSerializer<String> stringSerializer = redisTemplate.getStringSerializer(); // 직렬화기 가져오기
+        
+        redisTemplate.execute((RedisConnection connection) -> {
+            ScanOptions scanOptions = ScanOptions.scanOptions()
+                    .match(pattern)
+                    .count(100)
+                    .build();
+            
+            try (Cursor<byte[]> cursor = connection.scan(scanOptions)) {
+                while (cursor.hasNext()) {
+                    byte[] keyBytes = cursor.next();
+                    String key = stringSerializer.deserialize(keyBytes); // key 변환
+                    
+                    if (key == null) continue;
+                    
+                    String[] parts = key.split(":");
+                    if (parts.length >= 5) {
+                        String stockCode = parts[3];
+                        String methodStr = parts[4];
+                        
+                        try {
+                            OrderMethod.valueOf(methodStr);
+                            
+                            // connection을 직접 사용 (같은 연결 재사용, 더 효율적)
+                            // connection.zRange는 byte[] Set을 반환합니다.
+                            Set<byte[]> rawValues = connection.zRange(keyBytes, 0, -1);
+                            
+                            if (rawValues != null && !rawValues.isEmpty()) {
+                                Set<Long> orderIds = rawValues.stream()
+                                        .map(val -> stringSerializer.deserialize(val)) // byte[] -> String
+                                        .map(Long::valueOf) // String -> Long
+                                        .collect(java.util.stream.Collectors.toSet());
+                                
+                                result.put(stockCode + ":" + methodStr, orderIds);
+                            }
+                        } catch (IllegalArgumentException e) {
+                            log.warn("잘못된 주문 방법 키 발견: {}", key);
+                        }
+                    }
+                }
+            } catch (Exception e) {
+                log.error("Redis SCAN 실행 중 오류 발생", e);
+            }
+            
+            return null;
+        });
+        
+        return result;
     }
 }
 
