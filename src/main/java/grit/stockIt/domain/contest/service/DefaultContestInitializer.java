@@ -34,7 +34,7 @@ public class DefaultContestInitializer implements ApplicationRunner {
                 .isDefault(true)
                 .startDate(LocalDateTime.now())
                 .endDate(null)
-                .seedMoney(1_000_000L)
+                .seedMoney(10_000_000L)
                 .commissionRate(new BigDecimal("0.0000"))
                 .minMarketCap(null)
                 .maxMarketCap(null)
