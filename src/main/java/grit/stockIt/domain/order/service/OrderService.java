@@ -22,6 +22,7 @@ import grit.stockIt.domain.stock.repository.StockRepository;
 import grit.stockIt.domain.stock.service.StockDetailService;
 import grit.stockIt.global.exception.BadRequestException;
 import grit.stockIt.global.exception.ForbiddenException;
+import grit.stockIt.global.util.TransactionHandler;
 import grit.stockIt.global.websocket.manager.OrderSubscriptionCoordinator;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -57,7 +58,7 @@ public class OrderService {
     // 지정가 주문 생성
     @Transactional
     public OrderResponse createLimitOrder(LimitOrderCreateRequest request) {
-        Account account = accountRepository.findById(request.accountId())
+        Account account = accountRepository.findByIdWithLock(request.accountId())
                 .orElseThrow(() -> new BadRequestException("계좌를 찾을 수 없습니다."));
 
         ensureAccountOwner(account);
@@ -87,22 +88,25 @@ public class OrderService {
             applySellHold(order);
         }
 
-        order = orderRepository.save(order);
+        Order savedOrder = orderRepository.save(order);
         if (orderMethod == OrderMethod.BUY) {
-            OrderHold orderHold = OrderHold.create(order, account, holdAmount);
+            OrderHold orderHold = OrderHold.create(savedOrder, account, holdAmount);
             orderHoldRepository.save(orderHold);
         }
-        redisOrderBookRepository.addOrder(order);
-        orderSubscriptionCoordinator.registerLimitOrder(stock.getCode());
 
-        log.info("지정가 주문 생성 완료: orderId={} stock={} quantity={}", order.getOrderId(), stock.getCode(), order.getQuantity());
-        return OrderResponse.from(order);
+        // DB 커밋 후에만 Redis 오더북에 주문 추가 (유령 주문 방지)
+        TransactionHandler.afterCommit(() -> 
+            addOrderToRedisAfterCommit(savedOrder, stock)
+        );
+
+        log.info("지정가 주문 생성 완료: orderId={} stock={} quantity={}", savedOrder.getOrderId(), stock.getCode(), savedOrder.getQuantity());
+        return OrderResponse.from(savedOrder);
     }
 
     // 시장가 주문 생성
     @Transactional
     public OrderResponse createMarketOrder(MarketOrderCreateRequest request) {
-        Account account = accountRepository.findById(request.accountId())
+        Account account = accountRepository.findByIdWithLock(request.accountId())
                 .orElseThrow(() -> new BadRequestException("계좌를 찾을 수 없습니다."));
 
         ensureAccountOwner(account);
@@ -135,17 +139,20 @@ public class OrderService {
             account.increaseHoldAmount(holdAmount);
         }
 
-        order = orderRepository.save(order);
+        Order savedOrder = orderRepository.save(order);
 
         if (orderMethod == OrderMethod.BUY) {
-            OrderHold orderHold = OrderHold.create(order, account, holdAmount);
+            OrderHold orderHold = OrderHold.create(savedOrder, account, holdAmount);
             orderHoldRepository.save(orderHold);
         }
 
-        redisOrderBookRepository.addOrder(order);
+        // DB 커밋 후에만 Redis 오더북에 주문 추가 (유령 주문 방지)
+        TransactionHandler.afterCommit(() -> 
+            addOrderToRedisAfterCommit(savedOrder, stock)
+        );
 
-        log.info("시장가 주문 생성 완료: orderId={} stock={} quantity={}", order.getOrderId(), stock.getCode(), order.getQuantity());
-        return OrderResponse.from(order);
+        log.info("시장가 주문 생성 완료: orderId={} stock={} quantity={}", savedOrder.getOrderId(), stock.getCode(), savedOrder.getQuantity());
+        return OrderResponse.from(savedOrder);
     }
 
     // 주문 취소
@@ -302,6 +309,18 @@ public class OrderService {
                     accountStock.decreaseHoldQuantity(releaseQuantity);
                     accountStockRepository.save(accountStock);
                 });
+    }
+
+    // DB 커밋 후 Redis 오더북에 주문을 추가하는 메서드
+    private void addOrderToRedisAfterCommit(Order order, Stock stock) {
+        try {
+            redisOrderBookRepository.addOrder(order);
+            orderSubscriptionCoordinator.registerLimitOrder(stock.getCode());
+        } catch (Exception e) {
+            log.error("주문 생성 후 Redis 업데이트 실패. orderId={} stockCode={}", 
+                order.getOrderId(), stock.getCode(), e);
+            // 복구 로직은 별도 스케줄러에서 처리
+        }
     }
 
     private void ensureAccountOwner(Account account) {
