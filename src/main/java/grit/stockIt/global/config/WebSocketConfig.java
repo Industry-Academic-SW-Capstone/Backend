@@ -1,7 +1,10 @@
 package grit.stockIt.global.config;
 
+import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.messaging.simp.config.MessageBrokerRegistry;
+import org.springframework.scheduling.TaskScheduler;
+import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler;
 import org.springframework.web.socket.config.annotation.EnableWebSocketMessageBroker;
 import org.springframework.web.socket.config.annotation.StompEndpointRegistry;
 import org.springframework.web.socket.config.annotation.WebSocketMessageBrokerConfigurer;
@@ -14,11 +17,23 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
     private static final String CLIENT_PREFIX2 = "/queue";
     private static final String SERVER_PREFIX = "/app";
 
+    // Heartbeat를 위한 TaskScheduler 빈 등록
+    @Bean
+    public TaskScheduler taskScheduler() {
+        ThreadPoolTaskScheduler scheduler = new ThreadPoolTaskScheduler();
+        scheduler.setPoolSize(1);
+        scheduler.setThreadNamePrefix("websocket-heartbeat-");
+        scheduler.initialize();
+        return scheduler;
+    }
+
     @Override
     public void configureMessageBroker(MessageBrokerRegistry config) {
         // 메시지 브로커 활성화 (간단한 인메모리 브로커 사용)
         // 클라이언트가 해당 토픽을 구독하면 서버가 해당 주소로 메시지를 보냈을 때 브로커가 구독한 클라이언트들에게 메시지를 전달
-        config.enableSimpleBroker(CLIENT_PREFIX1, CLIENT_PREFIX2); // '/topic/**, /queue/**' 으로 보내는 메시지를 브로드캐스트
+        config.enableSimpleBroker(CLIENT_PREFIX1, CLIENT_PREFIX2) // '/topic/**, /queue/**' 으로 보내는 메시지를 브로드캐스트
+                .setHeartbeatValue(new long[]{6000, 6000}) // Heartbeat 설정: 서버→클라이언트, 클라이언트→서버(밀리초) - 프론트엔드와 동일하게 6초
+                .setTaskScheduler(taskScheduler()); // TaskScheduler 설정
         
         // 클라이언트가 메시지를 보낼 때의 prefix 설정, 컨트롤러의 @MessageMapping으로 전달
         config.setApplicationDestinationPrefixes(SERVER_PREFIX);
