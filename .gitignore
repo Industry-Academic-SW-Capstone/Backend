@@ -44,3 +44,7 @@ logs/
 CICD_SETUP_GUIDE.md
 
 sequence-diagrams/
+
+### Traefik ###
+traefik/users
+traefik/letsencrypt/acme.json
