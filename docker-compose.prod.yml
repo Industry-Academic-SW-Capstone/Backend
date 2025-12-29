@@ -84,9 +84,7 @@ services:
       - ./redis-scripts:/scripts # Redis 스크립트 디렉토리 마운트
 
   backend:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    image: hwnahee/stockit:main
     container_name: backend
     depends_on:
       db:
@@ -98,8 +96,23 @@ services:
     networks:
       - backend
     restart: unless-stopped
-    env_file:
-      - .env
+    environment:
+      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_URL=${POSTGRES_URL}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - SPRING_PROFILES_ACTIVE=dev
+      - KIS_API_APPKEY=${KIS_API_APPKEY}
+      - KIS_API_APPSECRET=${KIS_API_APPSECRET}
+      - KAKAO_CLIENT_SECRET=${KAKAO_CLIENT_SECRET}
+      - KAKAO_REDIRECT_URI=${KAKAO_REDIRECT_URI}
+      - KAKAO_REST_API_KEY=${KAKAO_REST_API_KEY}
+      - JWT_SECRET=${JWT_SECRET}
+      - FIREBASE_CREDENTIALS_BASE64=${FIREBASE_CREDENTIALS_BASE64}
+      - PYTHON_ANALYSIS_URL=${PYTHON_ANALYSIS_URL}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+
 
 volumes:
   postgres_data:

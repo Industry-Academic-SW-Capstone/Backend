@@ -26,19 +26,3 @@ spring:
     defer-datasource-initialization: true
   jackson:
     property-naming-strategy: SNAKE_CASE
-
-# Python 분석 서버 설정
-python:
-  analysis:
-    url: ${PYTHON_ANALYSIS_URL}
-
-# Gemini API 설정
-gemini:
-  api:
-    api-key: ${GEMINI_API_KEY}
-    model-name: ${GEMINI_API_MODEL_NAME:models/gemini-2.5-flash}
-    base-url: ${GEMINI_API_BASE_URL:https://generativelanguage.googleapis.com/v1beta}
-
-# Firebase 설정
-firebase:
-  credentials-base64: ${FIREBASE_CREDENTIALS_BASE64:}
