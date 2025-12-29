@@ -1,0 +1,91 @@
+http:
+  routers:
+    # API 라우터 (api.stockit.live)
+    spring-app-router:
+      rule: "Host(`api.stockit.live`) && PathPrefix(`/api`)"
+      entryPoints:
+        - websecure
+      service: spring-app-service
+      tls:
+        certResolver: letsencrypt
+      middlewares:
+        - security-headers
+        - rate-limit
+
+    # WebSocket 라우터 (api.stockit.live)
+    websocket-router:
+      rule: "Host(`api.stockit.live`) && PathPrefix(`/ws`)"
+      entryPoints:
+        - websecure
+      service: spring-app-service
+      tls:
+        certResolver: letsencrypt
+      middlewares:
+        - security-headers
+      # rate-limit 제외 (실시간 통신)
+
+    # www 도메인 API 라우터
+    www-api-router:
+      rule: "Host(`www.stockit.live`) && PathPrefix(`/api`)"
+      entryPoints:
+        - websecure
+      service: spring-app-service
+      tls:
+        certResolver: letsencrypt
+      middlewares:
+        - security-headers
+        - rate-limit
+
+    # www 도메인 WebSocket 라우터
+    www-websocket-router:
+      rule: "Host(`www.stockit.live`) && PathPrefix(`/ws`)"
+      entryPoints:
+        - websecure
+      service: spring-app-service
+      tls:
+        certResolver: letsencrypt
+      middlewares:
+        - security-headers
+      # rate-limit 제외 (실시간 통신)
+
+    # Traefik 대시보드
+    traefik-dashboard:
+      rule: "Host(`traefik.stockit.live`)"
+      entryPoints:
+        - websecure
+      service: api@internal
+      tls:
+        certResolver: letsencrypt
+      middlewares:
+        - traefik-auth
+
+  services:
+    spring-app-service:
+      loadBalancer:
+        servers:
+          - url: "http://backend:8080"
+        # WebSocket 업그레이드 지원
+        passHostHeader: true
+
+  middlewares:
+    # 보안 헤더 미들웨어
+    security-headers:
+      headers:
+        customRequestHeaders:
+          X-Forwarded-Proto: "https"
+        customResponseHeaders:
+          X-Content-Type-Options: "nosniff"
+          X-Frame-Options: "DENY"
+          X-XSS-Protection: "1; mode=block"
+          Strict-Transport-Security: "max-age=31536000; includeSubDomains"
+
+    # Rate Limit 미들웨어
+    rate-limit:
+      rateLimit:
+        average: 50
+        burst: 100
+
+    # Traefik 대시보드 인증 (users 파일에서 읽음)
+    traefik-auth:
+      basicAuth:
+        usersFile: "/etc/traefik/users"
