@@ -1,0 +1,13 @@
+apiVersion: networking.gke.io/v1
+kind: ManagedCertificate
+metadata:
+  name: prometheus-cert
+  namespace: monitoring
+spec:
+  domains:
+    - prometheus.stockit.live
+
+
+
+
+

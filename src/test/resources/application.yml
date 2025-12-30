@@ -1,0 +1,31 @@
+# 테스트 환경 전용 설정 파일
+spring:
+  # Redis 설정을 'localhost'로 덮어쓴다
+  data:
+    redis:
+      host: localhost
+      port: 6379
+
+  # DB(Postgres) 설정을 'localhost'로 덮어쓴다
+  datasource:
+    url: jdbc:postgresql://localhost:5432/database
+    username: sa
+    password: 1234
+    driver-class-name: org.postgresql.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: none
+    show-sql: true
+
+kis:
+  api:
+    url: "https://openapivts.koreainvestment.com:29443"
+    appkey: ${KIS_API_APPKEY:test_appkey}
+    appsecret: ${KIS_API_APPSECRET:test_appsecret}
+
+# Python 서버 설정 (테스트 환경)
+python:
+  analysis:
+    url: ${PYTHON_ANALYSIS_URL:http://localhost:8000}
+    # 또는 배포 서버 고정: http://34.64.175.176

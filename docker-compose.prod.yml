@@ -1,0 +1,84 @@
+services:
+  traefik:
+    image: traefik:v3.0
+    container_name: traefik
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+      - "8088:8088"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./traefik/traefik.yml:/etc/traefik/traefik.yml:ro
+      - ./traefik/dynamic_conf.yml:/etc/traefik/dynamic_conf.yml:ro
+      - ./traefik/letsencrypt:/etc/traefik/letsencrypt
+      - ./traefik/users:/etc/traefik/users:ro
+    networks:
+      - backend
+  redis:
+    image: redis:7
+    container_name: redis
+    restart: always
+    ports:
+      - "6379:6379"
+    command:
+      [
+        "redis-server",
+        "--slowlog-log-slower-than",
+        "1000",
+        "--slowlog-max-len",
+        "256",
+        "--logfile",
+        "/var/log/redis/redis-server.log",
+      ]
+    volumes:
+      - redis_data:/data
+      - ./logs/redis:/var/log/redis # 로그 마운트
+    networks:
+      - backend
+
+  redis-cli:
+    image: redis:7
+    container_name: redis-cli
+    depends_on:
+      - redis
+    networks:
+      - backend
+    command: [ "tail", "-f", "/dev/null" ] # 컨테이너를 계속 실행 상태로 유지
+    volumes:
+      - ./redis-scripts:/scripts # Redis 스크립트 디렉토리 마운트
+
+  backend:
+    image: hwnahee/stockit:main
+    container_name: backend
+    depends_on:
+      redis:
+        condition: service_started
+    ports:
+      - "8080:8080"
+    networks:
+      - backend
+    restart: unless-stopped
+    environment:
+      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_URL=${POSTGRES_URL}
+      - SPRING_PROFILES_ACTIVE=dev
+      - KIS_API_APPKEY=${KIS_API_APPKEY}
+      - KIS_API_APPSECRET=${KIS_API_APPSECRET}
+      - KAKAO_CLIENT_SECRET=${KAKAO_CLIENT_SECRET}
+      - KAKAO_REDIRECT_URI=${KAKAO_REDIRECT_URI}
+      - KAKAO_REST_API_KEY=${KAKAO_REST_API_KEY}
+      - JWT_SECRET=${JWT_SECRET}
+      - FIREBASE_CREDENTIALS_BASE64=${FIREBASE_CREDENTIALS_BASE64}
+      - PYTHON_ANALYSIS_URL=${PYTHON_ANALYSIS_URL}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+
+
+volumes:
+  redis_data:
+
+networks:
+  backend:
+    name: backend

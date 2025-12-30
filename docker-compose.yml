@@ -1,0 +1,110 @@
+services:
+  traefik:
+    image: traefik:v3.0
+    container_name: traefik
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+      - "8088:8088"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./traefik/traefik.yml:/etc/traefik/traefik.yml:ro
+      - ./traefik/dynamic_conf.yml:/etc/traefik/dynamic_conf.yml:ro
+      - ./traefik/letsencrypt:/etc/traefik/letsencrypt
+      - ./traefik/users:/etc/traefik/users:ro
+    networks:
+      - backend
+  db:
+    image: postgres:15
+    container_name: postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: database
+      POSTGRES_USER: sa
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      TZ: Asia/Seoul
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - backend
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U sa -d database" ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    command:
+      - postgres
+      - "-c"
+      - "logging_collector=on"
+      - "-c"
+      - "log_directory=/var/log/postgresql"
+      - "-c"
+      - "log_filename=postgresql.log"
+      - "-c"
+      - "log_statement=all"
+      - "-c"
+      - "log_min_duration_statement=1000"
+      - "-c"
+      - "log_connections=on"
+      - "-c"
+      - "log_disconnections=on"
+  redis:
+    image: redis:7
+    container_name: redis
+    restart: always
+    ports:
+      - "6379:6379"
+    command:
+      [
+        "redis-server",
+        "--slowlog-log-slower-than",
+        "1000",
+        "--slowlog-max-len",
+        "256",
+        "--logfile",
+        "/var/log/redis/redis-server.log",
+      ]
+    volumes:
+      - redis_data:/data
+      - ./logs/redis:/var/log/redis # 로그 마운트
+    networks:
+      - backend
+
+  redis-cli:
+    image: redis:7
+    container_name: redis-cli
+    depends_on:
+      - redis
+    networks:
+      - backend
+    command: [ "tail", "-f", "/dev/null" ] # 컨테이너를 계속 실행 상태로 유지
+    volumes:
+      - ./redis-scripts:/scripts # Redis 스크립트 디렉토리 마운트
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: backend
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    ports:
+      - "8080:8080"
+    networks:
+      - backend
+    restart: unless-stopped
+    env_file:
+      - .env
+
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  backend:
+    name: backend

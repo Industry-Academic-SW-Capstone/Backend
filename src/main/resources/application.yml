@@ -1,0 +1,91 @@
+spring:
+  application:
+    name: stockIt
+  profiles:
+    active: ${SPRING_PROFILES_ACTIVE:local}
+  data:
+    redis:
+      host: ${SPRING_REDIS_HOST:redis}
+      port: ${SPRING_REDIS_PORT:6379}
+  jackson:
+    property-naming-strategy: SNAKE_CASE
+    time-zone: Asia/Seoul
+    serialization:
+      write-dates-as-timestamps: false
+      write-dates-with-zone-id: false
+    deserialization:
+      fail-on-unknown-properties: false
+    default-property-inclusion: non_null
+  jpa:
+    properties:
+      hibernate:
+        default_batch_fetch_size: 100
+
+  # Flyway 설정 (FlywayConfig에서 수동 초기화하므로 자동 실행 비활성화)
+  flyway:
+    enabled: false
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+    init-sqls: []
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics,env,configprops
+      base-path: /actuator
+  endpoint:
+    prometheus:
+      enabled: true
+    health:
+      show-details: always
+  metrics:
+    export:
+      prometheus:
+        enabled: true
+    tags:
+      application: ${spring.application.name}
+      environment: ${spring.profiles.active:default}
+    distribution:
+      percentiles-histogram:
+        http.server.requests: true
+        jvm.memory.used: true
+        process.cpu.usage: true
+      percentiles:
+        http.server.requests: 0.5,0.95,0.99
+        jvm.memory.used: 0.5,0.95,0.99
+        process.cpu.usage: 0.5,0.95,0.99
+
+# KIS API 설정
+kis:
+  api:
+    url: "https://openapi.koreainvestment.com:9443"
+    appkey: ${KIS_API_APPKEY}
+    appsecret: ${KIS_API_APPSECRET}
+  api-app-key: ${KIS_API_APPKEY:}
+
+# Python 분석 서버 설정
+python:
+  analysis:
+    url: ${PYTHON_ANALYSIS_URL}
+
+# Gemini API 설정
+gemini:
+  api:
+    api-key: ${GEMINI_API_KEY}
+    model-name: ${GEMINI_API_MODEL_NAME:models/gemini-2.5-flash}
+    base-url: ${GEMINI_API_BASE_URL:https://generativelanguage.googleapis.com/v1beta}
+
+kakao:
+  rest-api-key: ${KAKAO_REST_API_KEY:}
+  client-secret: ${KAKAO_CLIENT_SECRET:}
+  redirect-uri: ${KAKAO_REDIRECT_URI:http://localhost:8080/api/auth/kakao/callback}
+  admin-key: ${KAKAO_ADMIN_KEY:}
+
+# Firebase 설정
+firebase:
+  credentials-base64: ${FIREBASE_CREDENTIALS_BASE64:}
+
+jwt:
+  secret: ${JWT_SECRET:mySecretKey123456789012345678901234567890}
+  expiration: ${JWT_EXPIRATION:86400000}

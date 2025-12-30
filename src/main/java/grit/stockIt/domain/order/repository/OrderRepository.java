@@ -1,0 +1,85 @@
+package grit.stockIt.domain.order.repository;
+
+import grit.stockIt.domain.order.entity.Order;
+import grit.stockIt.domain.order.entity.OrderStatus;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
+
+import java.time.LocalDateTime;
+import java.util.List;
+import java.util.Optional;
+
+public interface OrderRepository extends JpaRepository<Order, Long> {
+
+    Optional<Order> findByOrderIdAndStatus(Long orderId, OrderStatus status);
+
+    @Query("SELECT o FROM Order o " +
+           "JOIN FETCH o.stock s " +
+           "JOIN FETCH o.account a " +
+           "WHERE o.orderId = :orderId")
+    Optional<Order> findByIdWithStockAndAccount(@Param("orderId") Long orderId);
+
+    // 계좌의 대기주문 목록 조회
+    @Query("SELECT o FROM Order o " +
+           "JOIN FETCH o.stock s " +
+           "WHERE o.account.accountId = :accountId " +
+           "AND o.status IN :statuses " +
+           "AND (o.quantity - o.filledQuantity) > 0 " +
+           "ORDER BY o.createdAt DESC")
+    List<Order> findAllPendingOrdersByAccountId(
+            @Param("accountId") Long accountId,
+            @Param("statuses") List<OrderStatus> statuses
+    );
+
+    // 계좌와 종목 코드로 주문 목록 조회 (취소 포함 옵션)
+    @Query("SELECT o FROM Order o " +
+           "JOIN FETCH o.stock s " +
+           "WHERE o.account.accountId = :accountId " +
+           "AND s.code = :stockCode " +
+           "AND (:includeCancelled = true OR o.status != :cancelledStatus) " +
+           "ORDER BY o.createdAt DESC")
+    List<Order> findByAccountIdAndStockCode(
+            @Param("accountId") Long accountId,
+            @Param("stockCode") String stockCode,
+            @Param("includeCancelled") boolean includeCancelled,
+            @Param("cancelledStatus") OrderStatus cancelledStatus
+    );
+
+    // 계좌의 전체 주문 목록 조회
+    @Query("SELECT o FROM Order o " +
+           "JOIN FETCH o.stock s " +
+           "WHERE o.account.accountId = :accountId " +
+           "AND (:includeCancelled = true OR o.status != :cancelledStatus) " +
+           "ORDER BY o.createdAt DESC")
+    List<Order> findByAccountId(
+            @Param("accountId") Long accountId,
+            @Param("includeCancelled") boolean includeCancelled,
+            @Param("cancelledStatus") OrderStatus cancelledStatus
+    );
+
+    // 최근 시간 이후의 대기 주문 조회 (페이징)
+    @Query("SELECT o FROM Order o " +
+           "JOIN FETCH o.stock s " +
+           "JOIN FETCH o.account a " +
+           "WHERE o.createdAt >= :since " +
+           "AND o.status IN :statuses " +
+           "AND (o.quantity - o.filledQuantity) > 0 " +
+           "ORDER BY o.createdAt ASC")
+    List<Order> findPendingOrdersSince(
+            @Param("since") LocalDateTime since,
+            @Param("statuses") List<OrderStatus> statuses,
+            Pageable pageable
+    );
+
+    // 주문 ID 목록으로 이미 체결된 주문 ID 조회
+    @Query("SELECT o.orderId FROM Order o " +
+           "WHERE o.orderId IN :orderIds " +
+           "AND o.status = :filledStatus")
+    List<Long> findFilledOrderIdsByIds(
+            @Param("orderIds") List<Long> orderIds,
+            @Param("filledStatus") OrderStatus filledStatus
+    );
+}
+
