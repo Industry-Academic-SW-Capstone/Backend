@@ -15,41 +15,6 @@ services:
       - ./traefik/users:/etc/traefik/users:ro
     networks:
       - backend
-  db:
-    image: postgres:15
-    container_name: postgres
-    ports:
-      - "5432:5432"
-    environment:
-      POSTGRES_DB: database
-      POSTGRES_USER: sa
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      TZ: Asia/Seoul
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    networks:
-      - backend
-    healthcheck:
-      test: [ "CMD-SHELL", "pg_isready -U sa -d database" ]
-      interval: 5s
-      timeout: 5s
-      retries: 10
-    command:
-      - postgres
-      - "-c"
-      - "logging_collector=on"
-      - "-c"
-      - "log_directory=/var/log/postgresql"
-      - "-c"
-      - "log_filename=postgresql.log"
-      - "-c"
-      - "log_statement=all"
-      - "-c"
-      - "log_min_duration_statement=1000"
-      - "-c"
-      - "log_connections=on"
-      - "-c"
-      - "log_disconnections=on"
   redis:
     image: redis:7
     container_name: redis
@@ -84,13 +49,9 @@ services:
       - ./redis-scripts:/scripts # Redis 스크립트 디렉토리 마운트
 
   backend:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    image: hwnahee/stockit:main
     container_name: backend
     depends_on:
-      db:
-        condition: service_healthy
       redis:
         condition: service_started
     ports:
@@ -98,11 +59,24 @@ services:
     networks:
       - backend
     restart: unless-stopped
-    env_file:
-      - .env
+    environment:
+      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_URL=${POSTGRES_URL}
+      - SPRING_PROFILES_ACTIVE=dev
+      - KIS_API_APPKEY=${KIS_API_APPKEY}
+      - KIS_API_APPSECRET=${KIS_API_APPSECRET}
+      - KAKAO_CLIENT_SECRET=${KAKAO_CLIENT_SECRET}
+      - KAKAO_REDIRECT_URI=${KAKAO_REDIRECT_URI}
+      - KAKAO_REST_API_KEY=${KAKAO_REST_API_KEY}
+      - JWT_SECRET=${JWT_SECRET}
+      - FIREBASE_CREDENTIALS_BASE64=${FIREBASE_CREDENTIALS_BASE64}
+      - PYTHON_ANALYSIS_URL=${PYTHON_ANALYSIS_URL}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+
 
 volumes:
-  postgres_data:
   redis_data:
 
 networks:
