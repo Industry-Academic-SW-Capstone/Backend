@@ -2,7 +2,7 @@ http:
   routers:
     # API 라우터 (api.stockit.live)
     spring-app-router:
-      rule: "Host(`api.stockit.live`) && PathPrefix(`/api`)"
+      rule: "Host(`docker-api.stockit.live`) && PathPrefix(`/api`)"
       entryPoints:
         - websecure
       service: spring-app-service
@@ -14,7 +14,7 @@ http:
 
     # WebSocket 라우터 (api.stockit.live)
     websocket-router:
-      rule: "Host(`api.stockit.live`) && PathPrefix(`/ws`)"
+      rule: "Host(`docker-api.stockit.live`) && PathPrefix(`/ws`)"
       entryPoints:
         - websecure
       service: spring-app-service
