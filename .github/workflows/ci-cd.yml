@@ -132,6 +132,10 @@ jobs:
           touch traefik/letsencrypt/acme.json 2>/dev/null || true
           chmod 600 traefik/letsencrypt/acme.json
 
+          # Redis 로그 디렉토리 생성 및 권한 설정
+          mkdir -p logs/redis
+          chmod 777 logs/redis
+
           # 환경변수 설정
           export POSTGRES_DB=${{ secrets.POSTGRES_DB }}
           export POSTGRES_USER=${{ secrets.POSTGRES_USER }}
