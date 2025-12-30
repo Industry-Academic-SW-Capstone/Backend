@@ -1,8 +1,8 @@
 http:
   routers:
-    # API 라우터 (api.stockit.live)
+    # API 라우터 (docker-api.stockit.live) - 모든 경로 라우팅
     spring-app-router:
-      rule: "Host(`docker-api.stockit.live`) && PathPrefix(`/api`)"
+      rule: "Host(`docker-api.stockit.live`)"
       entryPoints:
         - websecure
       service: spring-app-service
