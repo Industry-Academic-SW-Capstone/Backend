@@ -1,8 +1,8 @@
 http:
   routers:
-    # API 라우터 (docker-api.stockit.live) - 모든 경로 라우팅
+    # API 라우터 (api.stockit.live) - 모든 경로 라우팅
     spring-app-router:
-      rule: "Host(`docker-api.stockit.live`)"
+      rule: "Host(`api.stockit.live`)"
       entryPoints:
         - websecure
       service: spring-app-service
@@ -14,7 +14,7 @@ http:
 
     # WebSocket 라우터 (api.stockit.live)
     websocket-router:
-      rule: "Host(`docker-api.stockit.live`) && PathPrefix(`/ws`)"
+      rule: "Host(`api.stockit.live`) && PathPrefix(`/ws`)"
       entryPoints:
         - websecure
       service: spring-app-service
