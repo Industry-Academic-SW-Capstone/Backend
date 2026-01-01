@@ -62,9 +62,17 @@ public class PythonAnalysisClient {
                             log.warn("Python 서버 재시도: {}번째 시도", retrySignal.totalRetries() + 1)
                         )
                 )
-                .onErrorMap(throwable -> {
-                    log.error("Python 서버 호출 최종 실패: {}", throwable.getMessage());
-                    return new RuntimeException("AI 서버 분석 실패: " + throwable.getMessage(), throwable);
+                .onErrorResume(throwable -> {
+                    log.error("Python 서버 호출 최종 실패: stockCode={}, error={}", request.stockCode(), throwable.getMessage());
+                    // AI 서버 오류 시 기본 응답 반환 (분석 불가로 처리)
+                    return Mono.just(new StockAnalysisResponse(
+                        request.stockCode(),
+                        null,
+                        null,
+                        null,
+                        false,
+                        "AI 서버 오류로 분석에 실패했습니다."
+                    ));
                 });
     }
 

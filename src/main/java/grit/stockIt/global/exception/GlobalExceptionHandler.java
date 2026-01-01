@@ -67,6 +67,15 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.FORBIDDEN).body(error);
     }
 
+    @ExceptionHandler(UntradeableStockException.class)
+    public ResponseEntity<Map<String, String>> handleUntradeableStockException(UntradeableStockException ex, HttpServletRequest request) {
+        log.warn("UntradeableStockException for request {} {}: {}", request.getMethod(), request.getRequestURI(), ex.getMessage());
+        Map<String, String> error = new HashMap<>();
+        error.put("error", "Bad Request");
+        error.put("message", ex.getMessage());
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(error);
+    }
+
     @ExceptionHandler(Exception.class)
     public ResponseEntity<Object> handleAll(Exception ex, HttpServletRequest request) {
         // 전체 스택을 로깅하여 디버깅에 도움

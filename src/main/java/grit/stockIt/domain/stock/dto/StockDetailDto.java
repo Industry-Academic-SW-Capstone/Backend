@@ -20,6 +20,10 @@ public record StockDetailDto(
     Integer highPrice,              // 최고가
     Integer lowPrice,               // 최저가
     Integer openPrice,              // 시가
-    Integer previousClosePrice      // 전일종가
+    Integer previousClosePrice,     // 전일종가
+    String styleTag,                // AI 스타일 태그 (nullable)
+    String aiDescription,           // AI 설명 (nullable)
+    Boolean tradeable,              // 거래 가능 여부
+    String untradeableReason        // 거래 불가 사유 (nullable)
 ) {}
 
