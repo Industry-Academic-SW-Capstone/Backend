@@ -4,16 +4,15 @@ import grit.stockIt.domain.mission.event.StockAnalyzedEvent;
 import grit.stockIt.domain.stock.analysis.dto.*;
 import grit.stockIt.domain.stock.analysis.repository.RedisStockAnalysisRepository;
 import grit.stockIt.domain.stock.service.StockDetailService;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Mono;
 
 // 종목분석 서비스
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class StockAnalysisService {
 
     private final StockDetailService stockDetailService;
@@ -22,6 +21,23 @@ public class StockAnalysisService {
     private final PythonAnalysisClient pythonAnalysisClient;
     private final RedisStockAnalysisRepository redisStockAnalysisRepository;
     private final ApplicationEventPublisher eventPublisher;
+
+    public StockAnalysisService(
+            @Lazy StockDetailService stockDetailService,
+            KisFinancialRatioService kisFinancialRatioService,
+            KisDividendService kisDividendService,
+            PythonAnalysisClient pythonAnalysisClient,
+            RedisStockAnalysisRepository redisStockAnalysisRepository,
+            ApplicationEventPublisher eventPublisher
+    ) {
+        this.stockDetailService = stockDetailService;
+        this.kisFinancialRatioService = kisFinancialRatioService;
+        this.kisDividendService = kisDividendService;
+        this.pythonAnalysisClient = pythonAnalysisClient;
+        this.redisStockAnalysisRepository = redisStockAnalysisRepository;
+        this.eventPublisher = eventPublisher;
+    }
+
     // 종목분석 수행
     public Mono<StockAnalysisResponse> analyzeStock(String stockCode, String email) {
         log.info("종목분석 시작: stockCode={}, requestUser={}", stockCode, email);
