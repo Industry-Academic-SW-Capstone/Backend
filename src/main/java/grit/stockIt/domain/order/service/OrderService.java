@@ -22,6 +22,7 @@ import grit.stockIt.domain.stock.repository.StockRepository;
 import grit.stockIt.domain.stock.service.StockDetailService;
 import grit.stockIt.global.exception.BadRequestException;
 import grit.stockIt.global.exception.ForbiddenException;
+import grit.stockIt.global.exception.UntradeableStockException;
 import grit.stockIt.global.util.TransactionHandler;
 import grit.stockIt.global.websocket.manager.OrderSubscriptionCoordinator;
 import lombok.RequiredArgsConstructor;
@@ -71,6 +72,11 @@ public class OrderService {
             throw new BadRequestException("매수/매도 구분이 필요합니다.");
         }
 
+        // 매수 주문인 경우 거래 가능 종목인지 검증
+        if (orderMethod == OrderMethod.BUY) {
+            validateStockTradeable(request.stockCode());
+        }
+
         Order order = Order.createLimitOrder(
                 account,
                 stock,
@@ -117,6 +123,11 @@ public class OrderService {
         OrderMethod orderMethod = request.orderMethod();
         if (orderMethod == null) {
             throw new BadRequestException("매수/매도 구분이 필요합니다.");
+        }
+
+        // 매수 주문인 경우 거래 가능 종목인지 검증
+        if (orderMethod == OrderMethod.BUY) {
+            validateStockTradeable(request.stockCode());
         }
 
         Order order = Order.createMarketOrder(
@@ -337,6 +348,26 @@ public class OrderService {
             throw new ForbiddenException("로그인이 필요합니다.");
         }
         return authentication.getName();
+    }
+
+    // 거래 가능 종목인지 검증
+    private void validateStockTradeable(String stockCode) {
+        try {
+            var stockDetail = stockDetailService.getStockDetail(stockCode)
+                    .block(java.time.Duration.ofSeconds(5));
+            
+            if (stockDetail == null || !Boolean.TRUE.equals(stockDetail.tradeable())) {
+                String reason = stockDetail != null && stockDetail.untradeableReason() != null
+                        ? stockDetail.untradeableReason()
+                        : "이 종목은 AI 분석이 불가능하여 거래가 제한됩니다.";
+                throw new UntradeableStockException(reason);
+            }
+        } catch (UntradeableStockException e) {
+            throw e;
+        } catch (Exception e) {
+            log.error("종목 거래 가능 여부 확인 실패: stockCode={}", stockCode, e);
+            throw new UntradeableStockException("종목 거래 가능 여부를 확인할 수 없습니다.");
+        }
     }
 }
 

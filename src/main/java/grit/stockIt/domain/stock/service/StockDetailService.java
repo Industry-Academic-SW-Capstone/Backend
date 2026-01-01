@@ -1,6 +1,8 @@
 package grit.stockIt.domain.stock.service;
 
 import grit.stockIt.domain.matching.repository.RedisMarketDataRepository;
+import grit.stockIt.domain.stock.analysis.dto.StockAnalysisResponse;
+import grit.stockIt.domain.stock.analysis.service.StockAnalysisService;
 import grit.stockIt.domain.stock.dto.KisStockDetailDto;
 import grit.stockIt.domain.stock.dto.KisStockDetailResponseDto;
 import grit.stockIt.domain.stock.dto.StockDetailDto;
@@ -34,6 +36,7 @@ public class StockDetailService {
     private final StockRepository stockRepository;
     private final ObjectMapper objectMapper;
     private final RedisMarketDataRepository redisMarketDataRepository;
+    private final StockAnalysisService stockAnalysisService;
 
     // 주식 상세 정보 조회
     public Mono<StockDetailDto> getStockDetail(String stockCode) {
@@ -48,14 +51,37 @@ public class StockDetailService {
         
         Stock stock = stockOptional.get();
         
-        // KIS API에서 시세 정보 조회
-        return getStockPriceFromKis(stockCode)
-                .map(kisDetail -> {
+        // KIS API에서 시세 정보 조회와 AI 분석을 병렬로 수행
+        Mono<KisStockDetailDto> kisDetailMono = getStockPriceFromKis(stockCode);
+        Mono<StockAnalysisResponse> aiAnalysisMono = stockAnalysisService.analyzeStock(stockCode, null)
+                .onErrorResume(e -> {
+                    log.warn("AI 분석 실패, 기본값으로 처리: stockCode={}, error={}", stockCode, e.getMessage());
+                    // AI 분석 실패 시 기본 응답 반환
+                    return Mono.just(new StockAnalysisResponse(
+                        stockCode,
+                        null,
+                        null,
+                        null,
+                        false,
+                        "AI 분석에 실패했습니다."
+                    ));
+                });
+        
+        return Mono.zip(kisDetailMono, aiAnalysisMono)
+                .map(tuple -> {
+                    KisStockDetailDto kisDetail = tuple.getT1();
+                    StockAnalysisResponse aiAnalysis = tuple.getT2();
+                    
+                    // analyzable 값으로 tradeable 판단
+                    boolean tradeable = aiAnalysis.analyzable() != null && aiAnalysis.analyzable();
+                    
                     // DTO 변환
                     return mapToStockDetailDto(
                             stockCode,
                             stock,
-                            kisDetail
+                            kisDetail,
+                            aiAnalysis,
+                            tradeable
                     );
                 })
                 .doOnError(e -> log.error("주식 상세 정보 조회 중 오류 발생: {}", stockCode, e))
@@ -134,7 +160,9 @@ public class StockDetailService {
     private StockDetailDto mapToStockDetailDto(
             String stockCode,
             Stock stock,
-            KisStockDetailDto kisDetail
+            KisStockDetailDto kisDetail,
+            StockAnalysisResponse aiAnalysis,
+            boolean tradeable
     ) {
         return new StockDetailDto(
                 stockCode,
@@ -153,7 +181,11 @@ public class StockDetailService {
                 parseIntValue(kisDetail.highPrice()),
                 parseIntValue(kisDetail.lowPrice()),
                 parseIntValue(kisDetail.openPrice()),
-                parseIntValue(kisDetail.previousClosePrice())
+                parseIntValue(kisDetail.previousClosePrice()),
+                aiAnalysis.finalStyleTag(),
+                aiAnalysis.styleDescription(),
+                tradeable,
+                aiAnalysis.reason()
         );
     }
 
