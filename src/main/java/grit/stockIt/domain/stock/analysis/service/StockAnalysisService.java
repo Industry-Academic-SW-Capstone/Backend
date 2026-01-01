@@ -4,16 +4,15 @@ import grit.stockIt.domain.mission.event.StockAnalyzedEvent;
 import grit.stockIt.domain.stock.analysis.dto.*;
 import grit.stockIt.domain.stock.analysis.repository.RedisStockAnalysisRepository;
 import grit.stockIt.domain.stock.service.StockDetailService;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Mono;
 
 // 종목분석 서비스
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class StockAnalysisService {
 
     private final StockDetailService stockDetailService;
@@ -22,6 +21,23 @@ public class StockAnalysisService {
     private final PythonAnalysisClient pythonAnalysisClient;
     private final RedisStockAnalysisRepository redisStockAnalysisRepository;
     private final ApplicationEventPublisher eventPublisher;
+
+    public StockAnalysisService(
+            @Lazy StockDetailService stockDetailService,
+            KisFinancialRatioService kisFinancialRatioService,
+            KisDividendService kisDividendService,
+            PythonAnalysisClient pythonAnalysisClient,
+            RedisStockAnalysisRepository redisStockAnalysisRepository,
+            ApplicationEventPublisher eventPublisher
+    ) {
+        this.stockDetailService = stockDetailService;
+        this.kisFinancialRatioService = kisFinancialRatioService;
+        this.kisDividendService = kisDividendService;
+        this.pythonAnalysisClient = pythonAnalysisClient;
+        this.redisStockAnalysisRepository = redisStockAnalysisRepository;
+        this.eventPublisher = eventPublisher;
+    }
+
     // 종목분석 수행
     public Mono<StockAnalysisResponse> analyzeStock(String stockCode, String email) {
         log.info("종목분석 시작: stockCode={}, requestUser={}", stockCode, email);
@@ -77,16 +93,10 @@ public class StockAnalysisService {
                         return Mono.just(cachedData.get());
                     }
 
-                    // 2. 캐시에 없으면 KIS API 호출
+                    // 2. 캐시에 없으면 KIS API 호출 (순환 참조 방지를 위해 getMarketDataFromKis 사용)
                     log.info("캐시에 없어 KIS API 호출 (시장 데이터): stockCode={}", stockCode);
-                    return stockDetailService.getStockDetail(stockCode)
-                            .map(stockDetail -> {
-                                // StockDetailDto에서 시가총액, PER, PBR 추출
-                                Long marketCap = stockDetail.marketCap() != null ? stockDetail.marketCap() : null;
-                                Double per = stockDetail.per() != null ? stockDetail.per() : null;
-                                Double pbr = stockDetail.pbr() != null ? stockDetail.pbr() : null;
-
-                                MarketData data = new MarketData(marketCap, per, pbr);
+                    return stockDetailService.getMarketDataFromKis(stockCode)
+                            .map(data -> {
                                 // 3. 캐시 저장
                                 redisStockAnalysisRepository.saveMarketData(stockCode, data);
                                 return data;
