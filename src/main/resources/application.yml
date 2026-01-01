@@ -59,7 +59,7 @@ management:
 # KIS API 설정
 kis:
   api:
-    url: "https://openapi.koreainvestment.com:9443"
+    url: 'https://openapi.koreainvestment.com:9443'
     appkey: ${KIS_API_APPKEY}
     appsecret: ${KIS_API_APPSECRET}
   api-app-key: ${KIS_API_APPKEY:}
@@ -80,6 +80,7 @@ kakao:
   rest-api-key: ${KAKAO_REST_API_KEY:}
   client-secret: ${KAKAO_CLIENT_SECRET:}
   redirect-uri: ${KAKAO_REDIRECT_URI:http://localhost:8080/api/auth/kakao/callback}
+  client-secret: ${KAKAO_CLIENT_SECRET:}
   admin-key: ${KAKAO_ADMIN_KEY:}
 
 # Firebase 설정
