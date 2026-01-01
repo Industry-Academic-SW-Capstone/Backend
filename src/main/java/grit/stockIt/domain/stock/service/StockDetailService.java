@@ -1,6 +1,7 @@
 package grit.stockIt.domain.stock.service;
 
 import grit.stockIt.domain.matching.repository.RedisMarketDataRepository;
+import grit.stockIt.domain.stock.analysis.dto.MarketData;
 import grit.stockIt.domain.stock.analysis.dto.StockAnalysisResponse;
 import grit.stockIt.domain.stock.analysis.service.StockAnalysisService;
 import grit.stockIt.domain.stock.dto.KisStockDetailDto;
@@ -121,6 +122,18 @@ public class StockDetailService {
                 .doOnError(e -> log.error("현재가 조회 실패: stockCode={}", stockCode, e));
     }
 
+    // KIS API에서 시장 데이터만 조회
+    public Mono<MarketData> getMarketDataFromKis(String stockCode) {
+        return getStockPriceFromKis(stockCode)
+                .map(kisDetail -> {
+                    Long marketCap = parseLongValue(kisDetail.marketCap());
+                    Double per = parseDoubleValueForMarketData(kisDetail.per());
+                    Double pbr = parseDoubleValueForMarketData(kisDetail.pbr());
+                    return new MarketData(marketCap, per, pbr);
+                })
+                .doOnError(e -> log.error("시장 데이터 조회 실패: stockCode={}", stockCode, e));
+    }
+
     // KIS API에서 주식 현재가 시세 조회
     private Mono<KisStockDetailDto> getStockPriceFromKis(String stockCode) {
         String accessToken = kisTokenManager.getAccessToken();
@@ -219,6 +232,17 @@ public class StockDetailService {
         } catch (NumberFormatException e) {
             log.warn("Double 파싱 실패: {}", value);
             return 0.0;
+        }
+    }
+
+    // String을 Double로 안전하게 변환
+    private Double parseDoubleValueForMarketData(String value) {
+        if (value == null || value.trim().isEmpty()) return null;
+        try {
+            return Double.parseDouble(value.trim());
+        } catch (NumberFormatException e) {
+            log.warn("Double 파싱 실패: {}", value);
+            return null;
         }
     }
 

@@ -93,16 +93,10 @@ public class StockAnalysisService {
                         return Mono.just(cachedData.get());
                     }
 
-                    // 2. 캐시에 없으면 KIS API 호출
+                    // 2. 캐시에 없으면 KIS API 호출 (순환 참조 방지를 위해 getMarketDataFromKis 사용)
                     log.info("캐시에 없어 KIS API 호출 (시장 데이터): stockCode={}", stockCode);
-                    return stockDetailService.getStockDetail(stockCode)
-                            .map(stockDetail -> {
-                                // StockDetailDto에서 시가총액, PER, PBR 추출
-                                Long marketCap = stockDetail.marketCap() != null ? stockDetail.marketCap() : null;
-                                Double per = stockDetail.per() != null ? stockDetail.per() : null;
-                                Double pbr = stockDetail.pbr() != null ? stockDetail.pbr() : null;
-
-                                MarketData data = new MarketData(marketCap, per, pbr);
+                    return stockDetailService.getMarketDataFromKis(stockCode)
+                            .map(data -> {
                                 // 3. 캐시 저장
                                 redisStockAnalysisRepository.saveMarketData(stockCode, data);
                                 return data;
