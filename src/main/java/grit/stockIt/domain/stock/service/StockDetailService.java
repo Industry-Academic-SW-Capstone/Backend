@@ -74,7 +74,7 @@ public class StockDetailService {
                     StockAnalysisResponse aiAnalysis = tuple.getT2();
                     
                     // analyzable 값으로 tradeable 판단
-                    // analyzable이 null이면 기본적으로 true로 처리 (Python 서버가 필드를 반환하지 않는 경우 대비)
+                    // analyzable이 null이면 기본적으로 true로 처리 (나중에 수정해야함)
                     boolean tradeable = aiAnalysis.analyzable() == null || aiAnalysis.analyzable();
                     
                     // DTO 변환
