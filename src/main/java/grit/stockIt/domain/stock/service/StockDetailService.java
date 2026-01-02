@@ -74,7 +74,8 @@ public class StockDetailService {
                     StockAnalysisResponse aiAnalysis = tuple.getT2();
                     
                     // analyzable 값으로 tradeable 판단
-                    boolean tradeable = aiAnalysis.analyzable() != null && aiAnalysis.analyzable();
+                    // analyzable이 null이면 기본적으로 true로 처리 (나중에 수정해야함)
+                    boolean tradeable = aiAnalysis.analyzable() == null || aiAnalysis.analyzable();
                     
                     // DTO 변환
                     return mapToStockDetailDto(
