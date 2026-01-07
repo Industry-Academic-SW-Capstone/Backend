@@ -76,13 +76,13 @@ public class MissionService {
                     .orElse(false); // 계좌가 없으면 false 취급
 
             if (!isDefaultAccount) {
-                log.info("⚠️ 보조 계좌 거래 감지: 미션 및 랭킹 집계에서 제외합니다. (AccountId={})", event.getAccountId());
+                log.info("보조 계좌 거래 감지: 미션 및 랭킹 집계에서 제외합니다. (AccountId={})", event.getAccountId());
                 return; // 여기서 메서드 종료!
             }
         } else {
             // (선택 사항) AccountId가 null인 옛날 코드 호환성을 위해 경고만 찍고 진행할지, 막을지 결정
             // 여기서는 안전하게 로그 찍고 진행 (혹은 return으로 막으셔도 됨)
-            log.warn("⚠️ 거래 이벤트에 AccountId가 없습니다. 기본 계좌 여부를 확인할 수 없습니다.");
+            log.warn("거래 이벤트에 AccountId가 없습니다. 기본 계좌 여부를 확인할 수 없습니다.");
         }
 
         Member member = memberRepository.findById(event.getMemberId())
@@ -115,7 +115,7 @@ public class MissionService {
         // 2. [신규] 특수 업적 미션 체크 (달콤한 첫입, 강형욱)
         checkSpecialAchievement(member, event);
 
-        // ⬇️ [추가] 매도(SELL) 발생 시 실력 점수 반영
+        // [추가] 매도(SELL) 발생 시 실력 점수 반영
         if (event.getOrderMethod() == OrderMethod.SELL) {
             updateSkillScore(event);
         }
@@ -655,7 +655,7 @@ public class MissionService {
         handleMissionChain(progress);
         checkSeedCopierAchievement(progress.getMember());
 
-        // ⬇️ [추가] 3. 활동 점수(Activity Score) 반영
+        // [추가] 3. 활동 점수(Activity Score) 반영
         updateActivityScore(progress.getMember());
     }
     /**
@@ -747,7 +747,7 @@ public class MissionService {
 
         log.info("파산 신청 승인! 구조지원금 지급 완료. Member={}", member.getName());
 
-        // ⬇️ [추가] 2. 티어 점수 완전 초기화 (Bronze 0점으로 강등)
+        // [추가] 2. 티어 점수 완전 초기화 (Bronze 0점으로 강등)
         missionProgressRepository.findByMemberAndMissionTypeWithMission(member, MissionTrack.ACHIEVEMENT, MissionConditionType.ACTIVITY_SCORE)
                 .ifPresent(p -> p.setCurrentValue(0));
 
@@ -852,7 +852,7 @@ public class MissionService {
 
             // 4. 이미 완료한 사람은 패스 (칭호 중복 지급 방지)
             if (!progress.isCompleted()) {
-                log.info("🏆 랭커 등극! 칭호 지급: MemberId={}", memberId);
+                log.info("랭커 등극! 칭호 지급: MemberId={}", memberId);
                 progress.setCurrentValue(10); // 목표치(10) 달성 처리
                 checkMissionCompletion(progress); // 보상(칭호) 지급 및 완료 처리
             }

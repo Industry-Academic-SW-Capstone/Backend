@@ -48,13 +48,13 @@ public class DummyDataService {
     public DummyDataResponse generateDummyData(int memberCount) {
         long startTime = System.currentTimeMillis();
         
-        log.info("🚀 [더미 데이터 생성 시작] 회원 수: {}", memberCount);
+        log.info("[더미 데이터 생성 시작] 회원 수: {}", memberCount);
 
         // Default Contest 조회
         Contest defaultContest = contestRepository.findByIsDefaultTrue()
                 .orElseThrow(() -> new IllegalStateException("Default Contest를 찾을 수 없습니다."));
         
-        log.info("✅ Default Contest: {} (ID: {})", defaultContest.getContestName(), defaultContest.getContestId());
+        log.info("Default Contest: {} (ID: {})", defaultContest.getContestName(), defaultContest.getContestId());
 
         List<Member> members = new ArrayList<>();
         List<Account> accounts = new ArrayList<>();
@@ -101,10 +101,10 @@ public class DummyDataService {
         }
 
         // 3. Batch Insert
-        log.info("💾 [DB 저장 시작] 회원: {}명, 계좌: {}개", members.size(), accounts.size());
+        log.info("[DB 저장 시작] 회원: {}명, 계좌: {}개", members.size(), accounts.size());
         memberRepository.saveAll(members);
         accountRepository.saveAll(accounts);
-        log.info("✅ [DB 저장 완료]");
+        log.info("[DB 저장 완료]");
 
         // 4. 통계 계산
         BigDecimal avgBalance = members.isEmpty() 
@@ -113,7 +113,7 @@ public class DummyDataService {
 
         long elapsedTime = System.currentTimeMillis() - startTime;
         
-        log.info("🎉 [더미 데이터 생성 완료] 회원: {}명, 계좌: {}개, 소요 시간: {}ms",
+        log.info("[더미 데이터 생성 완료] 회원: {}명, 계좌: {}개, 소요 시간: {}ms",
                 members.size(), accounts.size(), elapsedTime);
 
         return DummyDataResponse.builder()
@@ -123,7 +123,7 @@ public class DummyDataService {
                 .maxBalance(maxBalance)
                 .avgBalance(avgBalance)
                 .elapsedTimeMs(elapsedTime)
-                .message(String.format("✅ 더미 데이터 생성 완료! 회원 %d명, 계좌 %d개 생성됨", members.size(), accounts.size()))
+                .message(String.format("더미 데이터 생성 완료! 회원 %d명, 계좌 %d개 생성됨", members.size(), accounts.size()))
                 .build();
     }
 
@@ -135,7 +135,7 @@ public class DummyDataService {
      */
     @Transactional
     public int clearDummyData() {
-        log.info("🗑️ [더미 데이터 삭제 시작]");
+        log.info("[더미 데이터 삭제 시작]");
 
         // 1. test_user_ 로 시작하는 이메일 조회
         List<Member> dummyMembers = memberRepository.findAll().stream()
@@ -150,7 +150,7 @@ public class DummyDataService {
         // 2. 회원 삭제 (CascadeType으로 계좌도 함께 삭제됨)
         memberRepository.deleteAll(dummyMembers);
 
-        log.info("✅ [더미 데이터 삭제 완료] 회원: {}명 삭제", dummyMembers.size());
+        log.info("[더미 데이터 삭제 완료] 회원: {}명 삭제", dummyMembers.size());
 
         return dummyMembers.size();
     }
@@ -162,7 +162,7 @@ public class DummyDataService {
      */
     @Transactional(readOnly = true)
     public DummyDataResponse getDummyDataStats() {
-        log.info("📊 [더미 데이터 통계 조회]");
+        log.info("[더미 데이터 통계 조회]");
 
         // 1. test_user_ 로 시작하는 회원 조회
         List<Member> dummyMembers = memberRepository.findAll().stream()
@@ -212,7 +212,7 @@ public class DummyDataService {
                 .minBalance(minBalance)
                 .maxBalance(maxBalance)
                 .avgBalance(avgBalance)
-                .message(String.format("📊 더미 데이터 통계: 회원 %d명, 계좌 %d개", dummyMembers.size(), accounts.size()))
+                .message(String.format("더미 데이터 통계: 회원 %d명, 계좌 %d개", dummyMembers.size(), accounts.size()))
                 .build();
     }
 

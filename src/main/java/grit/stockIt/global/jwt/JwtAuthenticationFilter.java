@@ -109,9 +109,9 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 
                 // Spring Security 컨텍스트에 인증 정보 설정
                 SecurityContextHolder.getContext().setAuthentication(authToken);
-                log.info("✅ Spring Security 인증 설정 완료!");
+                log.info("Spring Security 인증 설정 완료!");
             } else {
-                log.warn("❌ JWT 토큰이 유효하지 않습니다.");
+                log.warn("JWT 토큰이 유효하지 않습니다.");
             }
         } else {
             log.info("이메일이 null이거나 이미 인증됨 - email: {}, auth: {}", 

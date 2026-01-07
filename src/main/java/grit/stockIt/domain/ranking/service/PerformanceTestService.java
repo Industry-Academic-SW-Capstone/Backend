@@ -43,7 +43,7 @@ public class PerformanceTestService {
      * @return RankingResponse
      */
     public RankingResponse getMainRankingsNoCache() {
-        log.info("📊 Main 계좌 랭킹 조회 (캐시 없음 - 매번 DB 조회)");
+        log.info("Main 계좌 랭킹 조회 (캐시 없음 - 매번 DB 조회)");
 
         // 1. DB에서 Main 계좌 전체 조회 (잔액 내림차순)
         List<Account> accounts = accountRepository.findMainAccountsOrderByBalance();
@@ -74,7 +74,7 @@ public class PerformanceTestService {
      * @return RankingResponse
      */
     public RankingResponse getContestRankingsNoCache(Long contestId, String sortBy) {
-        log.info("📊 대회 [{}] 랭킹 조회 (캐시 없음 - 매번 DB 조회)", contestId);
+        log.info("대회 [{}] 랭킹 조회 (캐시 없음 - 매번 DB 조회)", contestId);
 
         Contest contest = contestRepository.findById(contestId)
                 .orElseThrow(() -> new IllegalArgumentException("대회를 찾을 수 없습니다. (ID: " + contestId + ")"));
@@ -112,7 +112,7 @@ public class PerformanceTestService {
      * @return PerformanceResult
      */
     public PerformanceResult compareMainRankingPerformance(int requestCount) {
-        log.info("🚀 [성능 비교] 시작 - {} 회 요청 (Main 계좌)", requestCount);
+        log.info("[성능 비교] 시작 - {} 회 요청 (Main 계좌)", requestCount);
 
         // 1. 캐시 사용 O 성능 측정
         long cachedTotalTime = 0;
@@ -131,7 +131,7 @@ public class PerformanceTestService {
         }
 
         double cachedAvgTime = (double) cachedTotalTime / requestCount;
-        log.info("✅ [캐시 O] 평균: {}ms, 최소: {}ms, 최대: {}ms, 총: {}ms",
+        log.info("[캐시 O] 평균: {}ms, 최소: {}ms, 최대: {}ms, 총: {}ms",
                 String.format("%.2f", cachedAvgTime), cachedMinTime, cachedMaxTime, cachedTotalTime);
 
         // 2. 캐시 사용 X 성능 측정
@@ -151,7 +151,7 @@ public class PerformanceTestService {
         }
 
         double noCacheAvgTime = (double) noCacheTotalTime / requestCount;
-        log.info("✅ [캐시 X] 평균: {}ms, 최소: {}ms, 최대: {}ms, 총: {}ms",
+        log.info("[캐시 X] 평균: {}ms, 최소: {}ms, 최대: {}ms, 총: {}ms",
                 String.format("%.2f", noCacheAvgTime), noCacheMinTime, noCacheMaxTime, noCacheTotalTime);
 
         // 3. 성능 비교 계산
@@ -165,7 +165,7 @@ public class PerformanceTestService {
                 speedupFactor, dbLoadReduction, noCacheAvgTime, cachedAvgTime
         );
 
-        log.info("🎉 [성능 비교] 완료 - {}", conclusion);
+        log.info("[성능 비교] 완료 - {}", conclusion);
 
         // 4. 결과 반환
         return PerformanceResult.builder()
@@ -197,7 +197,7 @@ public class PerformanceTestService {
      * @return PerformanceResult
      */
     public PerformanceResult compareContestRankingPerformance(Long contestId, String sortBy, int requestCount) {
-        log.info("🚀 [성능 비교] 시작 - {} 회 요청 (대회: {}, sortBy: {})", requestCount, contestId, sortBy);
+        log.info("[성능 비교] 시작 - {} 회 요청 (대회: {}, sortBy: {})", requestCount, contestId, sortBy);
 
         // 1. 캐시 사용 O
         long cachedTotalTime = 0;
@@ -246,7 +246,7 @@ public class PerformanceTestService {
                 speedupFactor, dbLoadReduction
         );
 
-        log.info("🎉 [성능 비교] 완료 - {}", conclusion);
+        log.info("[성능 비교] 완료 - {}", conclusion);
 
         return PerformanceResult.builder()
                 .requestCount(requestCount)

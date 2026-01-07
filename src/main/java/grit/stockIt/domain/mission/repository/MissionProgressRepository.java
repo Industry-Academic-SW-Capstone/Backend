@@ -20,7 +20,7 @@ public interface MissionProgressRepository extends JpaRepository<MissionProgress
 
     List<MissionProgress> findByMemberAndStatus(Member member, MissionStatus status);
 
-    // --- ⬇️ [추가] 시드 복사기 업적용: 완료된 미션 개수 카운트 ⬇️ ---
+    // --- [추가] 시드 복사기 업적용: 완료된 미션 개수 카운트 ---
     long countByMemberAndStatus(Member member, MissionStatus status);
 
     List<MissionProgress> findAllByMission_Track(MissionTrack track);
@@ -50,7 +50,7 @@ public interface MissionProgressRepository extends JpaRepository<MissionProgress
             @Param("status") MissionStatus status
     );
 
-    // --- ⬇️ [추가] 스케줄러용: 특정 조건 타입(HOLDING_DAYS)이면서 진행 중인 미션 조회 ⬇️ ---
+    // --- [추가] 스케줄러용: 특정 조건 타입(HOLDING_DAYS)이면서 진행 중인 미션 조회 ---
     List<MissionProgress> findAllByMission_ConditionTypeAndStatus(
             MissionConditionType conditionType,
             MissionStatus status
