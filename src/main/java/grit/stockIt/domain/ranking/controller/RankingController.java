@@ -41,7 +41,7 @@ public class RankingController {
             description = "Main 계좌 전체 랭킹을 잔액 순으로 조회합니다. 캐시를 사용하여 빠르게 응답합니다."
     )
     public ResponseEntity<RankingResponse> getMainRankings() {
-        log.info("📊 [API 호출] Main 계좌 랭킹 조회");
+        log.info("[API 호출] Main 계좌 랭킹 조회");
         RankingResponse response = rankingService.getMainRankings();
         return ResponseEntity.ok(response);
     }
@@ -69,7 +69,7 @@ public class RankingController {
             @Parameter(description = "정렬 기준 (totalAssets: 총자산순, returnRate: 수익률순)", example = "totalAssets")
             @RequestParam(name = "sortBy", defaultValue = "totalAssets") String sortBy
     ) {
-        log.info("📊 [API 호출] 대회 [{}] 랭킹 조회 (sortBy: {})", contestId, sortBy);
+        log.info("[API 호출] 대회 [{}] 랭킹 조회 (sortBy: {})", contestId, sortBy);
 
         // sortBy 유효성 검사
         if (!sortBy.equalsIgnoreCase("totalAssets") && !sortBy.equalsIgnoreCase("returnRate")) {
@@ -115,7 +115,7 @@ public class RankingController {
      */
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<String> handleIllegalArgument(IllegalArgumentException ex) {
-        log.warn("⚠️ [예외] {}", ex.getMessage());
+        log.warn("[예외] {}", ex.getMessage());
         return ResponseEntity.badRequest().body(ex.getMessage());
     }
 }

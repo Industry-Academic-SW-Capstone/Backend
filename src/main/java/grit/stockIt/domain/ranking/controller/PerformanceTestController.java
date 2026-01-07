@@ -38,7 +38,7 @@ public class PerformanceTestController {
             description = "매번 DB를 조회하여 랭킹을 반환합니다. 성능 비교 테스트용입니다."
     )
     public ResponseEntity<RankingResponse> getMainRankingsNoCache() {
-        log.info("🔴 [API 호출] Main 계좌 랭킹 (캐시 없음)");
+        log.info("[API 호출] Main 계좌 랭킹 (캐시 없음)");
         RankingResponse response = performanceTestService.getMainRankingsNoCache();
         return ResponseEntity.ok(response);
     }
@@ -58,7 +58,7 @@ public class PerformanceTestController {
             @Parameter(description = "정렬 기준 (balance: 잔액순, returnRate: 수익률순)", example = "balance")
             @RequestParam(defaultValue = "balance") String sortBy
     ) {
-        log.info("🔴 [API 호출] 대회 [{}] 랭킹 (캐시 없음, sortBy: {})", contestId, sortBy);
+        log.info("[API 호출] 대회 [{}] 랭킹 (캐시 없음, sortBy: {})", contestId, sortBy);
         RankingResponse response = performanceTestService.getContestRankingsNoCache(contestId, sortBy);
         return ResponseEntity.ok(response);
     }
@@ -81,7 +81,7 @@ public class PerformanceTestController {
             @Parameter(description = "요청 횟수 (예: 100명 동시 요청 시뮬레이션)", example = "100")
             @RequestParam(defaultValue = "100") int requestCount
     ) {
-        log.info("🚀 [성능 비교 API 호출] Main 계좌 - {} 회 요청", requestCount);
+        log.info("[성능 비교 API 호출] Main 계좌 - {} 회 요청", requestCount);
         
         if (requestCount < 1 || requestCount > 1000) {
             throw new IllegalArgumentException("요청 횟수는 1~1000 사이여야 합니다. (현재: " + requestCount + ")");
@@ -112,7 +112,7 @@ public class PerformanceTestController {
             @Parameter(description = "요청 횟수", example = "100")
             @RequestParam(defaultValue = "100") int requestCount
     ) {
-        log.info("🚀 [성능 비교 API 호출] 대회 [{}] - {} 회 요청 (sortBy: {})", contestId, requestCount, sortBy);
+        log.info("[성능 비교 API 호출] 대회 [{}] - {} 회 요청 (sortBy: {})", contestId, requestCount, sortBy);
         
         if (requestCount < 1 || requestCount > 1000) {
             throw new IllegalArgumentException("요청 횟수는 1~1000 사이여야 합니다.");
@@ -133,7 +133,7 @@ public class PerformanceTestController {
             description = "성능 테스트 API가 정상 작동하는지 확인합니다."
     )
     public ResponseEntity<String> health() {
-        return ResponseEntity.ok("✅ Performance Test API is ready!");
+        return ResponseEntity.ok("Performance Test API is ready!");
     }
 }
 

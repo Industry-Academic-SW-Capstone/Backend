@@ -40,7 +40,7 @@ public class DummyDataController {
             @Parameter(description = "생성할 회원 수 (1~1000)", example = "100")
             @RequestParam(defaultValue = "100") int memberCount
     ) {
-        log.info("🚀 [더미 데이터 생성 API 호출] 회원 수: {}", memberCount);
+        log.info("[더미 데이터 생성 API 호출] 회원 수: {}", memberCount);
 
         if (memberCount < 1 || memberCount > 1000) {
             throw new IllegalArgumentException("회원 수는 1~1000 사이여야 합니다. (현재: " + memberCount + ")");
@@ -48,7 +48,7 @@ public class DummyDataController {
 
         DummyDataResponse response = dummyDataService.generateDummyData(memberCount);
         
-        log.info("✅ [더미 데이터 생성 완료] 회원: {}명, Main 계좌: {}개, 소요 시간: {}ms",
+        log.info("[더미 데이터 생성 완료] 회원: {}명, Main 계좌: {}개, 소요 시간: {}ms",
                 response.getMemberCount(), response.getAccountCount(), response.getElapsedTimeMs());
 
         return ResponseEntity.ok(response);
@@ -63,13 +63,13 @@ public class DummyDataController {
             description = "생성된 모든 더미 데이터를 삭제합니다. (test_user_ 로 시작하는 회원 및 계좌)"
     )
     public ResponseEntity<String> clearDummyData() {
-        log.info("🗑️ [더미 데이터 삭제 API 호출]");
+        log.info("[더미 데이터 삭제 API 호출]");
         
         int deletedCount = dummyDataService.clearDummyData();
         
-        log.info("✅ [더미 데이터 삭제 완료] 삭제된 회원 수: {}", deletedCount);
+        log.info("[더미 데이터 삭제 완료] 삭제된 회원 수: {}", deletedCount);
         
-        return ResponseEntity.ok(String.format("✅ 더미 데이터 삭제 완료! (회원 %d명 삭제)", deletedCount));
+        return ResponseEntity.ok(String.format("더미 데이터 삭제 완료! (회원 %d명 삭제)", deletedCount));
     }
 
     /**
@@ -81,7 +81,7 @@ public class DummyDataController {
             description = "현재 생성된 더미 데이터의 통계를 조회합니다."
     )
     public ResponseEntity<DummyDataResponse> getDummyDataStats() {
-        log.info("📊 [더미 데이터 통계 조회]");
+        log.info("[더미 데이터 통계 조회]");
         
         DummyDataResponse stats = dummyDataService.getDummyDataStats();
         
