@@ -17,7 +17,7 @@ public class TradeCompletionEvent {
     private final BigDecimal filledPrice;
     private final BigDecimal filledAmount; // 총 체결 금액
 
-    // --- ⬇️ [추가] 미션 판별을 위한 핵심 데이터 ⬇️ ---
+    // --- [추가] 미션 판별을 위한 핵심 데이터 ---
     private final BigDecimal profitAmount; // 수익금 (매도 시에만 유효, 매수는 0)
     private final BigDecimal profitRate;   // 수익률 (매도 시에만 유효, 단위 %)
     private final int holdingDays;         // 보유 일수 (매도 시에만 유효)

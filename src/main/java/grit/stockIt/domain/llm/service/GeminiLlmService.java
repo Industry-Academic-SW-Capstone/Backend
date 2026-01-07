@@ -126,7 +126,7 @@ public class GeminiLlmService {
                             );
                         })
                         .doBeforeRetry(retry ->
-                                log.warn("⚠️ API 과부하/제한. 재시도 중... ({}/{})",
+                                log.warn("API 과부하/제한. 재시도 중... ({}/{})",
                                         retry.totalRetries() + 1, 3)
                         )
                 )

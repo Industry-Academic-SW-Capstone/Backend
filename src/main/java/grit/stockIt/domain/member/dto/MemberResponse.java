@@ -35,14 +35,14 @@ public class MemberResponse {
         private boolean securitiesDepthTutorialCompleted;
         private boolean stockDetailTutorialCompleted;
 
-    // --- ⬇️ [수정] 칭호 및 잔액 필드 추가 ⬇️ ---
+    // --- [수정] 칭호 및 잔액 필드 추가 ---
     private List<TitleResponseDto> titles;
     private Long representativeTitleId;
     private BigDecimal balance;
 
     public static MemberResponse from(Member member) {
 
-        // --- ⬇️ [수정] 로직 추가: 기본 계좌 잔액 찾기 ⬇️ ---
+        // --- [수정] 로직 추가: 기본 계좌 잔액 찾기 ---
         // Member 엔티티의 accounts 리스트와 Account의 isDefault 필드를 사용
         BigDecimal currentBalance = member.getAccounts().stream()
                 .filter(Account::getIsDefault) // 'isDefault'가 true인 계좌를 찾음
@@ -50,7 +50,7 @@ public class MemberResponse {
                 .map(Account::getCash) // 해당 계좌의 잔액(cash)을 가져옴
                 .orElse(BigDecimal.ZERO); // 기본 계좌가 없으면 0으로 표시
 
-        // --- ⬇️ [수정] 로직 추가: 칭호 목록 변환 ⬇️ ---
+        // --- [수정] 로직 추가: 칭호 목록 변환 ---
         // Member 엔티티의 memberTitles 리스트를 사용
         List<TitleResponseDto> titlesList = member.getMemberTitles().stream()
                 .map(memberTitle -> new TitleResponseDto(memberTitle.getTitle())) // (TitleResponse DTO로 변환)

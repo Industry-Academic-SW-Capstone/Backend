@@ -80,7 +80,7 @@ public class Member extends BaseEntity {
     @OneToMany(mappedBy = "member", cascade = CascadeType.ALL, orphanRemoval = true)
     @Builder.Default
     private List<MissionProgress> missionProgresses = new ArrayList<>();
-    // --- ⬆️ [병합 2] 완료 ⬆️ ---
+    // --- [병합 2] 완료 ---
 
 
     // 2단계 인증 사용 여부
@@ -227,7 +227,7 @@ public class Member extends BaseEntity {
             progress.setMember(this); // 양방향 관계 설정
         }
     }
-    // --- ⬆️ [병합 4] 완료 ⬆️ ---
+    // --- [병합 4] 완료 ---
 
     /**
      * [신규] 대표 칭호 변경 메서드

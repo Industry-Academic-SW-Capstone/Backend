@@ -74,9 +74,9 @@ public class RankingService {
 
             // 1. Main 계좌 랭킹 갱신 (총자산 기준)
             RankingResponse mainRanking = getMainRankingsWithPrices(currentPrices);
-            log.info("✅ Main 계좌 랭킹 갱신 완료");
+            log.info("Main 계좌 랭킹 갱신 완료");
 
-            // --- ⬇️ [추가] Main 랭킹 Top 10 유저에게 '랭커' 칭호 지급 로직 ⬇️ ---
+            // --- [추가] Main 랭킹 Top 10 유저에게 '랭커' 칭호 지급 로직 ---
             if (mainRanking != null && mainRanking.getRankings() != null) {
                 List<Long> top10MemberIds = mainRanking.getRankings().stream()
                         .filter(dto -> dto.getRank() <= 10) // 1위~10위 필터링
@@ -90,20 +90,20 @@ public class RankingService {
             }
             // 2. 진행 중인 대회 랭킹 갱신
             List<Contest> activeContests = contestRepository.findActiveContests(LocalDateTime.now());
-            log.info("📊 진행 중인 대회 수: {}", activeContests.size());
+            log.info("진행 중인 대회 수: {}", activeContests.size());
 
             for (Contest contest : activeContests) {
                 // 총자산순 랭킹
                 getContestRankingsWithPrices(contest.getContestId(), "totalAssets", currentPrices);
                 // 수익률순 랭킹
                 getContestRankingsWithPrices(contest.getContestId(), "returnRate", currentPrices);
-                log.info("✅ 대회 [{}] 랭킹 갱신 완료", contest.getContestName());
+                log.info("대회 [{}] 랭킹 갱신 완료", contest.getContestName());
             }
 
-            log.info("🎉 [스케줄러] 모든 랭킹 갱신 완료: {}", LocalDateTime.now());
+            log.info("[스케줄러] 모든 랭킹 갱신 완료: {}", LocalDateTime.now());
 
         } catch (Exception e) {
-            log.error("❌ [스케줄러] 랭킹 갱신 중 오류 발생", e);
+            log.error("[스케줄러] 랭킹 갱신 중 오류 발생", e);
         }
     }
 
@@ -118,7 +118,7 @@ public class RankingService {
      */
     @Cacheable(value = "rankings", key = "'main:balance'")
     public RankingResponse getMainRankings() {
-        log.info("📊 Main 계좌 랭킹 조회 (총자산 기준 - DB에서 로드)");
+        log.info("Main 계좌 랭킹 조회 (총자산 기준 - DB에서 로드)");
 
         // 1. 모든 보유 종목의 현재가 배치 수집
         Set<String> requiredStockCodes = collectAllHeldStockCodes();
@@ -143,7 +143,7 @@ public class RankingService {
      */
     @Cacheable(value = "rankings", key = "'contest:' + #contestId + ':' + #sortBy")
     public RankingResponse getContestRankings(Long contestId, String sortBy) {
-        log.info("📊 대회 [{}] 랭킹 조회 (sortBy: {}) - 총자산 기준 DB 로드", contestId, sortBy);
+        log.info("대회 [{}] 랭킹 조회 (sortBy: {}) - 총자산 기준 DB 로드", contestId, sortBy);
 
         // sortBy 정규화: balance → totalAssets (하위 호환성)
         if ("balance".equalsIgnoreCase(sortBy)) {
@@ -415,13 +415,13 @@ public class RankingService {
                     prices.put(stockCode, price);
                     successCount++;
                 } else {
-                    log.warn("⚠️ 종목 {} 현재가 조회 실패 (null 또는 0원)", stockCode);
+                    log.warn("종목 {} 현재가 조회 실패 (null 또는 0원)", stockCode);
                     prices.put(stockCode, BigDecimal.ZERO);
                     failCount++;
                 }
 
             } catch (Exception e) {
-                log.error("❌ 종목 {} 현재가 조회 중 예외 발생: {}", stockCode, e.getMessage());
+                log.error("종목 {} 현재가 조회 중 예외 발생: {}", stockCode, e.getMessage());
                 prices.put(stockCode, BigDecimal.ZERO);
                 failCount++;
             }
@@ -592,7 +592,7 @@ public class RankingService {
      * Main 계좌 전체 랭킹 조회 (총자산순) - 내부용 (현재가 포함)
      */
     private RankingResponse getMainRankingsWithPrices(Map<String, BigDecimal> currentPrices) {
-        log.info("📊 Main 계좌 랭킹 조회 (총자산 기준 - DB에서 로드)");
+        log.info("Main 계좌 랭킹 조회 (총자산 기준 - DB에서 로드)");
 
         // 1. DB에서 Main 계좌 전체 조회
         List<Account> accounts = accountRepository.findMainAccountsOrderByBalance();
@@ -634,7 +634,7 @@ public class RankingService {
      * 특정 대회 전체 랭킹 조회 - 내부용 (현재가 포함)
      */
     private RankingResponse getContestRankingsWithPrices(Long contestId, String sortBy, Map<String, BigDecimal> currentPrices) {
-        log.info("📊 대회 [{}] 랭킹 조회 (sortBy: {}) - 총자산 기준 DB 로드", contestId, sortBy);
+        log.info("대회 [{}] 랭킹 조회 (sortBy: {}) - 총자산 기준 DB 로드", contestId, sortBy);
 
         // 1. 대회 존재 여부 확인
         Contest contest = contestRepository.findById(contestId)
