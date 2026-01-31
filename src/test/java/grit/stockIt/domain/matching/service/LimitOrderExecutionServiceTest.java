@@ -610,6 +610,258 @@ class LimitOrderExecutionServiceTest {
         verify(redisOrderBookRepository, never()).fetchMatchingEntries(any(), any(), any(), anyInt());
     }
 
+    @Test
+    @DisplayName("시장가 매수 주문과 매도 체결 이벤트가 정상적으로 매칭되어 체결된다")
+    void distributeEvent_MarketBuyOrderMatchedWithSellEvent_Success() {
+        // Given
+        String stockCode = "005930";
+        LimitOrderFillEvent event = new LimitOrderFillEvent(
+                UUID.randomUUID().toString(),
+                OrderMethod.SELL,
+                new BigDecimal("100"),
+                10,
+                Instant.now().toEpochMilli()
+        );
+
+        // 시장가 매수 주문 (999999999 가격)
+        Order marketBuyOrder = Order.createMarketOrder(
+                testAccount, testStock, 10, OrderMethod.BUY
+        );
+        ReflectionTestUtils.setField(marketBuyOrder, "orderId", 1L);
+
+        OrderBookEntry orderBookEntry = new OrderBookEntry(
+                1L, stockCode, OrderMethod.BUY, new BigDecimal("999999999"), // 시장가 매수 Sentinel Price
+                10, 10, Instant.now().toEpochMilli(), 1L
+        );
+
+        OrderHold marketOrderHold = OrderHold.create(marketBuyOrder, testAccount, new BigDecimal("1000"));
+        ReflectionTestUtils.setField(marketOrderHold, "orderId", 1L);
+
+        when(redisOrderBookRepository.fetchMatchingEntries(stockCode, OrderMethod.SELL, event.price(), 100))
+                .thenReturn(List.of(orderBookEntry));
+        when(orderRepository.findAllById(anyList()))
+                .thenReturn(List.of(marketBuyOrder));
+        when(accountRepository.findByIdWithLock(1L))
+                .thenReturn(Optional.of(testAccount));
+        when(executionService.record(eq(marketBuyOrder), eq(event.price()), eq(10)))
+                .thenReturn(createExecution(marketBuyOrder, event.price(), 10));
+        when(orderHoldRepository.findById(1L))
+                .thenReturn(Optional.of(marketOrderHold));
+
+        // When
+        List<Execution> executions = limitOrderExecutionService.distributeEvent(stockCode, event);
+
+        // Then
+        assertThat(executions).hasSize(1);
+        assertThat(marketBuyOrder.getFilledQuantity()).isEqualTo(10);
+        assertThat(marketBuyOrder.getStatus()).isEqualTo(OrderStatus.FILLED);
+        assertThat(testAccount.getCash()).isEqualByComparingTo(new BigDecimal("9000")); // 10000 - 1000
+
+        verify(redisOrderBookRepository, times(1)).removeOrder(1L, stockCode, OrderMethod.BUY);
+        verify(orderSubscriptionCoordinator, times(1)).unregisterLimitOrder(stockCode);
+    }
+
+    @Test
+    @DisplayName("시장가 매도 주문과 매수 체결 이벤트가 정상적으로 매칭되어 체결된다")
+    void distributeEvent_MarketSellOrderMatchedWithBuyEvent_Success() {
+        // Given
+        String stockCode = "005930";
+        LimitOrderFillEvent event = new LimitOrderFillEvent(
+                UUID.randomUUID().toString(),
+                OrderMethod.BUY,
+                new BigDecimal("100"),
+                10,
+                Instant.now().toEpochMilli()
+        );
+
+        // 시장가 매도 주문 (0.01 가격)
+        Order marketSellOrder = Order.createMarketOrder(
+                testAccount, testStock, 10, OrderMethod.SELL
+        );
+        ReflectionTestUtils.setField(marketSellOrder, "orderId", 2L);
+
+        OrderBookEntry orderBookEntry = new OrderBookEntry(
+                2L, stockCode, OrderMethod.SELL, new BigDecimal("0.01"), // 시장가 매도 Sentinel Price
+                10, 10, Instant.now().toEpochMilli(), 1L
+        );
+
+        when(redisOrderBookRepository.fetchMatchingEntries(stockCode, OrderMethod.BUY, event.price(), 100))
+                .thenReturn(List.of(orderBookEntry));
+        when(orderRepository.findAllById(anyList()))
+                .thenReturn(List.of(marketSellOrder));
+        when(accountRepository.findByIdWithLock(1L))
+                .thenReturn(Optional.of(testAccount));
+        when(executionService.record(eq(marketSellOrder), eq(event.price()), eq(10)))
+                .thenReturn(createExecution(marketSellOrder, event.price(), 10));
+        when(accountStockRepository.findByAccountAndStock(testAccount, testStock))
+                .thenReturn(Optional.of(testAccountStock));
+
+        // When
+        List<Execution> executions = limitOrderExecutionService.distributeEvent(stockCode, event);
+
+        // Then
+        assertThat(executions).hasSize(1);
+        assertThat(marketSellOrder.getFilledQuantity()).isEqualTo(10);
+        assertThat(marketSellOrder.getStatus()).isEqualTo(OrderStatus.FILLED);
+        assertThat(testAccount.getCash()).isEqualByComparingTo(new BigDecimal("11000")); // 10000 + 1000
+        assertThat(testAccountStock.getQuantity()).isEqualTo(0); // 10 - 10
+
+        verify(redisOrderBookRepository, times(1)).removeOrder(2L, stockCode, OrderMethod.SELL);
+    }
+
+    @Test
+    @DisplayName("시장가 주문이 지정가 주문보다 우선순위가 높아 먼저 체결된다")
+    void distributeEvent_MarketOrderHasHigherPriorityThanLimitOrder_Success() {
+        // Given
+        String stockCode = "005930";
+        LimitOrderFillEvent event = new LimitOrderFillEvent(
+                UUID.randomUUID().toString(),
+                OrderMethod.SELL,
+                new BigDecimal("100"),
+                15, // 15주 체결
+                Instant.now().toEpochMilli()
+        );
+
+        // 시장가 매수 주문 (999999999 - 최고 우선순위)
+        Order marketBuyOrder = Order.createMarketOrder(
+                testAccount, testStock, 10, OrderMethod.BUY
+        );
+        ReflectionTestUtils.setField(marketBuyOrder, "orderId", 1L);
+
+        // 지정가 매수 주문 (100원)
+        Order limitBuyOrder = Order.createLimitOrder(
+                testAccount, testStock, new BigDecimal("100"), 10, OrderMethod.BUY
+        );
+        ReflectionTestUtils.setField(limitBuyOrder, "orderId", 2L);
+
+        // 시장가가 먼저, 지정가가 나중에
+        OrderBookEntry marketEntry = new OrderBookEntry(
+                1L, stockCode, OrderMethod.BUY, new BigDecimal("999999999"),
+                10, 10, Instant.now().toEpochMilli(), 1L
+        );
+        OrderBookEntry limitEntry = new OrderBookEntry(
+                2L, stockCode, OrderMethod.BUY, new BigDecimal("100"),
+                10, 10, Instant.now().toEpochMilli(), 2L
+        );
+
+        Account multiOrderAccount = Account.builder()
+                .accountId(1L)
+                .member(testMember)
+                .contest(testContest)
+                .cash(new BigDecimal("20000"))
+                .holdAmount(new BigDecimal("2000")) // 시장가 1000 + 지정가 1000
+                .build();
+
+        OrderHold marketHold = OrderHold.create(marketBuyOrder, multiOrderAccount, new BigDecimal("1000"));
+        ReflectionTestUtils.setField(marketHold, "orderId", 1L);
+        OrderHold limitHold = OrderHold.create(limitBuyOrder, multiOrderAccount, new BigDecimal("1000"));
+        ReflectionTestUtils.setField(limitHold, "orderId", 2L);
+
+        when(redisOrderBookRepository.fetchMatchingEntries(stockCode, OrderMethod.SELL, event.price(), 100))
+                .thenReturn(List.of(marketEntry, limitEntry));
+        when(orderRepository.findAllById(anyList()))
+                .thenAnswer(invocation -> {
+                    List<Long> orderIds = invocation.getArgument(0);
+                    List<Order> result = new java.util.ArrayList<>();
+                    for (Long orderId : orderIds) {
+                        if (orderId == 1L) {
+                            result.add(marketBuyOrder);
+                        } else if (orderId == 2L) {
+                            result.add(limitBuyOrder);
+                        }
+                    }
+                    return result;
+                });
+        when(accountRepository.findByIdWithLock(1L))
+                .thenReturn(Optional.of(multiOrderAccount));
+        when(executionService.record(any(Order.class), any(BigDecimal.class), anyInt()))
+                .thenAnswer(invocation -> {
+                    Order order = invocation.getArgument(0);
+                    BigDecimal price = invocation.getArgument(1);
+                    Integer quantity = invocation.getArgument(2);
+                    return createExecution(order, price, quantity);
+                });
+        when(orderHoldRepository.findById(anyLong()))
+                .thenAnswer(invocation -> {
+                    Long orderId = invocation.getArgument(0);
+                    if (orderId == 1L) {
+                        return Optional.of(marketHold);
+                    } else if (orderId == 2L) {
+                        return Optional.of(limitHold);
+                    }
+                    return Optional.empty();
+                });
+
+        // When
+        List<Execution> executions = limitOrderExecutionService.distributeEvent(stockCode, event);
+
+        // Then
+        assertThat(executions).hasSize(2);
+        // 시장가 주문이 먼저 전량 체결
+        assertThat(marketBuyOrder.getFilledQuantity()).isEqualTo(10);
+        // 지정가 주문이 5주 체결 (15 - 10 = 5)
+        assertThat(limitBuyOrder.getFilledQuantity()).isEqualTo(5);
+    }
+
+    @Test
+    @DisplayName("시장가 주문 부분 체결이 정상적으로 처리된다")
+    void distributeEvent_MarketOrderPartialFill_Success() {
+        // Given
+        String stockCode = "005930";
+        LimitOrderFillEvent event = new LimitOrderFillEvent(
+                UUID.randomUUID().toString(),
+                OrderMethod.SELL,
+                new BigDecimal("100"),
+                5, // 5주만 체결
+                Instant.now().toEpochMilli()
+        );
+
+        Order marketBuyOrder = Order.createMarketOrder(
+                testAccount, testStock, 10, OrderMethod.BUY
+        );
+        ReflectionTestUtils.setField(marketBuyOrder, "orderId", 1L);
+
+        OrderBookEntry orderBookEntry = new OrderBookEntry(
+                1L, stockCode, OrderMethod.BUY, new BigDecimal("999999999"),
+                10, 10, Instant.now().toEpochMilli(), 1L
+        );
+
+        OrderHold partialOrderHold = OrderHold.create(marketBuyOrder, testAccount, new BigDecimal("1000"));
+        ReflectionTestUtils.setField(partialOrderHold, "orderId", 1L);
+
+        Account partialAccount = Account.builder()
+                .accountId(1L)
+                .member(testMember)
+                .contest(testContest)
+                .cash(new BigDecimal("10000"))
+                .holdAmount(new BigDecimal("1000"))
+                .build();
+
+        when(redisOrderBookRepository.fetchMatchingEntries(stockCode, OrderMethod.SELL, event.price(), 100))
+                .thenReturn(List.of(orderBookEntry));
+        when(orderRepository.findAllById(anyList()))
+                .thenReturn(List.of(marketBuyOrder));
+        when(accountRepository.findByIdWithLock(1L))
+                .thenReturn(Optional.of(partialAccount));
+        when(executionService.record(eq(marketBuyOrder), eq(event.price()), eq(5)))
+                .thenReturn(createExecution(marketBuyOrder, event.price(), 5));
+        when(orderHoldRepository.findById(1L))
+                .thenReturn(Optional.of(partialOrderHold));
+
+        // When
+        List<Execution> executions = limitOrderExecutionService.distributeEvent(stockCode, event);
+
+        // Then
+        assertThat(executions).hasSize(1);
+        assertThat(marketBuyOrder.getFilledQuantity()).isEqualTo(5);
+        assertThat(marketBuyOrder.getRemainingQuantity()).isEqualTo(5);
+        assertThat(marketBuyOrder.getStatus()).isEqualTo(OrderStatus.PARTIALLY_FILLED);
+
+        verify(redisOrderBookRepository, times(1))
+                .updateRemainingQuantity(1L, stockCode, OrderMethod.BUY, 5);
+        verify(redisOrderBookRepository, never()).removeOrder(anyLong(), anyString(), any());
+    }
+
     // Helper 메서드
     private Execution createExecution(Order order, BigDecimal price, int quantity) {
         Execution execution = Execution.of(order, price, quantity);
