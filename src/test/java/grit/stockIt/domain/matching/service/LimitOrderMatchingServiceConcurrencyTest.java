@@ -14,8 +14,10 @@ import grit.stockIt.domain.member.repository.MemberRepository;
 import grit.stockIt.domain.order.entity.Order;
 import grit.stockIt.domain.order.entity.OrderHold;
 import grit.stockIt.domain.order.entity.OrderMethod;
+import grit.stockIt.domain.order.entity.OrderStatus;
 import grit.stockIt.domain.order.repository.OrderHoldRepository;
 import grit.stockIt.domain.order.repository.OrderRepository;
+import grit.stockIt.domain.execution.repository.ExecutionRepository;
 import grit.stockIt.domain.stock.entity.Stock;
 import grit.stockIt.domain.stock.repository.StockRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -109,6 +111,9 @@ class LimitOrderMatchingServiceConcurrencyTest {
 
     @Autowired
     private AccountStockRepository accountStockRepository;
+
+    @Autowired
+    private ExecutionRepository executionRepository;
 
     @Autowired
     private PlatformTransactionManager transactionManager;
@@ -266,48 +271,64 @@ class LimitOrderMatchingServiceConcurrencyTest {
     }
 
     @Test
-    @DisplayName("여러 스레드가 동시에 접근해도 동시성 제어로 인해 한 번만 처리된다")
-    void consumeNextEvent_ConcurrentAccess_OnlyOneProcesses() throws InterruptedException {
+    @DisplayName("여러 스레드가 동시에 접근해도 동시성 제어로 인해 순차적으로 처리된다")
+    void consumeNextEvent_ConcurrentAccess_SequentialProcessing() throws InterruptedException {
         // Given
         String stockCode = "005930";
         String queueKey = "sim:limit:event:" + stockCode;
+        int eventCount = 50; // 큐에 쌓일 이벤트 개수
         
-        // 매수 주문 생성 및 Redis 오더북에 추가
-        createAndSaveOrder(stockCode, OrderMethod.BUY, new BigDecimal("100"), 10);
+        // 충분한 매수 주문 생성 (각 이벤트마다 체결 가능하도록)
+        // 각 이벤트가 10주씩 체결되므로 총 50 * 10 = 500주 필요
+        List<Long> orderIds = new ArrayList<>();
+        BigDecimal initialCash = testAccount.getCash();
+        for (int i = 0; i < eventCount; i++) {
+            Order order = createAndSaveOrder(stockCode, OrderMethod.BUY, new BigDecimal("100"), 10);
+            orderIds.add(order.getOrderId());
+        }
         
-        // 큐에 이벤트 1개만 추가
-        LimitOrderFillEvent event = new LimitOrderFillEvent(
-                UUID.randomUUID().toString(),
-                OrderMethod.SELL,
-                new BigDecimal("100"),
-                10,
-                Instant.now().toEpochMilli()
-        );
+        // 큐에 여러 이벤트 추가 (실제 운영 환경 시뮬레이션)
+        com.fasterxml.jackson.databind.ObjectMapper objectMapper = 
+                new com.fasterxml.jackson.databind.ObjectMapper();
+        for (int i = 0; i < eventCount; i++) {
+            LimitOrderFillEvent event = new LimitOrderFillEvent(
+                    UUID.randomUUID().toString(),
+                    OrderMethod.SELL,
+                    new BigDecimal("100"),
+                    10,
+                    Instant.now().toEpochMilli()
+            );
 
-        try {
-            String payload = new com.fasterxml.jackson.databind.ObjectMapper()
-                    .writeValueAsString(event);
-            redisTemplate.opsForList().rightPush(queueKey, payload);
-        } catch (Exception e) {
-            throw new RuntimeException(e);
+            try {
+                String payload = objectMapper.writeValueAsString(event);
+                redisTemplate.opsForList().rightPush(queueKey, payload);
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            }
         }
 
-        int threadCount = 50; // 적절한 스레드 수 (실제 운영 환경과 유사)
+        int threadCount = 50; // 이벤트 개수와 동일한 스레드 수
         CountDownLatch latch = new CountDownLatch(threadCount);
         AtomicInteger successCount = new AtomicInteger(0);
-        AtomicInteger emptyCount = new AtomicInteger(0);
+        AtomicInteger totalExecutions = new AtomicInteger(0);
         List<Exception> exceptions = new ArrayList<>();
 
-        // When - 여러 스레드가 동시에 접근
+        // When - 여러 스레드가 동시에 접근하여 큐에 쌓인 여러 이벤트 처리
+        // 실제 운영 환경처럼 스레드가 큐가 비어있을 때까지 계속 시도
         for (int i = 0; i < threadCount; i++) {
             new Thread(() -> {
                 try {
-                    List<grit.stockIt.domain.execution.entity.Execution> executions = 
-                            limitOrderMatchingService.consumeNextEvent(stockCode);
-                    if (!executions.isEmpty()) {
-                        successCount.incrementAndGet();
-                    } else {
-                        emptyCount.incrementAndGet();
+                    // 큐가 비어있을 때까지 계속 시도 (실제 운영 환경 시뮬레이션)
+                    while (true) {
+                        List<grit.stockIt.domain.execution.entity.Execution> executions = 
+                                limitOrderMatchingService.consumeNextEvent(stockCode);
+                        if (!executions.isEmpty()) {
+                            successCount.incrementAndGet();
+                            totalExecutions.addAndGet(executions.size());
+                        } else {
+                            // 큐가 비어있으면 종료
+                            break;
+                        }
                     }
                 } catch (Exception e) {
                     exceptions.add(e);
@@ -333,19 +354,87 @@ class LimitOrderMatchingServiceConcurrencyTest {
             }
         }
         
-        // threadCount개 스레드 중 1개만 성공해야 함 (동시성 제어로 인해)
+        // 모든 이벤트가 순차적으로 처리되어야 함 (동시성 제어로 인해)
         assertThat(successCount.get())
-                .as("동시성 제어로 인해 1개 스레드만 성공해야 함 (successCount: %d, emptyCount: %d, exceptions: %d)", 
-                    successCount.get(), emptyCount.get(), exceptions.size())
-                .isEqualTo(1);
-        assertThat(emptyCount.get()).isEqualTo(threadCount - 1);
+                .as("동시성 제어로 인해 모든 이벤트가 순차적으로 처리되어야 함 (successCount: %d, totalExecutions: %d, exceptions: %d)", 
+                    successCount.get(), totalExecutions.get(), exceptions.size())
+                .isEqualTo(eventCount);
         assertThat(exceptions)
                 .as("예외가 발생하지 않아야 함 (발생한 예외: %d개)", exceptions.size())
                 .isEmpty();
         
-        // 큐가 비어있어야 함 (1개만 처리되었으므로)
+        // 큐가 비어있어야 함 (모든 이벤트가 처리되었으므로)
         String remaining = redisTemplate.opsForList().leftPop(queueKey);
-        assertThat(remaining).isNull();
+        assertThat(remaining)
+                .as("모든 이벤트가 처리되어 큐가 비어있어야 함")
+                .isNull();
+        
+        // ===== 데이터 정합성 검증 (갱신 손실 방지 검증) =====
+        // 1. 모든 주문이 정확히 체결되었는지 확인
+        List<Order> orders = orderRepository.findAllById(orderIds);
+        assertThat(orders)
+                .as("모든 주문이 조회되어야 함")
+                .hasSize(eventCount);
+        
+        int totalFilledQuantity = 0;
+        int totalRemainingQuantity = 0;
+        for (Order order : orders) {
+            // 각 주문은 10주를 주문했고, 10주가 체결되어야 함
+            assertThat(order.getFilledQuantity())
+                    .as("주문 ID %d의 체결 수량이 정확해야 함 (주문 수량: %d, 체결 수량: %d, 잔여 수량: %d)",
+                            order.getOrderId(), order.getQuantity(), order.getFilledQuantity(), order.getRemainingQuantity())
+                    .isEqualTo(10);
+            assertThat(order.getRemainingQuantity())
+                    .as("주문 ID %d의 잔여 수량이 0이어야 함", order.getOrderId())
+                    .isEqualTo(0);
+            assertThat(order.getStatus())
+                    .as("주문 ID %d의 상태가 FILLED여야 함", order.getOrderId())
+                    .isEqualTo(OrderStatus.FILLED);
+            
+            totalFilledQuantity += order.getFilledQuantity();
+            totalRemainingQuantity += order.getRemainingQuantity();
+        }
+        
+        // 2. 총 체결 수량 검증 (50개 이벤트 * 10주 = 500주)
+        assertThat(totalFilledQuantity)
+                .as("총 체결 수량이 정확해야 함 (이벤트 수: %d, 이벤트당 수량: 10주)", eventCount)
+                .isEqualTo(eventCount * 10);
+        assertThat(totalRemainingQuantity)
+                .as("총 잔여 수량이 0이어야 함")
+                .isEqualTo(0);
+        
+        // 3. Execution 레코드 검증 (각 주문당 1개의 Execution이 생성되어야 함)
+        List<grit.stockIt.domain.execution.entity.Execution> executions = 
+                executionRepository.findByOrderIdInWithOrder(orderIds);
+        assertThat(executions)
+                .as("Execution 레코드가 정확히 %d개여야 함 (주문당 1개)", eventCount)
+                .hasSize(eventCount);
+        
+        // 각 Execution의 수량이 정확한지 확인
+        int totalExecutionQuantity = executions.stream()
+                .mapToInt(grit.stockIt.domain.execution.entity.Execution::getQuantity)
+                .sum();
+        assertThat(totalExecutionQuantity)
+                .as("Execution의 총 수량이 정확해야 함 (500주)")
+                .isEqualTo(eventCount * 10);
+        
+        // 4. 계좌 잔액 검증 (매수 주문이므로 현금이 차감되어야 함)
+        // 각 주문: 10주 * 100원 = 1,000원 차감
+        // 총 50개 주문: 50 * 1,000 = 50,000원 차감
+        Account updatedAccount = accountRepository.findById(testAccount.getAccountId())
+                .orElseThrow();
+        BigDecimal expectedCash = initialCash.subtract(new BigDecimal("50000")); // 50 * 10 * 100
+        assertThat(updatedAccount.getCash())
+                .as("계좌 잔액이 정확히 차감되어야 함 (초기: %s, 예상: %s, 실제: %s)",
+                        initialCash, expectedCash, updatedAccount.getCash())
+                .isEqualByComparingTo(expectedCash);
+        
+        // 5. AccountStock 검증 (매수 주문이므로 보유 주식이 증가해야 함)
+        AccountStock accountStock = accountStockRepository.findByAccountAndStock(updatedAccount, testStock)
+                .orElseThrow(() -> new AssertionError("AccountStock이 생성되어야 함"));
+        assertThat(accountStock.getQuantity())
+                .as("보유 주식 수량이 정확해야 함 (500주)")
+                .isEqualTo(eventCount * 10);
     }
 
     @Test
