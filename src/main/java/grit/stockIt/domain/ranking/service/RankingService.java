@@ -18,6 +18,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
+import org.springframework.core.env.Environment;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -47,6 +48,7 @@ public class RankingService {
     private final MissionService missionService;
     private final RedisMarketDataRepository redisMarketDataRepository;
     private final StockDetailService stockDetailService;
+    private final Environment environment;
     
     // Rate Limiter: KIS API 초당 30개 제한 (안전하게 25개로 설정)
     private final RateLimiter kisApiRateLimiter = RateLimiter.create(25.0);
@@ -62,6 +64,12 @@ public class RankingService {
     @CacheEvict(value = "rankings", allEntries = true)
     @Transactional
     public void updateAllRankings() {
+        // 테스트 환경에서는 스케줄러 비활성화
+        String schedulingEnabled = environment.getProperty("spring.task.scheduling.enabled", "true");
+        if ("false".equals(schedulingEnabled)) {
+            return;
+        }
+        
         log.info("🔄 [스케줄러] 랭킹 갱신 시작: {}", LocalDateTime.now());
 
         try {

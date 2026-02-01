@@ -17,11 +17,17 @@ import java.util.Map;
 @RestController
 @RequestMapping("/api/test/notifications")
 @Tag(name = "test-notifications", description = "알림 테스트 API (개발용)")
-@RequiredArgsConstructor
 public class TestNotificationController {
 
     private final FcmService fcmService;
     private final MemberRepository memberRepository;
+
+    public TestNotificationController(
+            @org.springframework.beans.factory.annotation.Autowired(required = false) FcmService fcmService,
+            MemberRepository memberRepository) {
+        this.fcmService = fcmService;
+        this.memberRepository = memberRepository;
+    }
 
     @Operation(
             summary = "테스트 or 관리자 전용 알림 전송"
@@ -56,6 +62,14 @@ public class TestNotificationController {
         data.put("timestamp", String.valueOf(System.currentTimeMillis()));
 
         // FCM 푸시 알림 전송
+        if (fcmService == null) {
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", false);
+            response.put("message", "FCM 서비스를 사용할 수 없습니다.");
+            response.put("memberId", memberId);
+            return ResponseEntity.badRequest().body(response);
+        }
+        
         boolean success = fcmService.sendExecutionNotification(member.getFcmToken(), data);
 
         // 응답

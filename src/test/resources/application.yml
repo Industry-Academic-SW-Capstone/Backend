@@ -1,22 +1,43 @@
 # 테스트 환경 전용 설정 파일
+# 주의: Testcontainers를 사용하는 테스트는 @DynamicPropertySource로 이 설정을 덮어씁니다.
 spring:
-  # Redis 설정을 'localhost'로 덮어쓴다
+  # Redis 설정 (Testcontainers 사용 시 @DynamicPropertySource로 덮어씀)
   data:
     redis:
       host: localhost
       port: 6379
 
-  # DB(Postgres) 설정을 'localhost'로 덮어쓴다
+  # DB(Postgres) 설정 (Testcontainers 사용 시 @DynamicPropertySource로 덮어씀)
+  # Testcontainers를 사용하지 않는 테스트를 위한 기본값
   datasource:
     url: jdbc:postgresql://localhost:5432/database
     username: sa
     password: 1234
     driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: 50  # 동시성 테스트를 위한 커넥션 풀 크기 증가
+      minimum-idle: 10
+      connection-timeout: 30000
+      idle-timeout: 600000
+      max-lifetime: 1800000
 
   jpa:
     hibernate:
-      ddl-auto: none
+      ddl-auto: update  # Testcontainers 사용 시 스키마 자동 생성
     show-sql: true
+    properties:
+      hibernate:
+        transaction:
+          timeout: 30  # 트랜잭션 타임아웃 (초)
+
+  # 테스트 환경에서 스케줄러 비활성화 (백그라운드 작업 방지)
+  task:
+    scheduling:
+      enabled: false
+
+  # 테스트 환경에서 Flyway 비활성화 (Testcontainers 사용 시 스키마 자동 생성)
+  flyway:
+    enabled: false
 
 kis:
   api:
@@ -29,3 +50,8 @@ python:
   analysis:
     url: ${PYTHON_ANALYSIS_URL:http://localhost:8000}
     # 또는 배포 서버 고정: http://34.64.175.176
+
+# JWT 설정 (테스트 환경)
+jwt:
+  secret: ${JWT_SECRET:testSecretKey123456789012345678901234567890}
+  expiration: ${JWT_EXPIRATION:86400000}

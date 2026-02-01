@@ -19,12 +19,20 @@ import java.util.concurrent.CompletableFuture;
 
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class AdminNotificationService {
 
     private final FcmService fcmService;
     private final NotificationRepository notificationRepository;
     private final ObjectMapper objectMapper;
+
+    public AdminNotificationService(
+            @org.springframework.beans.factory.annotation.Autowired(required = false) FcmService fcmService,
+            NotificationRepository notificationRepository,
+            ObjectMapper objectMapper) {
+        this.fcmService = fcmService;
+        this.notificationRepository = notificationRepository;
+        this.objectMapper = objectMapper;
+    }
 
     // 모든 회원에게 알림을 전송
     @Async
@@ -61,7 +69,7 @@ public class AdminNotificationService {
                 savedCount++;
                 
                 // FCM 푸시 알림 전송 (토큰이 있는 경우만)
-                if (member.hasFcmToken()) {
+                if (member.hasFcmToken() && fcmService != null) {
                     // executionNotificationEnabled 체크 안 함
                     boolean success = fcmService.sendExecutionNotification(
                             member.getFcmToken(),
