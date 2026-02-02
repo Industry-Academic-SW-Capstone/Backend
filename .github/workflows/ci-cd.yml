@@ -156,3 +156,7 @@ jobs:
           docker compose -f docker-compose.prod.yml down
           docker compose -f docker-compose.prod.yml pull
           docker compose -f docker-compose.prod.yml up -d
+          
+          # 오래된 Docker 이미지 정리
+          docker image prune -af --filter "until=24h" || true
+          docker system prune -f --volumes || true
