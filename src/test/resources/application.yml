@@ -1,12 +1,6 @@
 # 테스트 환경 전용 설정 파일
 # 주의: Testcontainers를 사용하는 테스트는 @DynamicPropertySource로 이 설정을 덮어씁니다.
 spring:
-  # Redis 설정 (Testcontainers 사용 시 @DynamicPropertySource로 덮어씀)
-  data:
-    redis:
-      host: localhost
-      port: 6379
-
   # DB(Postgres) 설정 (Testcontainers 사용 시 @DynamicPropertySource로 덮어씀)
   # Testcontainers를 사용하지 않는 테스트를 위한 기본값
   datasource:
