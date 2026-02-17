@@ -1,0 +1,264 @@
+{
+  "annotations": {
+    "list": []
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "links": [],
+  "panels": [
+    {
+      "title": "HTTP Request Throughput (RPS)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "gradientMode": "scheme",
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(http_server_requests_seconds_count{job=\"spring-boot\"}[1m])) by (uri, method)",
+          "legendFormat": "{{method}} {{uri}}",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["mean", "max"] }
+      }
+    },
+    {
+      "title": "HTTP Response Time (p50 / p95 / p99)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "gradientMode": "scheme",
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum(rate(http_server_requests_seconds_bucket{job=\"spring-boot\"}[1m])) by (le))",
+          "legendFormat": "p50",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(http_server_requests_seconds_bucket{job=\"spring-boot\"}[1m])) by (le))",
+          "legendFormat": "p95",
+          "refId": "B"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum(rate(http_server_requests_seconds_bucket{job=\"spring-boot\"}[1m])) by (le))",
+          "legendFormat": "p99",
+          "refId": "C"
+        }
+      ],
+      "options": {
+        "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["mean", "max"] }
+      }
+    },
+    {
+      "title": "HikariCP Connection Pool",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "gradientMode": "scheme",
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "hikaricp_connections_active{job=\"spring-boot\"}",
+          "legendFormat": "Active",
+          "refId": "A"
+        },
+        {
+          "expr": "hikaricp_connections_idle{job=\"spring-boot\"}",
+          "legendFormat": "Idle",
+          "refId": "B"
+        },
+        {
+          "expr": "hikaricp_connections_pending{job=\"spring-boot\"}",
+          "legendFormat": "Pending",
+          "refId": "C"
+        },
+        {
+          "expr": "hikaricp_connections_max{job=\"spring-boot\"}",
+          "legendFormat": "Max",
+          "refId": "D"
+        }
+      ],
+      "options": {
+        "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["mean", "max"] }
+      }
+    },
+    {
+      "title": "JVM Heap Memory Usage",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "gradientMode": "scheme",
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "sum(jvm_memory_used_bytes{job=\"spring-boot\", area=\"heap\"}) by (id)",
+          "legendFormat": "Used - {{id}}",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(jvm_memory_max_bytes{job=\"spring-boot\", area=\"heap\"}) by (id)",
+          "legendFormat": "Max - {{id}}",
+          "refId": "B"
+        }
+      ],
+      "options": {
+        "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["mean", "max"] }
+      }
+    },
+    {
+      "title": "JVM GC Pause Time",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 16 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "gradientMode": "scheme",
+            "showPoints": "never",
+            "drawStyle": "bars"
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "rate(jvm_gc_pause_seconds_sum{job=\"spring-boot\"}[1m])",
+          "legendFormat": "{{action}} - {{cause}}",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["mean", "max"] }
+      }
+    },
+    {
+      "title": "CPU Usage",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 16 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1,
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "gradientMode": "scheme",
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "process_cpu_usage{job=\"spring-boot\"}",
+          "legendFormat": "Process CPU",
+          "refId": "A"
+        },
+        {
+          "expr": "system_cpu_usage{job=\"spring-boot\"}",
+          "legendFormat": "System CPU",
+          "refId": "B"
+        }
+      ],
+      "options": {
+        "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["mean", "max"] }
+      }
+    },
+    {
+      "title": "Active Threads",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 16 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "gradientMode": "scheme",
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "jvm_threads_live_threads{job=\"spring-boot\"}",
+          "legendFormat": "Live Threads",
+          "refId": "A"
+        },
+        {
+          "expr": "jvm_threads_peak_threads{job=\"spring-boot\"}",
+          "legendFormat": "Peak Threads",
+          "refId": "B"
+        },
+        {
+          "expr": "jvm_threads_daemon_threads{job=\"spring-boot\"}",
+          "legendFormat": "Daemon Threads",
+          "refId": "C"
+        }
+      ],
+      "options": {
+        "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["mean", "max"] }
+      }
+    }
+  ],
+  "schemaVersion": 39,
+  "tags": ["spring-boot", "monitoring"],
+  "templating": { "list": [] },
+  "time": { "from": "now-15m", "to": "now" },
+  "timepicker": {},
+  "timezone": "Asia/Seoul",
+  "title": "Spring Boot Dashboard",
+  "uid": "spring-boot-dashboard",
+  "version": 1
+}
