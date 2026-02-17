@@ -100,6 +100,8 @@ services:
     restart: unless-stopped
     env_file:
       - .env
+    environment:
+      SPRING_PROFILES_ACTIVE: dev
 
   k6:
     image: grafana/k6:latest

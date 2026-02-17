@@ -142,6 +142,8 @@ jobs:
           export POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD }}
           export POSTGRES_URL=${{ secrets.POSTGRES_URL }}
           export SPRING_PROFILES_ACTIVE=dev
+          export SPRING_REDIS_HOST=${{ secrets.SPRING_REDIS_HOST }}
+          export SPRING_REDIS_PORT=${{ secrets.SPRING_REDIS_PORT }}
           export KIS_API_APPKEY=${{ secrets.KIS_API_APPKEY }}
           export KIS_API_APPSECRET=${{ secrets.KIS_API_APPSECRET }}
           export KAKAO_CLIENT_SECRET=${{ secrets.KAKAO_CLIENT_SECRET }}
