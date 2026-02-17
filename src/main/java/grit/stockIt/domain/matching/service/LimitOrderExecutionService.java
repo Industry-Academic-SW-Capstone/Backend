@@ -27,6 +27,8 @@ import org.springframework.transaction.annotation.Transactional;
 import grit.stockIt.domain.order.event.TradeCompletionEvent;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+import jakarta.persistence.EntityManager;
+
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -37,7 +39,7 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 import java.math.RoundingMode;
 
-@Slf4j
+    @Slf4j
 @Service
 @RequiredArgsConstructor
 public class LimitOrderExecutionService {
@@ -55,6 +57,7 @@ public class LimitOrderExecutionService {
     private final ApplicationEventPublisher eventPublisher;
     private final StringRedisTemplate redisTemplate;
     private final ObjectMapper objectMapper;
+    private final EntityManager entityManager;
 
     @Value("${matching.limit-order-fetch-size:100}")
     private int fetchSize;
@@ -137,7 +140,22 @@ public class LimitOrderExecutionService {
             Account account = accountRepository.findByIdWithLock(order.getAccount().getAccountId())
                     .orElseThrow(() -> new IllegalStateException("계좌를 찾을 수 없습니다. accountId=" + order.getAccount().getAccountId()));
 
-            int desiredFillQuantity = command.fillQuantity();
+            // Account 락 획득 후 Order를 DB에서 다시 읽어 최신 상태 확인 (동시성 보호)
+            entityManager.refresh(order);
+            if (!isActive(order)) {
+                log.debug("락 획득 후 주문이 이미 체결/취소됨. orderId={} status={}", orderId, order.getStatus());
+                redisOrderBookRepository.removeOrder(orderId, stockCode, order.getOrderMethod());
+                orderSubscriptionCoordinator.unregisterLimitOrder(stockCode);
+                continue;
+            }
+
+            // 다른 트랜잭션이 부분 체결했을 수 있으므로 fillQuantity 재계산
+            int freshRemaining = order.getRemainingQuantity();
+            int desiredFillQuantity = Math.min(command.fillQuantity(), freshRemaining);
+            if (desiredFillQuantity <= 0) {
+                log.debug("락 획득 후 잔여 수량 없음. orderId={} remaining={}", orderId, freshRemaining);
+                continue;
+            }
             int actualFillQuantity = desiredFillQuantity;
             BigDecimal fillPrice = event.price();
 
