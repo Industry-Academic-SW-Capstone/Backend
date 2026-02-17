@@ -112,7 +112,7 @@ services:
     profiles:
       - load-test
     # k6는 필요할 때만 실행 (프로파일로 분리)
-    # 실행: docker-compose --profile load-test run --rm k6 run /scripts/load-test.js
+    # 실행: docker-compose --profile load-test run --rm k6 run /scripts/matching-engine-test.js
     # 환경 변수는 명령어에서 직접 전달: --env BASE_URL=...
 
 volumes:
