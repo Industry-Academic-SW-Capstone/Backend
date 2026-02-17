@@ -16,7 +16,7 @@ spring:
   jpa:
     hibernate:
       ddl-auto: update
-    show-sql: true
+    show-sql: false   # true 시 모든 SQL이 여러 줄로 출력되어 로그 폭발
     properties:
       hibernate:
         highlight_sql: true
