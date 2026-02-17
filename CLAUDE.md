@@ -25,7 +25,7 @@ docker-compose down           # Stop all services
 docker-compose build          # Rebuild backend image
 
 # Load testing (k6)
-docker-compose --profile load-test run --rm k6 run /scripts/integrated-load-test.js
+docker-compose --profile load-test run --rm k6 run /scripts/matching-engine-test.js
 ```
 
 ## Architecture
