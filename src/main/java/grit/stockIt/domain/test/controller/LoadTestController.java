@@ -11,6 +11,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.context.annotation.Profile;
 import org.springframework.web.bind.annotation.*;
 
 import java.math.BigDecimal;
@@ -24,6 +25,7 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/test")
 @RequiredArgsConstructor
+@Profile("!prod")
 @Tag(name = "Load Test", description = "부하 테스트 전용 API (스테이징 환경 전용)")
 public class LoadTestController {
 
