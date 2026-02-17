@@ -100,10 +100,83 @@ services:
     restart: unless-stopped
     env_file:
       - .env
+    environment:
+      SPRING_PROFILES_ACTIVE: dev
+
+  k6:
+    image: grafana/k6:latest
+    container_name: k6
+    ports:
+      - "5665:5665"
+    environment:
+      K6_PROMETHEUS_RW_SERVER_URL: http://prometheus:9090/api/v1/write
+      K6_WEB_DASHBOARD: true
+      K6_WEB_DASHBOARD_HOST: 0.0.0.0
+    volumes:
+      - ./k6/scripts:/scripts
+      - ./k6/results:/results
+    networks:
+      - backend
+    profiles:
+      - load-test
+    # k6는 필요할 때만 실행 (프로파일로 분리)
+    # 실행: docker-compose --profile load-test run --rm k6 run /scripts/matching-engine-test.js
+    # 환경 변수는 명령어에서 직접 전달: --env BASE_URL=...
+
+  node-exporter:
+    image: prom/node-exporter:latest
+    container_name: node-exporter
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - '--path.procfs=/host/proc'
+      - '--path.sysfs=/host/sys'
+      - '--path.rootfs=/rootfs'
+      - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'
+    networks:
+      - backend
+    restart: unless-stopped
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--web.enable-remote-write-receiver'
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    networks:
+      - backend
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+    depends_on:
+      - prometheus
+    networks:
+      - backend
+    restart: unless-stopped
 
 volumes:
   postgres_data:
   redis_data:
+  prometheus_data:
+  grafana_data:
 
 networks:
   backend:

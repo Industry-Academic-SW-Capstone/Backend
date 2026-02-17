@@ -7,6 +7,7 @@ on:
       - src/**
       - traefik/**
       - docker-compose.prod.yml
+      - monitoring/**
       - .github/workflows/**
   pull_request:
     branches: [ main, develop ]
@@ -115,7 +116,7 @@ jobs:
         host: ${{ secrets.SERVER_HOST }}
         username: ${{ secrets.SERVER_USERNAME }}
         key: ${{ secrets.SERVER_SSH_KEY }}
-        source: "./traefik/traefik.yml,./traefik/dynamic_conf.yml,./docker-compose.prod.yml"
+        source: "./traefik/traefik.yml,./traefik/dynamic_conf.yml,./docker-compose.prod.yml,./monitoring/prometheus/prometheus.yml,./monitoring/grafana/provisioning/datasources/datasource.yml,./monitoring/grafana/provisioning/dashboards/dashboard.yml,./monitoring/grafana/dashboards/spring-boot-dashboard.json"
         target: /home/ymkim2353/
         debug: true
         
@@ -142,6 +143,8 @@ jobs:
           export POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD }}
           export POSTGRES_URL=${{ secrets.POSTGRES_URL }}
           export SPRING_PROFILES_ACTIVE=dev
+          export SPRING_REDIS_HOST=${{ secrets.SPRING_REDIS_HOST }}
+          export SPRING_REDIS_PORT=${{ secrets.SPRING_REDIS_PORT }}
           export KIS_API_APPKEY=${{ secrets.KIS_API_APPKEY }}
           export KIS_API_APPSECRET=${{ secrets.KIS_API_APPSECRET }}
           export KAKAO_CLIENT_SECRET=${{ secrets.KAKAO_CLIENT_SECRET }}

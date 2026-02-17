@@ -1,22 +1,23 @@
+# local: 맥/PC에서 앱만 실행. DB·Redis는 localhost (로컬 설치 또는 Docker로 DB/Redis만 띄운 경우)
 spring:
   config:
     import: optional:file:.env[.properties]
 
   data:
     redis:
-      host: localhost # 로컬 환경에서는 localhost 사용
+      host: localhost
       port: 6379
 
   datasource:
     url: jdbc:postgresql://localhost:5432/database
-    username: ${POSTGRES_USER}
-    password: ${POSTGRES_PASSWORD}
+    username: ${POSTGRES_USER:sa}
+    password: ${POSTGRES_PASSWORD:1234}
     driver-class-name: org.postgresql.Driver
 
   jpa:
     hibernate:
       ddl-auto: update
-    show-sql: true
+    show-sql: false   # true 시 모든 SQL이 여러 줄로 출력되어 로그 폭발
     properties:
       hibernate:
         highlight_sql: true
