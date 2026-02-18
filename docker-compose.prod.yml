@@ -137,7 +137,6 @@ services:
         max-size: "50m"
         max-file: "5"
 
-
   node-exporter:
     image: prom/node-exporter:latest
     container_name: node-exporter
