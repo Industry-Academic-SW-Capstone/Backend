@@ -63,10 +63,50 @@ services:
         max-size: "10m"
         max-file: "3"
 
+  db:
+    image: postgres:15
+    container_name: postgres
+    restart: always
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      TZ: Asia/Seoul
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - backend
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+    command:
+      - postgres
+      - "-c"
+      - "shared_buffers=256MB"
+      - "-c"
+      - "work_mem=4MB"
+      - "-c"
+      - "effective_cache_size=512MB"
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}" ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
   backend:
     image: hwnahee/stockit:main
     container_name: backend
     depends_on:
+      db:
+        condition: service_healthy
       redis:
         condition: service_started
     ports:
@@ -164,6 +204,7 @@ services:
         max-file: "3"
 
 volumes:
+  postgres_data:
   redis_data:
   prometheus_data:
   grafana_data:
