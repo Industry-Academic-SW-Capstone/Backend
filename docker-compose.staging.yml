@@ -1,26 +1,4 @@
 services:
-  traefik:
-    image: traefik:v2.11
-    container_name: traefik
-    restart: always
-    ports:
-      - "80:80"
-      - "443:443"
-      - "8088:8088"
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
-      - ./traefik/traefik.yml:/etc/traefik/traefik.yml:ro
-      - ./traefik/dynamic_conf.yml:/etc/traefik/dynamic_conf.yml:ro
-      - ./traefik/letsencrypt:/etc/traefik/letsencrypt
-      - ./traefik/users:/etc/traefik/users:ro
-    networks:
-      - backend
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-
   redis:
     image: redis:7
     container_name: redis
