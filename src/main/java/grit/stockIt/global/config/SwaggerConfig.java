@@ -34,6 +34,7 @@ public class SwaggerConfig {
     public OpenAPI customOpenAPI() {
         return new OpenAPI()
                 .servers(List.of(
+                        new Server().url("").description("현재 서버"),
                         new Server().url("http://localhost:8080").description("StockIt 로컬 서버"),
                         new Server().url("https://api.stockit.live").description("StockIt 배포 서버 (Kubernetes)"),
                         new Server().url("https://docker-api.stockit.live").description("StockIt Docker 배포 서버")
