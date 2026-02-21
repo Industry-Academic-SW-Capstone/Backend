@@ -178,6 +178,17 @@ public class StockDetailService {
             StockAnalysisResponse aiAnalysis,
             boolean tradeable
     ) {
+        // 스코어 매핑 (nullable)
+        StockDetailDto.ScoreDetail scoreDetail = null;
+        if (aiAnalysis.scores() != null) {
+            scoreDetail = new StockDetailDto.ScoreDetail(
+                    aiAnalysis.scores().growthScore(),
+                    aiAnalysis.scores().stabilityScore(),
+                    aiAnalysis.scores().similarityScore(),
+                    aiAnalysis.scores().compositeScore()
+            );
+        }
+
         return new StockDetailDto(
                 stockCode,
                 kisDetail.stockName() != null ? kisDetail.stockName() : stock.getName(),
@@ -199,7 +210,9 @@ public class StockDetailService {
                 aiAnalysis.finalStyleTag(),
                 aiAnalysis.styleDescription(),
                 tradeable,
-                aiAnalysis.reason()
+                aiAnalysis.reason(),
+                scoreDetail,
+                aiAnalysis.report()
         );
     }
 
