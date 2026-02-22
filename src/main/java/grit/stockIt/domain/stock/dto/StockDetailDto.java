@@ -24,6 +24,16 @@ public record StockDetailDto(
     String styleTag,                // AI 스타일 태그 (nullable)
     String aiDescription,           // AI 설명 (nullable)
     Boolean tradeable,              // 거래 가능 여부
-    String untradeableReason        // 거래 불가 사유 (nullable)
-) {}
+    String untradeableReason,       // 거래 불가 사유 (nullable)
+    ScoreDetail scores,             // Step 3: 멀티팩터 스코어 (nullable)
+    String aiReport                 // Step 4: AI 투자 분석 리포트 (nullable)
+) {
+    // 스코어링 상세 결과
+    public record ScoreDetail(
+        Double growthScore,
+        Double stabilityScore,
+        Double similarityScore,
+        Double compositeScore
+    ) {}
+}
 
