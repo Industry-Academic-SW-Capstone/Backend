@@ -2,6 +2,8 @@ package grit.stockIt.domain.stock.analysis.service;
 
 import grit.stockIt.domain.stock.analysis.dto.PortfolioAnalysisRequest;
 import grit.stockIt.domain.stock.analysis.dto.PortfolioAnalysisResponse;
+import grit.stockIt.domain.stock.analysis.dto.RecommendRequest;
+import grit.stockIt.domain.stock.analysis.dto.RecommendResponse;
 import grit.stockIt.domain.stock.analysis.dto.StockAnalysisRequest;
 import grit.stockIt.domain.stock.analysis.dto.StockAnalysisResponse;
 import lombok.RequiredArgsConstructor;
@@ -115,6 +117,42 @@ public class PythonAnalysisClient {
                 .onErrorMap(throwable -> {
                     log.error("Python 서버 호출 최종 실패: {}", throwable.getMessage());
                     return new RuntimeException("AI 서버 분석 실패: " + throwable.getMessage(), throwable);
+                });
+    }
+
+    // Python 서버에 종목 추천 요청
+    public Mono<RecommendResponse> recommendStocks(RecommendRequest request) {
+        log.info("Python 서버 종목 추천 요청: {}개 보유종목, persona={}, topN={}, url={}",
+                request.stocks().size(), request.persona(), request.topN(), pythonServerUrl);
+
+        return getPythonWebClient()
+                .post()
+                .uri("/stock/recommend")
+                .bodyValue(request)
+                .retrieve()
+                .bodyToMono(RecommendResponse.class)
+                .doOnSuccess(response ->
+                    log.info("Python 서버 종목 추천 완료: {}개 추천 결과", response.recommendations().size())
+                )
+                .doOnError(error ->
+                    log.error("Python 서버 종목 추천 실패: url={}", pythonServerUrl, error)
+                )
+                .retryWhen(Retry.backoff(2, Duration.ofSeconds(1))
+                        .filter(throwable -> {
+                            String message = throwable.getMessage();
+                            return message != null && (
+                                message.contains("Connection refused") ||
+                                message.contains("timeout") ||
+                                message.contains("Connection reset")
+                            );
+                        })
+                        .doBeforeRetry(retrySignal ->
+                            log.warn("Python 서버 재시도: {}번째 시도", retrySignal.totalRetries() + 1)
+                        )
+                )
+                .onErrorMap(throwable -> {
+                    log.error("Python 서버 종목 추천 최종 실패: {}", throwable.getMessage());
+                    return new RuntimeException("AI 서버 추천 실패: " + throwable.getMessage(), throwable);
                 });
     }
 }
