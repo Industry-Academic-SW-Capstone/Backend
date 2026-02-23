@@ -1,0 +1,211 @@
+services:
+  redis:
+    image: redis:7
+    container_name: redis
+    restart: always
+    ports:
+      - "6379:6379"
+    command:
+      [
+        "redis-server",
+        "--slowlog-log-slower-than",
+        "1000",
+        "--slowlog-max-len",
+        "256",
+        "--logfile",
+        "/var/log/redis/redis-server.log",
+      ]
+    volumes:
+      - redis_data:/data
+      - ./logs/redis:/var/log/redis
+    networks:
+      - backend
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  redis-cli:
+    image: redis:7
+    container_name: redis-cli
+    depends_on:
+      - redis
+    networks:
+      - backend
+    command: [ "tail", "-f", "/dev/null" ]
+    volumes:
+      - ./redis-scripts:/scripts
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  db:
+    image: postgres:15
+    container_name: postgres
+    restart: always
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      TZ: Asia/Seoul
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - backend
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+    command:
+      - postgres
+      - "-c"
+      - "shared_buffers=256MB"
+      - "-c"
+      - "work_mem=4MB"
+      - "-c"
+      - "effective_cache_size=512MB"
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}" ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: backend
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    ports:
+      - "8080:8080"
+    networks:
+      - backend
+    restart: unless-stopped
+    environment:
+      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_URL=${POSTGRES_URL}
+      - SPRING_PROFILES_ACTIVE=dev
+      - SPRING_REDIS_HOST=${SPRING_REDIS_HOST}
+      - SPRING_REDIS_PORT=${SPRING_REDIS_PORT:-6379}
+      - KIS_API_APPKEY=${KIS_API_APPKEY}
+      - KIS_API_APPSECRET=${KIS_API_APPSECRET}
+      - KAKAO_CLIENT_SECRET=${KAKAO_CLIENT_SECRET}
+      - KAKAO_REDIRECT_URI=${KAKAO_REDIRECT_URI}
+      - KAKAO_REST_API_KEY=${KAKAO_REST_API_KEY}
+      - JWT_SECRET=${JWT_SECRET}
+      - FIREBASE_CREDENTIALS_BASE64=${FIREBASE_CREDENTIALS_BASE64}
+      - PYTHON_ANALYSIS_URL=${PYTHON_ANALYSIS_URL}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "5"
+
+  k6:
+    image: grafana/k6:latest
+    container_name: k6
+    ports:
+      - "5665:5665"
+    environment:
+      K6_PROMETHEUS_RW_SERVER_URL: http://prometheus:9090/api/v1/write
+      K6_WEB_DASHBOARD: true
+      K6_WEB_DASHBOARD_HOST: 0.0.0.0
+    volumes:
+      - ./k6/scripts:/scripts
+      - ./k6/results:/results
+    networks:
+      - backend
+    profiles:
+      - load-test
+
+  node-exporter:
+    image: prom/node-exporter:latest
+    container_name: node-exporter
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - '--path.procfs=/host/proc'
+      - '--path.sysfs=/host/sys'
+      - '--path.rootfs=/rootfs'
+      - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'
+    networks:
+      - backend
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--web.enable-remote-write-receiver'
+      - '--storage.tsdb.retention.time=30d'
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    networks:
+      - backend
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+    depends_on:
+      - prometheus
+    networks:
+      - backend
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  postgres_data:
+  redis_data:
+  prometheus_data:
+  grafana_data:
+
+networks:
+  backend:
+    name: backend
