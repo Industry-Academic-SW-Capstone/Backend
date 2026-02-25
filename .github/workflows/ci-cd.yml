@@ -118,6 +118,7 @@ jobs:
         key: ${{ secrets.SERVER_SSH_KEY }}
         source: "./traefik/traefik.yml,./traefik/dynamic_conf.yml,./docker-compose.prod.yml,./monitoring/prometheus/prometheus.yml,./monitoring/grafana/provisioning/datasources/datasource.yml,./monitoring/grafana/provisioning/dashboards/dashboard.yml,./monitoring/grafana/dashboards/spring-boot-dashboard.json,./monitoring/grafana/dashboards/postgresql-dashboard.json,./monitoring/postgres/init-pg-stat-statements.sql"
         target: /home/ymkim2353/
+        overwrite: true
         debug: true
         
 
