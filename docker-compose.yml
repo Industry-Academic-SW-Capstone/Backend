@@ -27,6 +27,7 @@ services:
       TZ: Asia/Seoul
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ./monitoring/postgres/init-pg-stat-statements.sql:/docker-entrypoint-initdb.d/01-pg-stat-statements.sql:ro
     networks:
       - backend
     healthcheck:
@@ -36,6 +37,12 @@ services:
       retries: 10
     command:
       - postgres
+      - "-c"
+      - "shared_preload_libraries=pg_stat_statements"
+      - "-c"
+      - "pg_stat_statements.track=all"
+      - "-c"
+      - "pg_stat_statements.max=10000"
       - "-c"
       - "logging_collector=on"
       - "-c"
@@ -128,6 +135,8 @@ services:
     container_name: postgres-exporter
     environment:
       DATA_SOURCE_NAME: "postgresql://sa:${POSTGRES_PASSWORD}@db:5432/database?sslmode=disable"
+    command:
+      - "--collector.stat_statements"
     depends_on:
       db:
         condition: service_healthy
