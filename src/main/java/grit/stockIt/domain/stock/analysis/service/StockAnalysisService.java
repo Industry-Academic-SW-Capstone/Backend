@@ -54,14 +54,14 @@ public class StockAnalysisService {
                     FinancialData financialData = tuple.getT2();
                     DividendData dividendData = tuple.getT3();
 
-                    // 3. Python 서버 요청 DTO 생성
+                    // 3. Python 서버 요청 DTO 생성 (null → 0.0 기본값: Python Pydantic float 필드는 null 거부)
                     StockAnalysisRequest request = new StockAnalysisRequest(
                             stockCode,
-                            marketData.marketCap() != null ? marketData.marketCap().doubleValue() : null,
-                            marketData.per(),
-                            marketData.pbr(),
-                            financialData.roe(),
-                            financialData.debtRatio(),
+                            marketData.marketCap() != null ? marketData.marketCap().doubleValue() : 0.0,
+                            marketData.per() != null ? marketData.per() : 0.0,
+                            marketData.pbr() != null ? marketData.pbr() : 0.0,
+                            financialData.roe() != null ? financialData.roe() : 0.0,
+                            financialData.debtRatio() != null ? financialData.debtRatio() : 0.0,
                             dividendData.dividendYield() != null ? dividendData.dividendYield() : 0.0
                     );
 
