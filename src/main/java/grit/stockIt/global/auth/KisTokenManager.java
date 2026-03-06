@@ -3,8 +3,6 @@ package grit.stockIt.global.auth;
 import grit.stockIt.global.config.KisApiProperties;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.boot.context.event.ApplicationReadyEvent;
-import org.springframework.context.event.EventListener;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
@@ -30,18 +28,6 @@ public class KisTokenManager {
 
     // KIS가 정한 토큰 유효시간 (24시간) - 5분 여유
     private static final Duration TOKEN_VALIDITY = Duration.ofHours(24).minusMinutes(5);
-
-    // 앱 시작 시 KIS Access Token 초기화 (Netty IO 스레드 block() 문제 방지)
-    @EventListener(ApplicationReadyEvent.class)
-    public void initializeKisToken() {
-        try {
-            log.info("애플리케이션 시작 - KIS Access Token 사전 초기화");
-            getAccessToken();
-            log.info("KIS Access Token 사전 초기화 완료");
-        } catch (Exception e) {
-            log.warn("KIS Access Token 사전 초기화 실패 (첫 요청 시 재시도): {}", e.getMessage());
-        }
-    }
 
     // 다른 서비스에서 Access Token을 요청할 때 호출
     public String getAccessToken() {

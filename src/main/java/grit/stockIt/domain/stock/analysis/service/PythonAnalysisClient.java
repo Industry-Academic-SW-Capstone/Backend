@@ -9,7 +9,6 @@ import grit.stockIt.domain.stock.analysis.dto.RecommendRequest;
 import grit.stockIt.domain.stock.analysis.dto.RecommendResponse;
 import grit.stockIt.domain.stock.analysis.dto.StockAnalysisRequest;
 import grit.stockIt.domain.stock.analysis.dto.StockAnalysisResponse;
-import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -35,11 +34,6 @@ public class PythonAnalysisClient {
     private String pythonServerUrl;
 
     private final WebClient.Builder webClientBuilder;
-
-    @PostConstruct
-    public void init() {
-        log.info("Python AI 서버 URL 설정: {}", pythonServerUrl);
-    }
 
     // Python 서버 전용 WebClient 생성 (baseUrl 없이 사용)
     private WebClient getPythonWebClient() {
@@ -133,28 +127,12 @@ public class PythonAnalysisClient {
                 .uri("/portfolio/analyze")
                 .bodyValue(request)
                 .retrieve()
-                .onStatus(HttpStatusCode::isError, response ->
-                    response.bodyToMono(String.class).flatMap(errorBody -> {
-                        log.error("Python 포트폴리오 HTTP 오류: status={}, body={}",
-                            response.statusCode(),
-                            errorBody.length() > 300 ? errorBody.substring(0, 300) : errorBody);
-                        return Mono.error(new RuntimeException("Python HTTP " + response.statusCode()));
-                    })
+                .bodyToMono(PortfolioAnalysisResponse.class)
+                .doOnSuccess(response -> 
+                    log.info("Python 서버 포트폴리오 분석 완료: {}개 종목 분석됨", response.stockDetails().size())
                 )
-                .bodyToMono(String.class)
-                .flatMap(rawResponse -> {
-                    try {
-                        PortfolioAnalysisResponse response = PYTHON_MAPPER.readValue(rawResponse, PortfolioAnalysisResponse.class);
-                        log.info("Python 서버 포트폴리오 분석 완료: {}개 종목 분석됨", response.stockDetails().size());
-                        return Mono.just(response);
-                    } catch (JsonProcessingException e) {
-                        log.error("포트폴리오 역직렬화 실패: {}", e.getMessage());
-                        return Mono.error(e);
-                    }
-                })
-                .doOnError(error ->
-                    log.error("Python 서버 포트폴리오 분석 실패: url={}, errorClass={}, message={}",
-                        pythonServerUrl, error.getClass().getSimpleName(), error.getMessage())
+                .doOnError(error -> 
+                    log.error("Python 서버 포트폴리오 분석 실패: url={}", pythonServerUrl, error)
                 )
                 .retryWhen(Retry.backoff(2, Duration.ofSeconds(1))
                         .filter(throwable -> {
