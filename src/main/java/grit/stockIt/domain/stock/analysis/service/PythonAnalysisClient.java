@@ -1,7 +1,6 @@
 package grit.stockIt.domain.stock.analysis.service;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import grit.stockIt.domain.stock.analysis.dto.PortfolioAnalysisRequest;
 import grit.stockIt.domain.stock.analysis.dto.PortfolioAnalysisResponse;
@@ -12,7 +11,6 @@ import grit.stockIt.domain.stock.analysis.dto.StockAnalysisResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.http.HttpStatusCode;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Mono;
@@ -26,14 +24,11 @@ import java.time.Duration;
 @RequiredArgsConstructor
 public class PythonAnalysisClient {
 
-    // Python 응답 전용 ObjectMapper (Spring Boot의 SNAKE_CASE 설정 없이 @JsonProperty 기반으로만 처리)
-    private static final ObjectMapper PYTHON_MAPPER = new ObjectMapper()
-            .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
-
     @Value("${python.analysis.url:http://localhost:8000}")
     private String pythonServerUrl;
 
     private final WebClient.Builder webClientBuilder;
+    private final ObjectMapper objectMapper;
 
     // Python 서버 전용 WebClient 생성 (baseUrl 없이 사용)
     private WebClient getPythonWebClient() {
@@ -51,22 +46,13 @@ public class PythonAnalysisClient {
                 .uri("/stock/analyze")
                 .bodyValue(request)
                 .retrieve()
-                .onStatus(HttpStatusCode::isError, response ->
-                    response.bodyToMono(String.class).flatMap(errorBody -> {
-                        log.error("Python HTTP 오류: stockCode={}, status={}, body={}",
-                            request.stockCode(), response.statusCode(),
-                            errorBody.length() > 300 ? errorBody.substring(0, 300) : errorBody);
-                        return Mono.error(new RuntimeException("Python HTTP " + response.statusCode()));
-                    })
-                )
                 .bodyToMono(String.class)
                 .doOnNext(raw ->
                     log.info("Python 원시 응답 [{}]: {}", request.stockCode(),
                         raw.length() > 500 ? raw.substring(0, 500) + "..." : raw)
                 )
                 .doOnError(error ->
-                    log.error("Python 서버 종목분석 실패: stockCode={}, errorClass={}, message={}",
-                        request.stockCode(), error.getClass().getSimpleName(), error.getMessage())
+                    log.error("Python 서버 종목분석 실패: stockCode={}, url={}", request.stockCode(), pythonServerUrl, error)
                 )
                 .retryWhen(Retry.backoff(2, Duration.ofSeconds(1))
                         .filter(throwable -> {
@@ -84,7 +70,7 @@ public class PythonAnalysisClient {
                 )
                 .flatMap(rawResponse -> {
                     try {
-                        StockAnalysisResponse response = PYTHON_MAPPER.readValue(rawResponse, StockAnalysisResponse.class);
+                        StockAnalysisResponse response = objectMapper.readValue(rawResponse, StockAnalysisResponse.class);
                         log.info("역직렬화 결과 [{}]: finalStyleTag={}, scores={}, reportLen={}",
                             request.stockCode(), response.finalStyleTag(), response.scores(),
                             response.report() != null ? response.report().length() : 0);
@@ -98,8 +84,7 @@ public class PythonAnalysisClient {
                     log.info("Python 서버 종목분석 성공: stockCode={}", request.stockCode())
                 )
                 .onErrorResume(throwable -> {
-                    log.error("Python 서버 호출 최종 실패: stockCode={}, errorClass={}, error={}",
-                        request.stockCode(), throwable.getClass().getSimpleName(), throwable.getMessage());
+                    log.error("Python 서버 호출 최종 실패: stockCode={}, error={}", request.stockCode(), throwable.getMessage());
                     // AI 서버 오류 시 기본 응답 반환 (분석 불가로 처리)
                     return Mono.just(new StockAnalysisResponse(
                         request.stockCode(),
