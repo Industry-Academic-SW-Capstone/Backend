@@ -1,7 +1,5 @@
 package grit.stockIt.domain.stock.analysis.service;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import grit.stockIt.domain.stock.analysis.dto.PortfolioAnalysisRequest;
 import grit.stockIt.domain.stock.analysis.dto.PortfolioAnalysisResponse;
 import grit.stockIt.domain.stock.analysis.dto.RecommendRequest;
@@ -28,7 +26,6 @@ public class PythonAnalysisClient {
     private String pythonServerUrl;
 
     private final WebClient.Builder webClientBuilder;
-    private final ObjectMapper objectMapper;
 
     // Python 서버 전용 WebClient 생성 (baseUrl 없이 사용)
     private WebClient getPythonWebClient() {
@@ -40,18 +37,17 @@ public class PythonAnalysisClient {
     // Python 서버에 종목분석 요청
     public Mono<StockAnalysisResponse> analyze(StockAnalysisRequest request) {
         log.info("Python 서버 종목분석 요청: stockCode={}, url={}", request.stockCode(), pythonServerUrl);
-
+        
         return getPythonWebClient()
                 .post()
                 .uri("/stock/analyze")
                 .bodyValue(request)
                 .retrieve()
-                .bodyToMono(String.class)
-                .doOnNext(raw ->
-                    log.info("Python 원시 응답 [{}]: {}", request.stockCode(),
-                        raw.length() > 500 ? raw.substring(0, 500) + "..." : raw)
+                .bodyToMono(StockAnalysisResponse.class)
+                .doOnSuccess(response -> 
+                    log.info("Python 서버 종목분석 성공: stockCode={}", request.stockCode())
                 )
-                .doOnError(error ->
+                .doOnError(error -> 
                     log.error("Python 서버 종목분석 실패: stockCode={}, url={}", request.stockCode(), pythonServerUrl, error)
                 )
                 .retryWhen(Retry.backoff(2, Duration.ofSeconds(1))
@@ -64,24 +60,9 @@ public class PythonAnalysisClient {
                                 message.contains("Connection reset")
                             );
                         })
-                        .doBeforeRetry(retrySignal ->
+                        .doBeforeRetry(retrySignal -> 
                             log.warn("Python 서버 재시도: {}번째 시도", retrySignal.totalRetries() + 1)
                         )
-                )
-                .flatMap(rawResponse -> {
-                    try {
-                        StockAnalysisResponse response = objectMapper.readValue(rawResponse, StockAnalysisResponse.class);
-                        log.info("역직렬화 결과 [{}]: finalStyleTag={}, scores={}, reportLen={}",
-                            request.stockCode(), response.finalStyleTag(), response.scores(),
-                            response.report() != null ? response.report().length() : 0);
-                        return Mono.just(response);
-                    } catch (JsonProcessingException e) {
-                        log.error("역직렬화 실패 [{}]: {}", request.stockCode(), e.getMessage());
-                        return Mono.error(e);
-                    }
-                })
-                .doOnSuccess(response ->
-                    log.info("Python 서버 종목분석 성공: stockCode={}", request.stockCode())
                 )
                 .onErrorResume(throwable -> {
                     log.error("Python 서버 호출 최종 실패: stockCode={}, error={}", request.stockCode(), throwable.getMessage());
