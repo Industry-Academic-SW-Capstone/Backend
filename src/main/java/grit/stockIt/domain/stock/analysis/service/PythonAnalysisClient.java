@@ -6,6 +6,8 @@ import grit.stockIt.domain.stock.analysis.dto.RecommendRequest;
 import grit.stockIt.domain.stock.analysis.dto.RecommendResponse;
 import grit.stockIt.domain.stock.analysis.dto.StockAnalysisRequest;
 import grit.stockIt.domain.stock.analysis.dto.StockAnalysisResponse;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -26,6 +28,7 @@ public class PythonAnalysisClient {
     private String pythonServerUrl;
 
     private final WebClient.Builder webClientBuilder;
+    private final ObjectMapper objectMapper;
 
     // Python 서버 전용 WebClient 생성 (baseUrl 없이 사용)
     private WebClient getPythonWebClient() {
@@ -43,11 +46,24 @@ public class PythonAnalysisClient {
                 .uri("/stock/analyze")
                 .bodyValue(request)
                 .retrieve()
-                .bodyToMono(StockAnalysisResponse.class)
-                .doOnSuccess(response -> 
+                .bodyToMono(String.class)
+                .flatMap(rawResponse -> {
+                    log.info("Python 원시 응답 [{}]: {}", request.stockCode(),
+                        rawResponse.length() > 300 ? rawResponse.substring(0, 300) + "..." : rawResponse);
+                    try {
+                        StockAnalysisResponse response = objectMapper.readValue(rawResponse, StockAnalysisResponse.class);
+                        log.info("Python 역직렬화 성공 [{}]: analyzable={}, scores={}",
+                            request.stockCode(), response.analyzable(), response.scores());
+                        return Mono.just(response);
+                    } catch (JsonProcessingException e) {
+                        log.error("Python 응답 역직렬화 실패 [{}]: {}", request.stockCode(), e.getMessage());
+                        return Mono.error(e);
+                    }
+                })
+                .doOnSuccess(response ->
                     log.info("Python 서버 종목분석 성공: stockCode={}", request.stockCode())
                 )
-                .doOnError(error -> 
+                .doOnError(error ->
                     log.error("Python 서버 종목분석 실패: stockCode={}, url={}", request.stockCode(), pythonServerUrl, error)
                 )
                 .retryWhen(Retry.backoff(2, Duration.ofSeconds(1))
