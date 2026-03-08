@@ -7,10 +7,12 @@ import grit.stockIt.domain.stock.analysis.dto.RecommendResponse;
 import grit.stockIt.domain.stock.analysis.dto.StockAnalysisRequest;
 import grit.stockIt.domain.stock.analysis.dto.StockAnalysisResponse;
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpStatusCode;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Mono;
@@ -24,11 +26,14 @@ import java.time.Duration;
 @RequiredArgsConstructor
 public class PythonAnalysisClient {
 
+    // Python 응답 전용 ObjectMapper: Spring Boot의 SNAKE_CASE 전략 충돌 방지, @JsonProperty 기반으로만 처리
+    private static final ObjectMapper PYTHON_MAPPER = new ObjectMapper()
+            .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
+
     @Value("${python.analysis.url:http://localhost:8000}")
     private String pythonServerUrl;
 
     private final WebClient.Builder webClientBuilder;
-    private final ObjectMapper objectMapper;
 
     // Python 서버 전용 WebClient 생성 (baseUrl 없이 사용)
     private WebClient getPythonWebClient() {
@@ -46,12 +51,20 @@ public class PythonAnalysisClient {
                 .uri("/stock/analyze")
                 .bodyValue(request)
                 .retrieve()
+                .onStatus(HttpStatusCode::isError, response ->
+                    response.bodyToMono(String.class).flatMap(errorBody -> {
+                        log.error("Python HTTP 오류: stockCode={}, status={}, body={}",
+                            request.stockCode(), response.statusCode(),
+                            errorBody.length() > 300 ? errorBody.substring(0, 300) : errorBody);
+                        return Mono.error(new RuntimeException("Python HTTP " + response.statusCode()));
+                    })
+                )
                 .bodyToMono(String.class)
                 .flatMap(rawResponse -> {
                     log.info("Python 원시 응답 [{}]: {}", request.stockCode(),
                         rawResponse.length() > 300 ? rawResponse.substring(0, 300) + "..." : rawResponse);
                     try {
-                        StockAnalysisResponse response = objectMapper.readValue(rawResponse, StockAnalysisResponse.class);
+                        StockAnalysisResponse response = PYTHON_MAPPER.readValue(rawResponse, StockAnalysisResponse.class);
                         log.info("Python 역직렬화 성공 [{}]: analyzable={}, scores={}",
                             request.stockCode(), response.analyzable(), response.scores());
                         return Mono.just(response);
