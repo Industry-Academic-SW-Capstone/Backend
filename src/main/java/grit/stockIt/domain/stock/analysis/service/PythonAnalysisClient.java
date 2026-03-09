@@ -20,7 +20,7 @@ import reactor.util.retry.Retry;
 
 import java.time.Duration;
 
-// Python 서버 클라이언트
+// Python AI 서버 클라이언트
 @Slf4j
 @Service
 @RequiredArgsConstructor
