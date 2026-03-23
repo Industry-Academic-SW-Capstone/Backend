@@ -2,6 +2,8 @@ package grit.stockIt.domain.stock.analysis.service;
 
 import grit.stockIt.domain.mission.event.StockAnalyzedEvent;
 import grit.stockIt.domain.stock.analysis.dto.*;
+import org.springframework.core.io.buffer.DataBuffer;
+import reactor.core.publisher.Flux;
 import grit.stockIt.domain.stock.analysis.repository.RedisStockAnalysisRepository;
 import grit.stockIt.domain.stock.service.StockDetailService;
 import lombok.extern.slf4j.Slf4j;
@@ -81,6 +83,45 @@ public class StockAnalysisService {
                     log.error("종목분석 최종 실패: stockCode={}", stockCode, throwable);
                     return new RuntimeException("종목 분석 중 오류가 발생했습니다: " + throwable.getMessage(), throwable);
                 });
+    }
+
+    // 빠른 스코어링만 수행 (뉴스/LLM 없음)
+    public Mono<StockAnalysisResponse> scoreStock(String stockCode, String email) {
+        log.info("종목 스코어링 시작: stockCode={}", stockCode);
+
+        Mono<MarketData> marketDataMono = getMarketData(stockCode);
+        Mono<FinancialData> financialDataMono = getFinancialData(stockCode);
+        Mono<DividendData> dividendDataMono = getDividendData(stockCode);
+
+        return Mono.zip(marketDataMono, financialDataMono, dividendDataMono)
+                .flatMap(tuple -> {
+                    MarketData marketData = tuple.getT1();
+                    FinancialData financialData = tuple.getT2();
+                    DividendData dividendData = tuple.getT3();
+
+                    StockAnalysisRequest request = new StockAnalysisRequest(
+                            stockCode,
+                            marketData.marketCap() != null ? marketData.marketCap().doubleValue() : 0.0,
+                            marketData.per() != null ? marketData.per() : 0.0,
+                            marketData.pbr() != null ? marketData.pbr() : 0.0,
+                            financialData.roe() != null ? financialData.roe() : 0.0,
+                            financialData.debtRatio() != null ? financialData.debtRatio() : 0.0,
+                            dividendData.dividendYield() != null ? dividendData.dividendYield() : 0.0
+                    );
+
+                    return pythonAnalysisClient.score(request);
+                })
+                .doOnSuccess(response -> {
+                    if (email != null) {
+                        eventPublisher.publishEvent(new StockAnalyzedEvent(email, stockCode));
+                    }
+                })
+                .doOnError(e -> log.error("종목 스코어링 실패: stockCode={}", stockCode, e));
+    }
+
+    // 리포트 스트리밍 프록시
+    public Flux<DataBuffer> streamReport(ReportStreamRequest request) {
+        return pythonAnalysisClient.streamReport(request);
     }
 
     // 시장 데이터 조회 (캐시 우선)
