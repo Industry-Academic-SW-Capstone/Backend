@@ -7,7 +7,6 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.core.io.buffer.DataBuffer;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -46,10 +45,12 @@ public class StockAnalysisController {
 
     @Operation(summary = "AI 투자 리포트 스트리밍", description = "뉴스 RAG + Gemini 리포트를 SSE로 스트리밍. 이벤트: news_ready → token(반복) → done")
     @PostMapping(value = "/{stockCode}/report/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-    public ResponseEntity<Flux<DataBuffer>> streamReport(
+    public ResponseEntity<Flux<String>> streamReport(
             @PathVariable String stockCode,
-            @RequestBody ReportStreamRequest request) {
-        log.info("리포트 스트리밍 요청: stockCode={}", stockCode);
+            @RequestBody ReportStreamRequest request,
+            @AuthenticationPrincipal UserDetails userDetails) {
+        log.info("리포트 스트리밍 요청: stockCode={}, user={}", stockCode,
+                userDetails != null ? userDetails.getUsername() : "anonymous");
         return ResponseEntity.ok()
                 .contentType(MediaType.TEXT_EVENT_STREAM)
                 .header("Cache-Control", "no-cache")

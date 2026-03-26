@@ -145,7 +145,7 @@ public class PythonAnalysisClient {
     }
 
     // Python 서버 SSE 리포트 스트림 프록시
-    public Flux<DataBuffer> streamReport(ReportStreamRequest request) {
+    public Flux<String> streamReport(ReportStreamRequest request) {
         log.info("Python 서버 리포트 스트리밍 요청: stockCode={}", request.stockCode());
 
         return getPythonWebClient()
@@ -154,7 +154,7 @@ public class PythonAnalysisClient {
                 .contentType(MediaType.APPLICATION_JSON)
                 .bodyValue(request)
                 .retrieve()
-                .bodyToFlux(DataBuffer.class)
+                .bodyToFlux(String.class)
                 .doOnError(e -> log.error("Python 리포트 스트리밍 실패: stockCode={}", request.stockCode(), e));
     }
 

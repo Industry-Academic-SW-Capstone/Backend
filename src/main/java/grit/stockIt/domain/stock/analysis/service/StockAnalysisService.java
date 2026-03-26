@@ -120,7 +120,7 @@ public class StockAnalysisService {
     }
 
     // 리포트 스트리밍 프록시
-    public Flux<DataBuffer> streamReport(ReportStreamRequest request) {
+    public Flux<String> streamReport(ReportStreamRequest request) {
         return pythonAnalysisClient.streamReport(request);
     }
 
