@@ -154,8 +154,17 @@ public class PythonAnalysisClient {
                 .contentType(MediaType.APPLICATION_JSON)
                 .bodyValue(request)
                 .retrieve()
+                .onStatus(HttpStatusCode::isError, response ->
+                    response.bodyToMono(String.class).flatMap(errorBody -> {
+                        log.error("Python /stock/report/stream 오류: stockCode={}, status={}, body={}",
+                            request.stockCode(), response.statusCode(),
+                            errorBody.length() > 300 ? errorBody.substring(0, 300) : errorBody);
+                        return Mono.error(new RuntimeException("Python HTTP " + response.statusCode()));
+                    })
+                )
                 .bodyToFlux(String.class)
-                .doOnError(e -> log.error("Python 리포트 스트리밍 실패: stockCode={}", request.stockCode(), e));
+                .doOnError(e -> log.error("Python 리포트 스트리밍 실패: stockCode={}", request.stockCode(), e))
+                .onErrorResume(e -> Flux.just("data: {\"type\": \"done\"}\n\n"));
     }
 
     // Python 서버에 포트폴리오 분석 요청
