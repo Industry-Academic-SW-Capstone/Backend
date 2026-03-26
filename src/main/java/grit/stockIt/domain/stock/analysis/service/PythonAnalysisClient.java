@@ -148,11 +148,21 @@ public class PythonAnalysisClient {
     public Flux<String> streamReport(ReportStreamRequest request) {
         log.info("Python 서버 리포트 스트리밍 요청: stockCode={}", request.stockCode());
 
+        // WebClient Jackson 직렬화 이슈 방지: 명시적 snake_case Map 구성
+        java.util.Map<String, Object> body = java.util.Map.of(
+                "stock_code", request.stockCode(),
+                "stock_name", request.stockName(),
+                "style_tag", request.styleTag(),
+                "growth_score", request.growthScore() != null ? request.growthScore() : 0.0,
+                "stability_score", request.stabilityScore() != null ? request.stabilityScore() : 0.0,
+                "composite_score", request.compositeScore() != null ? request.compositeScore() : 0.0
+        );
+
         return getPythonWebClient()
                 .post()
                 .uri("/stock/report/stream")
                 .contentType(MediaType.APPLICATION_JSON)
-                .bodyValue(request)
+                .bodyValue(body)
                 .retrieve()
                 .onStatus(HttpStatusCode::isError, response ->
                     response.bodyToMono(String.class).flatMap(errorBody -> {
