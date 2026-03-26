@@ -8,7 +8,6 @@ import grit.stockIt.domain.stock.analysis.repository.RedisStockAnalysisRepositor
 import grit.stockIt.domain.stock.service.StockDetailService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
-import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Mono;
 
@@ -25,7 +24,7 @@ public class StockAnalysisService {
     private final ApplicationEventPublisher eventPublisher;
 
     public StockAnalysisService(
-            @Lazy StockDetailService stockDetailService,
+            StockDetailService stockDetailService,
             KisFinancialRatioService kisFinancialRatioService,
             KisDividendService kisDividendService,
             PythonAnalysisClient pythonAnalysisClient,
