@@ -4,6 +4,7 @@ import grit.stockIt.domain.stock.analysis.dto.PortfolioAnalysisRequest;
 import grit.stockIt.domain.stock.analysis.dto.PortfolioAnalysisResponse;
 import grit.stockIt.domain.stock.analysis.dto.RecommendRequest;
 import grit.stockIt.domain.stock.analysis.dto.RecommendResponse;
+import grit.stockIt.domain.stock.analysis.dto.ReportStreamRequest;
 import grit.stockIt.domain.stock.analysis.dto.StockAnalysisRequest;
 import grit.stockIt.domain.stock.analysis.dto.StockAnalysisResponse;
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -12,9 +13,12 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.io.buffer.DataBuffer;
 import org.springframework.http.HttpStatusCode;
+import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.util.retry.Retry;
 
@@ -105,6 +109,53 @@ public class PythonAnalysisClient {
                         "AI 서버 오류로 분석에 실패했습니다."
                     ));
                 });
+    }
+
+    // Python 서버에 빠른 스코어링만 요청 (뉴스/LLM 없음, < 1초)
+    public Mono<StockAnalysisResponse> score(StockAnalysisRequest request) {
+        log.info("Python 서버 스코어링 요청: stockCode={}", request.stockCode());
+
+        return getPythonWebClient()
+                .post()
+                .uri("/stock/score")
+                .bodyValue(request)
+                .retrieve()
+                .onStatus(HttpStatusCode::isError, response ->
+                    response.bodyToMono(String.class).flatMap(errorBody -> {
+                        log.error("Python /stock/score 오류: stockCode={}, status={}", request.stockCode(), response.statusCode());
+                        return Mono.error(new RuntimeException("Python HTTP " + response.statusCode()));
+                    })
+                )
+                .bodyToMono(String.class)
+                .flatMap(rawResponse -> {
+                    try {
+                        StockAnalysisResponse response = PYTHON_MAPPER.readValue(rawResponse, StockAnalysisResponse.class);
+                        return Mono.just(response);
+                    } catch (JsonProcessingException e) {
+                        log.error("Python /stock/score 역직렬화 실패: {}", e.getMessage());
+                        return Mono.error(e);
+                    }
+                })
+                .onErrorResume(throwable -> {
+                    log.error("Python 스코어링 최종 실패: stockCode={}", request.stockCode(), throwable);
+                    return Mono.just(new StockAnalysisResponse(
+                        request.stockCode(), null, null, null, false, "AI 서버 오류로 스코어링에 실패했습니다."
+                    ));
+                });
+    }
+
+    // Python 서버 SSE 리포트 스트림 프록시
+    public Flux<String> streamReport(ReportStreamRequest request) {
+        log.info("Python 서버 리포트 스트리밍 요청: stockCode={}", request.stockCode());
+
+        return getPythonWebClient()
+                .post()
+                .uri("/stock/report/stream")
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(request)
+                .retrieve()
+                .bodyToFlux(String.class)
+                .doOnError(e -> log.error("Python 리포트 스트리밍 실패: stockCode={}", request.stockCode(), e));
     }
 
     // Python 서버에 포트폴리오 분석 요청
