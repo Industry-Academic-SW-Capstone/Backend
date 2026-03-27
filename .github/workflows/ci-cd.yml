@@ -1,5 +1,5 @@
 name: CI/CD Pipeline
-
+# GEMINI_API_KEY: GCP 유료 키로 교체 (2026-03-27)
 on:
   push:
     branches: [ main, develop ]
