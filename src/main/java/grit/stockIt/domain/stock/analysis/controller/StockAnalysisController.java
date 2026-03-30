@@ -1,6 +1,7 @@
 package grit.stockIt.domain.stock.analysis.controller;
 
 import grit.stockIt.domain.stock.analysis.dto.ReportStreamRequest;
+import grit.stockIt.domain.stock.analysis.dto.ScoreRequest;
 import grit.stockIt.domain.stock.analysis.dto.StockAnalysisResponse;
 import grit.stockIt.domain.stock.analysis.service.StockAnalysisService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -34,13 +35,14 @@ public class StockAnalysisController {
         return stockAnalysisService.analyzeStock(stockCode, email);
     }
 
-    @Operation(summary = "종목 스코어링", description = "KMeans 스타일 태그 + 멀티팩터 점수만 반환 (< 1초). report/stream과 함께 사용.")
+    @Operation(summary = "종목 스코어링", description = "KMeans 스타일 태그 + 멀티팩터 점수만 반환 (< 1초). body에 포트폴리오+페르소나 포함 시 실제 유사도 계산.")
     @PostMapping("/{stockCode}/score")
     public Mono<StockAnalysisResponse> scoreStock(
             @PathVariable String stockCode,
+            @RequestBody(required = false) ScoreRequest scoreRequest,
             @AuthenticationPrincipal UserDetails userDetails) {
         String email = userDetails != null ? userDetails.getUsername() : null;
-        return stockAnalysisService.scoreStock(stockCode, email);
+        return stockAnalysisService.scoreStock(stockCode, email, scoreRequest);
     }
 
     @Operation(summary = "AI 투자 리포트 스트리밍", description = "뉴스 RAG + Gemini 리포트를 SSE로 스트리밍. 이벤트: news_ready → token(반복) → done")

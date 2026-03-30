@@ -84,9 +84,9 @@ public class StockAnalysisService {
                 });
     }
 
-    // 빠른 스코어링만 수행 (뉴스/LLM 없음)
-    public Mono<StockAnalysisResponse> scoreStock(String stockCode, String email) {
-        log.info("종목 스코어링 시작: stockCode={}", stockCode);
+    // 빠른 스코어링만 수행 (뉴스/LLM 없음, 포트폴리오 있으면 실제 유사도 계산)
+    public Mono<StockAnalysisResponse> scoreStock(String stockCode, String email, ScoreRequest scoreRequest) {
+        log.info("종목 스코어링 시작: stockCode={}, hasPortfolio={}", stockCode, scoreRequest != null && scoreRequest.portfolioStocks() != null);
 
         Mono<MarketData> marketDataMono = getMarketData(stockCode);
         Mono<FinancialData> financialDataMono = getFinancialData(stockCode);
@@ -108,7 +108,7 @@ public class StockAnalysisService {
                             dividendData.dividendYield() != null ? dividendData.dividendYield() : 0.0
                     );
 
-                    return pythonAnalysisClient.score(request);
+                    return pythonAnalysisClient.score(request, scoreRequest);
                 })
                 .doOnSuccess(response -> {
                     if (email != null) {

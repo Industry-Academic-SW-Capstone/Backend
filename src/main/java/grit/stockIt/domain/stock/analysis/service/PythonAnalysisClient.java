@@ -5,6 +5,7 @@ import grit.stockIt.domain.stock.analysis.dto.PortfolioAnalysisResponse;
 import grit.stockIt.domain.stock.analysis.dto.RecommendRequest;
 import grit.stockIt.domain.stock.analysis.dto.RecommendResponse;
 import grit.stockIt.domain.stock.analysis.dto.ReportStreamRequest;
+import grit.stockIt.domain.stock.analysis.dto.ScoreRequest;
 import grit.stockIt.domain.stock.analysis.dto.StockAnalysisRequest;
 import grit.stockIt.domain.stock.analysis.dto.StockAnalysisResponse;
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -111,14 +112,45 @@ public class PythonAnalysisClient {
                 });
     }
 
-    // Python 서버에 빠른 스코어링만 요청 (뉴스/LLM 없음, < 1초)
-    public Mono<StockAnalysisResponse> score(StockAnalysisRequest request) {
-        log.info("Python 서버 스코어링 요청: stockCode={}", request.stockCode());
+    // Python 서버에 빠른 스코어링만 요청 (포트폴리오 있으면 실제 유사도 계산)
+    public Mono<StockAnalysisResponse> score(StockAnalysisRequest request, ScoreRequest scoreRequest) {
+        log.info("Python 서버 스코어링 요청: stockCode={}, hasPortfolio={}",
+                request.stockCode(), scoreRequest != null && scoreRequest.portfolioStocks() != null);
+
+        // 명시적 snake_case Map 구성 (WebClient 직렬화 이슈 방지)
+        java.util.Map<String, Object> body = new java.util.HashMap<>();
+        body.put("stock_code", request.stockCode());
+        body.put("market_cap", request.marketCap() != null ? request.marketCap() : 0.0);
+        body.put("per", request.per() != null ? request.per() : 0.0);
+        body.put("pbr", request.pbr() != null ? request.pbr() : 0.0);
+        body.put("roe", request.roe() != null ? request.roe() : 0.0);
+        body.put("debt_ratio", request.debtRatio() != null ? request.debtRatio() : 0.0);
+        body.put("dividend_yield", request.dividendYield() != null ? request.dividendYield() : 0.0);
+
+        // 포트폴리오 + 페르소나 추가 (있으면)
+        if (scoreRequest != null && scoreRequest.portfolioStocks() != null) {
+            java.util.List<java.util.Map<String, Object>> portfolioList = scoreRequest.portfolioStocks().stream()
+                    .map(s -> java.util.Map.<String, Object>of(
+                            "stock_code", s.stockCode(),
+                            "market_cap", s.marketCap() != null ? s.marketCap() : 0.0,
+                            "per", s.per() != null ? s.per() : 0.0,
+                            "pbr", s.pbr() != null ? s.pbr() : 0.0,
+                            "roe", s.roe() != null ? s.roe() : 0.0,
+                            "debt_ratio", s.debtRatio() != null ? s.debtRatio() : 0.0,
+                            "dividend_yield", s.dividendYield() != null ? s.dividendYield() : 0.0,
+                            "investment_amount", s.investmentAmount() != null ? s.investmentAmount() : 0.0
+                    ))
+                    .toList();
+            body.put("portfolio_stocks", portfolioList);
+        }
+        if (scoreRequest != null && scoreRequest.persona() != null) {
+            body.put("persona", scoreRequest.persona());
+        }
 
         return getPythonWebClient()
                 .post()
                 .uri("/stock/score")
-                .bodyValue(request)
+                .bodyValue(body)
                 .retrieve()
                 .onStatus(HttpStatusCode::isError, response ->
                     response.bodyToMono(String.class).flatMap(errorBody -> {
