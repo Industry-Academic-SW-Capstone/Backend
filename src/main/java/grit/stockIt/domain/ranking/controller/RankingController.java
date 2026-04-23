@@ -1,8 +1,11 @@
 package grit.stockIt.domain.ranking.controller;
 
+import grit.stockIt.domain.ranking.dto.MemberPortfolioResponse;
 import grit.stockIt.domain.ranking.dto.MyRankDto;
 import grit.stockIt.domain.ranking.dto.RankingResponse;
 import grit.stockIt.domain.ranking.service.RankingService;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -104,6 +107,37 @@ public class RankingController {
     ) {
         log.info("🔍 [API 호출] 내 랭킹 조회 (memberId: {}, contestId: {})", memberId, contestId);
         MyRankDto response = rankingService.getMyRank(memberId, contestId);
+        return ResponseEntity.ok(response);
+    }
+
+    // ==================== 대회 참가자 포트폴리오 조회 ====================
+
+    /**
+     * 대회 참가자의 포트폴리오 조회
+     * - 같은 대회에 참가 중인 사용자만 조회 가능
+     * - 랭킹 화면에서 다른 참가자 이름 클릭 시 호출
+     *
+     * GET /api/rankings/contest/{contestId}/members/{memberId}/portfolio
+     */
+    @GetMapping("/contest/{contestId}/members/{memberId}/portfolio")
+    @Operation(
+            summary = "대회 참가자 포트폴리오 조회",
+            description = "같은 대회에 참가 중인 다른 참가자의 포트폴리오를 조회합니다. 종목별 비중, 손익 정보를 포함합니다."
+    )
+    public ResponseEntity<MemberPortfolioResponse> getMemberPortfolio(
+            @Parameter(description = "대회 ID", example = "1", required = true)
+            @PathVariable("contestId") Long contestId,
+
+            @Parameter(description = "조회 대상 회원 ID", example = "42", required = true)
+            @PathVariable("memberId") Long memberId
+    ) {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        String requesterEmail = authentication.getName();
+
+        log.info("[API 호출] 대회 참가자 포트폴리오 조회 (contestId: {}, memberId: {}, requester: {})",
+                contestId, memberId, requesterEmail);
+
+        MemberPortfolioResponse response = rankingService.getMemberPortfolio(contestId, memberId, requesterEmail);
         return ResponseEntity.ok(response);
     }
 

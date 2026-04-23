@@ -107,6 +107,17 @@ public class AssetService {
         int quantity = accountStock.getQuantity();
         BigDecimal averagePrice = accountStock.getAveragePrice();
         BigDecimal totalValue = currentPrice.multiply(BigDecimal.valueOf(quantity));
+        BigDecimal investmentPrincipal = averagePrice.multiply(BigDecimal.valueOf(quantity));
+        BigDecimal profitLossPerShare = currentPrice.subtract(averagePrice);
+        BigDecimal profitLossTotal = profitLossPerShare.multiply(BigDecimal.valueOf(quantity));
+
+        BigDecimal profitRate = BigDecimal.ZERO;
+        if (investmentPrincipal.compareTo(BigDecimal.ZERO) > 0) {
+            profitRate = profitLossTotal
+                    .divide(investmentPrincipal, 4, RoundingMode.HALF_UP)
+                    .multiply(BigDecimal.valueOf(100))
+                    .setScale(2, RoundingMode.HALF_UP);
+        }
 
         return new AssetResponse.HoldingItem(
                 accountStock.getStock().getCode(),
@@ -115,7 +126,11 @@ public class AssetService {
                 quantity,
                 currentPrice,
                 averagePrice,
-                totalValue
+                totalValue,
+                investmentPrincipal,
+                profitLossPerShare,
+                profitLossTotal,
+                profitRate
         );
     }
 

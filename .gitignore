@@ -48,3 +48,6 @@ sequence-diagrams/
 ### Traefik ###
 traefik/users
 traefik/letsencrypt/acme.json
+
+### OMC ###
+.omc/
