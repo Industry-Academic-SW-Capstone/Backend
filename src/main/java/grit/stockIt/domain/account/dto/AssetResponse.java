@@ -16,8 +16,12 @@ public record AssetResponse(
             String marketType,          // 시장 구분 (KOSPI, KOSDAQ)
             int quantity,               // 보유 수량
             BigDecimal currentPrice,    // 현재가
-            BigDecimal averagePrice,    // 평단가
-            BigDecimal totalValue       // 총 평가액 (quantity × currentPrice)
+            BigDecimal averagePrice,    // 1주 평균 매입가 (평단가)
+            BigDecimal totalValue,      // 총 평가액 (quantity × currentPrice)
+            BigDecimal investmentPrincipal,  // 투자 원금 (quantity × averagePrice)
+            BigDecimal profitLossPerShare,   // 1주당 손익 (currentPrice - averagePrice)
+            BigDecimal profitLossTotal,      // 총 손익 (profitLossPerShare × quantity)
+            BigDecimal profitRate            // 수익률 % ((profitLossTotal / investmentPrincipal) × 100)
     ) {}
 }
 

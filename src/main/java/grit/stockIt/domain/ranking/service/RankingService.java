@@ -9,6 +9,7 @@ import grit.stockIt.domain.contest.repository.ContestRepository;
 import grit.stockIt.domain.matching.repository.RedisMarketDataRepository;
 import grit.stockIt.domain.mission.service.MissionService;
 import grit.stockIt.domain.mission.dto.UserTierStatusDto;
+import grit.stockIt.domain.ranking.dto.MemberPortfolioResponse;
 import grit.stockIt.domain.ranking.dto.MyRankDto;
 import grit.stockIt.domain.ranking.dto.RankingDto;
 import grit.stockIt.domain.ranking.dto.RankingResponse;
@@ -594,6 +595,127 @@ public class RankingService {
         }
 
         return rankings;
+    }
+
+    // ==================== 대회 참가자 포트폴리오 조회 ====================
+
+    /**
+     * 같은 대회 참가자의 포트폴리오 조회
+     * - 같은 대회에 참가 중인 사용자만 조회 가능
+     * - 원형 차트용 비중 데이터 포함
+     *
+     * @param contestId       대회 ID
+     * @param targetMemberId  조회 대상 회원 ID
+     * @param requesterEmail  요청자 이메일 (같은 대회 참가 여부 확인용)
+     * @return MemberPortfolioResponse
+     */
+    @Transactional(readOnly = true)
+    public MemberPortfolioResponse getMemberPortfolio(Long contestId, Long targetMemberId, String requesterEmail) {
+        // 1. 대회 존재 여부 확인
+        Contest contest = contestRepository.findById(contestId)
+                .orElseThrow(() -> new IllegalArgumentException("대회를 찾을 수 없습니다. (ID: " + contestId + ")"));
+
+        // 2. 요청자가 같은 대회에 참가 중인지 확인
+        List<Account> contestAccounts = accountRepository.findByContest(contest);
+        boolean isRequesterInContest = contestAccounts.stream()
+                .anyMatch(a -> a.getMember().getEmail().equals(requesterEmail));
+        if (!isRequesterInContest) {
+            throw new grit.stockIt.global.exception.ForbiddenException("같은 대회 참가자만 포트폴리오를 조회할 수 있습니다.");
+        }
+
+        // 3. 대상 회원의 대회 계좌 찾기
+        Account targetAccount = accountRepository.findByMemberIdAndContestId(targetMemberId, contestId)
+                .orElseThrow(() -> new IllegalArgumentException("해당 회원의 대회 계좌를 찾을 수 없습니다."));
+
+        // 4. 보유 종목 조회
+        List<AccountStock> accountStocks = accountStockRepository.findByAccountIdWithStock(targetAccount.getAccountId());
+
+        // 5. 현재가 수집
+        Set<String> stockCodes = accountStocks.stream()
+                .map(as -> as.getStock().getCode())
+                .collect(Collectors.toSet());
+        Map<String, BigDecimal> currentPrices = batchFetchCurrentPrices(stockCodes);
+
+        // 6. 종목별 평가액 계산
+        BigDecimal cash = targetAccount.getCash();
+        BigDecimal stockValue = BigDecimal.ZERO;
+
+        List<MemberPortfolioResponse.PortfolioItem> holdings = new ArrayList<>();
+        for (AccountStock as : accountStocks) {
+            if (as.getQuantity() <= 0) continue;
+
+            String code = as.getStock().getCode();
+            BigDecimal currentPrice = currentPrices.getOrDefault(code, BigDecimal.ZERO);
+            BigDecimal avgPrice = as.getAveragePrice();
+            int qty = as.getQuantity();
+
+            BigDecimal totalValue = currentPrice.multiply(BigDecimal.valueOf(qty));
+            BigDecimal profitLossPerShare = currentPrice.subtract(avgPrice);
+            BigDecimal profitLossTotal = profitLossPerShare.multiply(BigDecimal.valueOf(qty));
+            BigDecimal investmentPrincipal = avgPrice.multiply(BigDecimal.valueOf(qty));
+
+            BigDecimal profitRate = BigDecimal.ZERO;
+            if (investmentPrincipal.compareTo(BigDecimal.ZERO) > 0) {
+                profitRate = profitLossTotal
+                        .divide(investmentPrincipal, 4, RoundingMode.HALF_UP)
+                        .multiply(BigDecimal.valueOf(100))
+                        .setScale(2, RoundingMode.HALF_UP);
+            }
+
+            stockValue = stockValue.add(totalValue);
+
+            holdings.add(new MemberPortfolioResponse.PortfolioItem(
+                    code, as.getStock().getName(), qty,
+                    avgPrice, currentPrice, totalValue,
+                    BigDecimal.ZERO, // percent - 아래에서 계산
+                    profitLossPerShare, profitLossTotal, profitRate
+            ));
+        }
+
+        // 7. 총자산 및 비중(%) 계산
+        BigDecimal totalAssets = cash.add(stockValue);
+
+        BigDecimal cashPercent = BigDecimal.ZERO;
+        if (totalAssets.compareTo(BigDecimal.ZERO) > 0) {
+            cashPercent = cash.divide(totalAssets, 4, RoundingMode.HALF_UP)
+                    .multiply(BigDecimal.valueOf(100))
+                    .setScale(2, RoundingMode.HALF_UP);
+        }
+
+        // 각 종목의 비중 재계산
+        List<MemberPortfolioResponse.PortfolioItem> holdingsWithPercent = holdings.stream()
+                .map(h -> {
+                    BigDecimal pct = BigDecimal.ZERO;
+                    if (totalAssets.compareTo(BigDecimal.ZERO) > 0) {
+                        pct = h.totalValue().divide(totalAssets, 4, RoundingMode.HALF_UP)
+                                .multiply(BigDecimal.valueOf(100))
+                                .setScale(2, RoundingMode.HALF_UP);
+                    }
+                    return new MemberPortfolioResponse.PortfolioItem(
+                            h.stockCode(), h.stockName(), h.quantity(),
+                            h.averagePrice(), h.currentPrice(), h.totalValue(),
+                            pct, h.profitLossPerShare(), h.profitLossTotal(), h.profitRate()
+                    );
+                })
+                .sorted((a, b) -> b.totalValue().compareTo(a.totalValue())) // 평가액 내림차순
+                .toList();
+
+        // 8. 수익률 계산
+        BigDecimal returnRate = calculateReturnRateFromAssets(totalAssets, contest);
+
+        // 9. 회원 정보
+        var member = targetAccount.getMember();
+        String title = member.getRepresentativeTitle() != null
+                ? member.getRepresentativeTitle().getName()
+                : null;
+
+        log.info("대회 참가자 포트폴리오 조회 완료: contestId={}, targetMemberId={}", contestId, targetMemberId);
+
+        return new MemberPortfolioResponse(
+                member.getMemberId(), member.getName(), member.getProfileImage(),
+                title, totalAssets, cash, cashPercent, stockValue, returnRate,
+                holdingsWithPercent
+        );
     }
 
     /**
