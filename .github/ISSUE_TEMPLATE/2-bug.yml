@@ -1,0 +1,88 @@
+name: 🔨 버그 해결
+description: 버그 또는 에러를 수정합니다.
+title: "[Fix] "
+labels: ["🏷 Fix"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        버그 리포트입니다. 재현 가능하도록 절차와 환경을 상세히 작성해주세요.
+  - type: textarea
+    id: description
+    attributes:
+      label: 🐛 버그 설명
+      description: 어떤 문제가 발생하는지 설명해주세요.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: 🔁 재현 절차
+      description: 문제를 재현하는 단계를 순서대로 작성해주세요.
+      placeholder: |
+        1. '...' 로 이동한다
+        2. '...' 를 입력한다
+        3. '...' 요청을 보낸다
+        4. 에러 발생
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: ✅ 기대 결과
+      description: 정상적이라면 어떻게 동작해야 하는지 작성해주세요.
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: ❌ 실제 결과
+      description: 실제로 어떤 결과가 나왔는지 작성해주세요.
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: 📎 에러 로그 / 스크린샷
+      description: 에러 로그, 스택 트레이스, 스크린샷이 있다면 첨부해주세요.
+      render: shell
+    validations:
+      required: false
+  - type: dropdown
+    id: severity
+    attributes:
+      label: ⚠️ 심각도
+      description: 서비스에 미치는 영향 수준을 선택해주세요.
+      options:
+        - "Critical (서비스 중단 / 데이터 손상)"
+        - "High (핵심 기능 불가)"
+        - "Medium (일부 기능 오류)"
+        - "Low (사소한 문제 / UI)"
+    validations:
+      required: true
+  - type: dropdown
+    id: profile
+    attributes:
+      label: 🖥️ 발생 환경 (프로필)
+      multiple: true
+      options:
+        - local
+        - dev
+        - staging
+        - prod
+    validations:
+      required: false
+  - type: input
+    id: version
+    attributes:
+      label: 🌿 브랜치 / 커밋
+      placeholder: "예) develop @ 33fc949"
+    validations:
+      required: false
+  - type: input
+    id: related
+    attributes:
+      label: 🔗 관련 이슈 / PR
+      placeholder: "예) #123"
+    validations:
+      required: false

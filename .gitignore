@@ -49,5 +49,8 @@ sequence-diagrams/
 traefik/users
 traefik/letsencrypt/acme.json
 
-### OMC ###
-.omc/
+### Conductor ###
+.conductor/
+
+### Claude Code (local) ###
+.claude/settings.local.json

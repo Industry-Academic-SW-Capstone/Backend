@@ -1,0 +1,68 @@
+name: 🧹 리팩토링
+description: 동작 변경 없이 코드 구조를 개선합니다.
+title: "[Refactor] "
+labels: ["🖌️Refactor"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        리팩토링 이슈입니다. **외부 동작은 바뀌지 않아야 합니다.**
+  - type: textarea
+    id: target
+    attributes:
+      label: 🧹 대상 및 현재 문제
+      description: 어떤 코드가 왜 문제인지(중복, 복잡도, 성능 등) 작성해주세요.
+      placeholder: 예) MissionService가 1,000줄이 넘어 책임 분리가 필요하다.
+    validations:
+      required: true
+  - type: textarea
+    id: goal
+    attributes:
+      label: 🎯 리팩토링 목표
+      description: 개선 후 기대하는 구조/상태를 작성해주세요.
+    validations:
+      required: true
+  - type: textarea
+    id: todo
+    attributes:
+      label: 📝 To Do
+      value: |
+        - [ ]
+        - [ ]
+    validations:
+      required: false
+  - type: textarea
+    id: risk
+    attributes:
+      label: ⚠️ 영향 범위 / 리스크
+      description: 변경이 영향을 줄 수 있는 부분과 검증 방법(테스트 등)을 작성해주세요.
+    validations:
+      required: false
+  - type: dropdown
+    id: domain
+    attributes:
+      label: 🧩 영향 도메인
+      multiple: true
+      options:
+        - matching (매칭 엔진)
+        - order / execution (주문·체결)
+        - account (자산·포트폴리오)
+        - stock (종목·시세)
+        - contest (콘테스트)
+        - ranking (랭킹)
+        - member / auth (회원·인증)
+        - notification (알림)
+        - llm (AI 분석)
+        - mission / title / industry (게이미피케이션)
+        - global / infra (공통·인프라)
+        - job (배치)
+        - 기타
+    validations:
+      required: false
+  - type: input
+    id: related
+    attributes:
+      label: 🔗 관련 이슈 / PR
+      placeholder: "예) #123"
+    validations:
+      required: false
