@@ -52,6 +52,9 @@ push → CI (모든 브랜치)                CD (main 브랜치만)
 | Kakao | `KAKAO_REST_API_KEY`, `KAKAO_CLIENT_SECRET`, `KAKAO_REDIRECT_URI` |
 | 기타 | `JWT_SECRET`, `FIREBASE_CREDENTIALS_BASE64`, `GEMINI_API_KEY`, `PYTHON_ANALYSIS_URL` |
 
+> `CLAUDE_API_KEY`, `DART_API_KEY`는 로컬 개발 전용이라 운영 배포 시크릿에는 포함되지 않습니다
+> (CI 배포 단계에서 주입하지 않음). 위 목록은 실제 `ci-cd.yml`이 주입하는 시크릿과 일치합니다.
+
 ## Compose 구성
 
 - 개발: `docker-compose.yml` — Traefik, PostgreSQL(`db`), Redis, Backend, k6, 모니터링(prometheus/grafana/exporters)

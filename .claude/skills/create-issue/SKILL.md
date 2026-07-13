@@ -54,7 +54,7 @@ git remote -v           # 원격 확인 — 대상 저장소 파악
 있으므로, 생성 직전 실제 라벨 목록을 조회해 **정확한 이름**을 확인한다.
 
 ```bash
-gh label list --repo <owner/repo> -L 100
+gh label list -L 100   # gh가 로컬 저장소에서 대상 저장소를 자동 감지
 ```
 
 - 매핑 표의 라벨이 목록에 있으면 그 이름 그대로 사용하고, 맥락상 추가로 맞는
@@ -91,8 +91,8 @@ gh label list --repo <owner/repo> -L 100
 (스크래치패드 디렉토리에 임시 파일을 쓴다.)
 
 ```bash
+# gh가 로컬 저장소에서 대상을 자동 감지 (--repo 불필요)
 gh issue create \
-  --repo <owner/repo> \
   --title "<이모지 제목>" \
   --body-file <임시 본문 파일 경로> \
   --assignee @me \

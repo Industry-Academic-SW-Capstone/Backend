@@ -82,7 +82,7 @@ Required env vars (configured in `.env`):
 - `KAKAO_REST_API_KEY`, `KAKAO_REDIRECT_URI`
 - `JWT_SECRET`, `GEMINI_API_KEY`, `CLAUDE_API_KEY`, `DART_API_KEY`, `PYTHON_ANALYSIS_URL`
 
-> Prod-only secrets (e.g. `KAKAO_CLIENT_SECRET`, Firebase FCM credentials) are injected via Kubernetes Secrets rather than the local `.env`.
+> Prod-only secrets (e.g. `KAKAO_CLIENT_SECRET`, `FIREBASE_CREDENTIALS_BASE64`) are injected via GitHub Actions Secrets and Docker Compose environment variables at deploy time, not the local `.env`. See `docs/deployment.md`.
 
 ## Testing
 
