@@ -1,17 +1,63 @@
 ### 🚀 Summary
 
-<!-- A brief description of the issue. -->
+<!-- 이 PR이 무엇을, 왜 하는지 한두 문장으로 요약해주세요. -->
 
 ---
 
-### ✨ Description
+### 📝 변경 사항
 
-<!-- write down the work details and show the execution results. -->
+<!-- 주요 변경 내용을 항목별로 작성해주세요. -->
+
+-
+-
 
 ---
 
-### 🎲 Issue Number
+### 🏷️ 변경 유형
 
-<!-- Please enter {Issue Number} below to automatically close the connected issue. -->
+- [ ] ✨ 기능 (feat)
+- [ ] 🐛 버그 수정 (fix)
+- [ ] ♻️ 리팩토링 (refactor)
+- [ ] 📑 문서 (docs)
+- [ ] 🧭 환경설정 / 인프라 (chore)
+- [ ] ⚠️ Breaking change (기존 동작/API 변경)
 
-close #{Issue Number}
+---
+
+### ✅ 테스트 / 검증 방법
+
+<!-- 리뷰어가 어떻게 검증할 수 있는지, 실행/테스트 결과를 적어주세요. -->
+
+-
+
+---
+
+### 🖼️ 실행 결과 / 스크린샷
+
+<!-- 동작 변화나 UI가 있다면 캡처를 첨부해주세요. (없으면 생략) -->
+
+---
+
+### 🔀 배포 / 마이그레이션 노트
+
+<!-- DB 마이그레이션(Flyway), 환경변수/시크릿 추가, 배포 시 주의사항이 있다면 작성. 없으면 "없음". -->
+
+없음
+
+---
+
+### ☑️ 체크리스트
+
+- [ ] 셀프 리뷰를 완료했습니다
+- [ ] 코드 컨벤션(네이밍 / DTO / REST 경로)을 따랐습니다
+- [ ] 테스트를 추가/수정했고 통과합니다
+- [ ] 필요한 문서(README / AGENTS / docs)를 갱신했습니다
+- [ ] 시크릿·민감 정보가 커밋에 포함되지 않았습니다
+
+---
+
+### 🎲 관련 이슈
+
+<!-- 아래에 이슈 번호를 입력하면 머지 시 자동으로 닫힙니다. -->
+
+close #

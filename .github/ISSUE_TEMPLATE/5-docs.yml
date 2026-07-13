@@ -1,0 +1,39 @@
+name: 📑 문서화
+description: 문서를 작성하거나 갱신합니다.
+title: "[Docs] "
+labels: ["📑 Docs"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        문서화 이슈입니다. (README, API 문서, 아키텍처 문서 등)
+  - type: textarea
+    id: description
+    attributes:
+      label: 📑 문서화 내용
+      description: 어떤 문서를 작성/갱신하는지 설명해주세요.
+    validations:
+      required: true
+  - type: input
+    id: target
+    attributes:
+      label: 📄 대상 문서
+      placeholder: "예) README.md, CLAUDE.md, docs/architecture.md"
+    validations:
+      required: false
+  - type: textarea
+    id: todo
+    attributes:
+      label: 📝 To Do
+      value: |
+        - [ ]
+        - [ ]
+    validations:
+      required: false
+  - type: input
+    id: related
+    attributes:
+      label: 🔗 관련 이슈 / PR
+      placeholder: "예) #123"
+    validations:
+      required: false

@@ -1,0 +1,88 @@
+name: 🚀 기능 구현
+description: 새로운 기능을 구현합니다.
+title: "[Feat] "
+labels: ["🚀 Feat"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        기능 구현 이슈입니다. 배경·요구사항·완료 조건을 명확히 작성해주세요.
+  - type: textarea
+    id: background
+    attributes:
+      label: 🚀 배경 및 목적 (Why)
+      description: 이 기능이 왜 필요한지, 어떤 문제를 해결하는지 설명해주세요.
+      placeholder: 예) 사용자가 보유 종목을 기준으로 AI 추천을 받고 싶어 한다.
+    validations:
+      required: true
+  - type: textarea
+    id: requirements
+    attributes:
+      label: 📋 요구사항 / 상세 내용
+      description: 구현할 기능의 구체적인 동작과 범위를 작성해주세요.
+      placeholder: |
+        - API 엔드포인트: POST /api/...
+        - 입력/출력 스펙
+        - 예외 케이스
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: ✅ 완료 조건 (Acceptance Criteria)
+      description: 어떤 조건을 모두 만족하면 이 이슈가 완료되는지 체크리스트로 작성해주세요.
+      value: |
+        - [ ]
+        - [ ]
+    validations:
+      required: true
+  - type: textarea
+    id: todo
+    attributes:
+      label: 📝 To Do
+      description: 작업 단위를 체크리스트로 나눠주세요.
+      value: |
+        - [ ]
+        - [ ]
+    validations:
+      required: false
+  - type: dropdown
+    id: domain
+    attributes:
+      label: 🧩 영향 도메인
+      description: 이 작업이 영향을 주는 도메인을 모두 선택해주세요.
+      multiple: true
+      options:
+        - matching (매칭 엔진)
+        - order / execution (주문·체결)
+        - account (자산·포트폴리오)
+        - stock (종목·시세)
+        - contest (콘테스트)
+        - ranking (랭킹)
+        - member / auth (회원·인증)
+        - notification (알림)
+        - llm (AI 분석)
+        - mission / title / industry (게이미피케이션)
+        - global / infra (공통·인프라)
+        - job (배치)
+        - 기타
+    validations:
+      required: false
+  - type: dropdown
+    id: size
+    attributes:
+      label: 📐 예상 규모
+      options:
+        - "S (반나절 이내)"
+        - "M (1~2일)"
+        - "L (3~5일)"
+        - "XL (1주 이상)"
+    validations:
+      required: false
+  - type: input
+    id: related
+    attributes:
+      label: 🔗 관련 이슈 / PR
+      placeholder: "예) #123, #456"
+    validations:
+      required: false
