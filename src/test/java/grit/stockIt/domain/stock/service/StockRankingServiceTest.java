@@ -3,6 +3,7 @@ package grit.stockIt.domain.stock.service;
 import grit.stockIt.domain.stock.dto.StockRankingDto;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.ActiveProfiles;
@@ -11,6 +12,13 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+/**
+ * 실제 KIS API와 종목 데이터가 있는 로컬 DB(local 프로필)가 필요한 수동 확인용 테스트.
+ * RUN_MANUAL_TESTS=true 환경변수로 명시적으로 실행할 때만 동작하고, CI에서는 자동으로 skip 된다.
+ * 실행 예: RUN_MANUAL_TESTS=true ./gradlew test --tests "StockRankingServiceTest"
+ */
+@EnabledIfEnvironmentVariable(named = "RUN_MANUAL_TESTS", matches = "true",
+        disabledReason = "로컬 DB + 실제 KIS API가 필요한 수동 확인용 테스트 (RUN_MANUAL_TESTS=true 로 실행)")
 @SpringBootTest
 @ActiveProfiles("local")
 class StockRankingServiceTest {
