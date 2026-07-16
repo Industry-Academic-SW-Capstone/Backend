@@ -6,10 +6,10 @@ import grit.stockIt.domain.account.repository.AccountRepository;
 import grit.stockIt.domain.account.repository.AccountStockRepository; // [추가]
 import grit.stockIt.domain.member.entity.Member;
 import grit.stockIt.domain.member.repository.MemberRepository;
-import grit.stockIt.domain.mission.dto.MemberTitleDto;
-import grit.stockIt.domain.mission.dto.MissionDashboardDto;
-import grit.stockIt.domain.mission.dto.MissionListDto;
-import grit.stockIt.domain.mission.dto.UserTierStatusDto;
+import grit.stockIt.domain.mission.dto.MemberTitleResponse;
+import grit.stockIt.domain.mission.dto.MissionDashboardResponse;
+import grit.stockIt.domain.mission.dto.MissionListResponse;
+import grit.stockIt.domain.mission.dto.UserTierStatusResponse;
 import grit.stockIt.domain.mission.entity.Mission;
 import grit.stockIt.domain.mission.entity.MissionProgress;
 import grit.stockIt.domain.mission.entity.Reward;
@@ -184,7 +184,7 @@ public class MissionService {
                 .orElse(0);
     }
     @Transactional(readOnly = true)
-    public UserTierStatusDto getTierInfo(String email) {
+    public UserTierStatusResponse getTierInfo(String email) {
         Member member = getMemberByEmail(email);
 
         // 1. 활동 점수
@@ -300,7 +300,7 @@ public class MissionService {
             progress = 100.0;
         }
 
-        return UserTierStatusDto.builder()
+        return UserTierStatusResponse.builder()
                 .currentTier(currentTier)
                 .nextTier(nextTier)
                 .totalScore(totalScore)
@@ -568,7 +568,7 @@ public class MissionService {
     }
     // 대시보드용 요약 정보 조회
     @Transactional(readOnly = true)
-    public MissionDashboardDto getMissionDashboard(String email) {
+    public MissionDashboardResponse getMissionDashboard(String email) {
         Member member = getMemberByEmail(email);
 
         // 1. 연속 출석 일수 (업적 중 LOGIN_STREAK 타입의 현재 진행도 조회)
@@ -584,7 +584,7 @@ public class MissionService {
                 .filter(mp -> !mp.isCompleted())
                 .count();
 
-        return MissionDashboardDto.builder()
+        return MissionDashboardResponse.builder()
                 .consecutiveAttendanceDays(streak)
                 .remainingDailyMissions(remaining)
                 .build();
@@ -592,14 +592,14 @@ public class MissionService {
 
     // 트랙별 미션 리스트 조회 (Enum 변환을 통한 안정성 확보)
     @Transactional(readOnly = true)
-    public List<MissionListDto> getMissionsByTrack(String email, String trackName) {
+    public List<MissionListResponse> getMissionsByTrack(String email, String trackName) {
         Member member = getMemberByEmail(email);
         List<MissionProgress> allProgress = missionProgressRepository.findByMemberWithMissionAndReward(member);
 
         // 1. "ALL"인 경우 전체 반환 (대소문자 무시: all, ALL 등)
         if (trackName == null || "ALL".equalsIgnoreCase(trackName)) {
             return allProgress.stream()
-                    .map(MissionListDto::new)
+                    .map(MissionListResponse::new)
                     .collect(Collectors.toList());
         }
 
@@ -610,7 +610,7 @@ public class MissionService {
 
             return allProgress.stream()
                     .filter(mp -> mp.getMission().getTrack() == filterTrack) // Enum 타입 비교 (==)
-                    .map(MissionListDto::new)
+                    .map(MissionListResponse::new)
                     .collect(Collectors.toList());
 
         } catch (IllegalArgumentException e) {
@@ -622,10 +622,10 @@ public class MissionService {
 
     // 보유 칭호 목록 조회
     @Transactional(readOnly = true)
-    public List<MemberTitleDto> getMyTitles(String email) {
+    public List<MemberTitleResponse> getMyTitles(String email) {
         Member member = getMemberByEmail(email);
         return memberTitleRepository.findAllByMember(member).stream()
-                .map(MemberTitleDto::new)
+                .map(MemberTitleResponse::new)
                 .collect(Collectors.toList());
     }
 

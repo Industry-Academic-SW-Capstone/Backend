@@ -8,7 +8,7 @@ import grit.stockIt.domain.contest.entity.Contest;
 import grit.stockIt.domain.contest.repository.ContestRepository;
 import grit.stockIt.domain.matching.repository.RedisMarketDataRepository;
 import grit.stockIt.domain.mission.service.MissionService;
-import grit.stockIt.domain.mission.dto.UserTierStatusDto;
+import grit.stockIt.domain.mission.dto.UserTierStatusResponse;
 import grit.stockIt.domain.ranking.dto.MyRankDto;
 import grit.stockIt.domain.ranking.dto.RankingDto;
 import grit.stockIt.domain.ranking.dto.RankingResponse;
@@ -278,7 +278,7 @@ public class RankingService {
      */
     private String getTierForMember(grit.stockIt.domain.member.entity.Member member) {
         try {
-            UserTierStatusDto tierInfo = missionService.getTierInfo(member.getEmail());
+            UserTierStatusResponse tierInfo = missionService.getTierInfo(member.getEmail());
             return tierInfo.getCurrentTier();
         } catch (Exception e) {
             log.warn("티어 조회 실패 (memberId: {}): {}", member.getMemberId(), e.getMessage());

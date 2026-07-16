@@ -33,7 +33,7 @@ public class MissionController {
      */
     @GetMapping("/dashboard")
     @Operation(summary = "미션 대시보드 요약", description = "메인화면 상단 위젯에 표시할 연속 출석일과 남은 미션 수를 반환합니다.")
-    public ResponseEntity<MissionDashboardDto> getDashboardSummary(@AuthenticationPrincipal UserDetails userDetails) {
+    public ResponseEntity<MissionDashboardResponse> getDashboardSummary(@AuthenticationPrincipal UserDetails userDetails) {
         return ResponseEntity.ok(missionService.getMissionDashboard(userDetails.getUsername()));
     }
 
@@ -44,7 +44,7 @@ public class MissionController {
      */
     @GetMapping
     @Operation(summary = "미션 목록 조회", description = "트랙별 미션 및 업적 진행도를 반환합니다. 보상 정보(금액/칭호)가 포함됩니다.")
-    public ResponseEntity<List<MissionListDto>> getMissions(
+    public ResponseEntity<List<MissionListResponse>> getMissions(
             @AuthenticationPrincipal UserDetails userDetails,
             @RequestParam(required = false, defaultValue = "ALL") String track
     ) {
@@ -56,7 +56,7 @@ public class MissionController {
      */
     @GetMapping("/titles")
     @Operation(summary = "보유 칭호 조회", description = "사용자가 획득한 모든 칭호 목록을 반환합니다.")
-    public ResponseEntity<List<MemberTitleDto>> getMyTitles(@AuthenticationPrincipal UserDetails userDetails) {
+    public ResponseEntity<List<MemberTitleResponse>> getMyTitles(@AuthenticationPrincipal UserDetails userDetails) {
         return ResponseEntity.ok(missionService.getMyTitles(userDetails.getUsername()));
     }
 
@@ -65,7 +65,7 @@ public class MissionController {
      * 일일 출석 보상을 수령합니다.
      */
     @PostMapping("/attendance")
-    public ResponseEntity<RewardResponseDto> claimDailyAttendance(
+    public ResponseEntity<RewardResponse> claimDailyAttendance(
             @AuthenticationPrincipal UserDetails userDetails
     ) {
         String email = userDetails.getUsername();
@@ -75,7 +75,7 @@ public class MissionController {
         Reward savedReward = missionService.claimDailyAttendance(email);
 
         // 2. Entity -> DTO 변환
-        RewardResponseDto responseDto = new RewardResponseDto(savedReward);
+        RewardResponse responseDto = new RewardResponse(savedReward);
 
         return ResponseEntity.ok(responseDto);
     }
@@ -86,7 +86,7 @@ public class MissionController {
      */
     @PostMapping("/bankruptcy")
     @Operation(summary = "파산 신청 (인생 2회차)", description = "총 자산이 5만원 미만일 때 구조지원금을 신청합니다.")
-    public ResponseEntity<RewardResponseDto> applyForBankruptcy(
+    public ResponseEntity<RewardResponse> applyForBankruptcy(
             @AuthenticationPrincipal UserDetails userDetails
     ) {
         // 토큰에서 이메일(String)만 추출해서 넘김
@@ -95,7 +95,7 @@ public class MissionController {
         // 서비스가 이메일로 멤버 찾아서 로직 수행
         Reward reward = missionService.applyForBankruptcy(email);
 
-        return ResponseEntity.ok(new RewardResponseDto(reward));
+        return ResponseEntity.ok(new RewardResponse(reward));
     }
 
     /**
@@ -103,7 +103,7 @@ public class MissionController {
      */
     @GetMapping("/tier")
     @Operation(summary = "티어 및 점수 조회", description = "활동 점수와 실력 점수를 합산한 현재 티어 정보를 반환합니다.")
-    public ResponseEntity<UserTierStatusDto> getMyTierStatus(@AuthenticationPrincipal UserDetails userDetails) {
+    public ResponseEntity<UserTierStatusResponse> getMyTierStatus(@AuthenticationPrincipal UserDetails userDetails) {
         return ResponseEntity.ok(missionService.getTierInfo(userDetails.getUsername()));
     }
 }

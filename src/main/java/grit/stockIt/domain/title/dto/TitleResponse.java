@@ -4,11 +4,11 @@ import grit.stockIt.domain.title.entity.Title;
 import lombok.Getter;
 
 @Getter
-public class TitleResponseDto {
+public class TitleResponse {
     private final String name;
     private final String description;
 
-    public TitleResponseDto(Title title) {
+    public TitleResponse(Title title) {
         this.name = title.getName();
         this.description = title.getDescription();
     }

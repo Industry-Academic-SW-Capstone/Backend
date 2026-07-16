@@ -7,7 +7,7 @@ import grit.stockIt.domain.mission.enums.MissionTrack;
 import lombok.Getter;
 
 @Getter
-public class MissionListDto {
+public class MissionListResponse {
     private Long id;
     private String track;
     private String title;
@@ -20,7 +20,7 @@ public class MissionListDto {
     private long rewardMoney;
     private String rewardTitle;
 
-    public MissionListDto(MissionProgress progress) {
+    public MissionListResponse(MissionProgress progress) {
         Mission m = progress.getMission();
         Reward r = m.getReward();
 

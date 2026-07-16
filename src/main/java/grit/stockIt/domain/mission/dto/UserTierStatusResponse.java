@@ -5,7 +5,7 @@ import lombok.Getter;
 
 @Getter
 @Builder
-public class UserTierStatusDto {
+public class UserTierStatusResponse {
     private String currentTier;      // BRONZE, SILVER, GOLD, MASTER, GRANDMAStER, LEGEND
     private String nextTier;         // 다음 티어 (LEGEND면 null 혹은 "MAX")
 
