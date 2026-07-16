@@ -6,7 +6,7 @@ import grit.stockIt.domain.mission.enums.MissionTrack;
 import lombok.Getter;
 
 @Getter
-public class MissionProgressResponseDto {
+public class MissionProgressResponse {
 
     private final Long missionId;
     private final String name;
@@ -18,7 +18,7 @@ public class MissionProgressResponseDto {
     private final String rewardDescription; // 보상 미리보기 (예: "100원", "칭호: 초보")
 
     // Service에서 Entity를 DTO로 변환하기 위한 생성자
-    public MissionProgressResponseDto(MissionProgress progress) {
+    public MissionProgressResponse(MissionProgress progress) {
         this.missionId = progress.getMission().getId();
         this.name = progress.getMission().getName();
         this.description = progress.getMission().getDescription();

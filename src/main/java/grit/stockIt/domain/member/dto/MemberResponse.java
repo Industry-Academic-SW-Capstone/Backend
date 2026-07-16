@@ -4,7 +4,7 @@ import com.fasterxml.jackson.databind.PropertyNamingStrategies;
 import com.fasterxml.jackson.databind.annotation.JsonNaming;
 import grit.stockIt.domain.account.entity.Account;
 import grit.stockIt.domain.member.entity.Member;
-import grit.stockIt.domain.title.dto.TitleResponseDto;
+import grit.stockIt.domain.title.dto.TitleResponse;
 import lombok.AccessLevel;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -36,7 +36,7 @@ public class MemberResponse {
         private boolean stockDetailTutorialCompleted;
 
     // --- [수정] 칭호 및 잔액 필드 추가 ---
-    private List<TitleResponseDto> titles;
+    private List<TitleResponse> titles;
     private Long representativeTitleId;
     private BigDecimal balance;
 
@@ -52,8 +52,8 @@ public class MemberResponse {
 
         // --- [수정] 로직 추가: 칭호 목록 변환 ---
         // Member 엔티티의 memberTitles 리스트를 사용
-        List<TitleResponseDto> titlesList = member.getMemberTitles().stream()
-                .map(memberTitle -> new TitleResponseDto(memberTitle.getTitle())) // (TitleResponse DTO로 변환)
+        List<TitleResponse> titlesList = member.getMemberTitles().stream()
+                .map(memberTitle -> new TitleResponse(memberTitle.getTitle())) // (TitleResponse DTO로 변환)
                 .collect(Collectors.toList());
 
         return MemberResponse.builder()
