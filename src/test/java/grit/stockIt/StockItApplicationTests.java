@@ -1,10 +1,9 @@
 package grit.stockIt;
 
+import grit.stockIt.global.support.IntegrationTestSupport;
 import org.junit.jupiter.api.Test;
-import org.springframework.boot.test.context.SpringBootTest;
 
-@SpringBootTest
-class StockItApplicationTests {
+class StockItApplicationTests extends IntegrationTestSupport {
 
 	@Test
 	void contextLoads() {

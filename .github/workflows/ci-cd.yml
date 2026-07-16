@@ -45,8 +45,8 @@ jobs:
     - name: Make gradlew executable
       run: chmod +x gradlew
       
-    - name: Build application
-      run: ./gradlew build -x test
+    - name: Build and test application
+      run: ./gradlew build
       
   # CD: main 브랜치에서만 Docker 이미지 빌드 및 배포
   cd:
