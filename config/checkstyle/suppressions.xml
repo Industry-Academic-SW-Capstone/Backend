@@ -1,0 +1,66 @@
+<?xml version="1.0"?>
+<!DOCTYPE suppressions PUBLIC
+        "-//Checkstyle//DTD SuppressionFilter Configuration 1.2//EN"
+        "https://checkstyle.org/dtds/suppressions_1_2.dtd">
+
+<suppressions>
+    <!-- ===== 정책 예외 (영구) ===== -->
+    <!-- Spring Data JPA 연관 속성 탐색 문법 (findAllByMission_Track 등) 허용 -->
+    <suppress checks="MethodName" files="[\\/]repository[\\/].*Repository\.java$"/>
+    <!-- 테스트 메서드는 언더스코어 네이밍 허용 (given_when_then 등) -->
+    <suppress checks="MethodName" files="[\\/]src[\\/]test[\\/].*Test\.java$"/>
+
+    <!-- ===== 기존 코드 baseline (Phase 1에서 정리 후 제거 — 새 항목 추가 금지) ===== -->
+    <suppress checks="AvoidStarImport" files="src[\\/]main[\\/]java[\\/]grit[\\/]stockIt[\\/]domain[\\/]account[\\/]entity[\\/]Account\.java$"/>
+    <suppress checks="AvoidStarImport" files="src[\\/]main[\\/]java[\\/]grit[\\/]stockIt[\\/]domain[\\/]account[\\/]service[\\/]AssetService\.java$"/>
+    <suppress checks="AvoidStarImport" files="src[\\/]main[\\/]java[\\/]grit[\\/]stockIt[\\/]domain[\\/]auth[\\/]controller[\\/]KakaoAuthController\.java$"/>
+    <suppress checks="AvoidStarImport" files="src[\\/]main[\\/]java[\\/]grit[\\/]stockIt[\\/]domain[\\/]auth[\\/]entity[\\/]KakaoToken\.java$"/>
+    <suppress checks="AvoidStarImport" files="src[\\/]main[\\/]java[\\/]grit[\\/]stockIt[\\/]domain[\\/]contest[\\/]controller[\\/]ContestController\.java$"/>
+    <suppress checks="AvoidStarImport" files="src[\\/]main[\\/]java[\\/]grit[\\/]stockIt[\\/]domain[\\/]contest[\\/]entity[\\/]Contest\.java$"/>
+    <suppress checks="AvoidStarImport" files="src[\\/]main[\\/]java[\\/]grit[\\/]stockIt[\\/]domain[\\/]industry[\\/]entity[\\/]Industry\.java$"/>
+    <suppress checks="AvoidStarImport" files="src[\\/]main[\\/]java[\\/]grit[\\/]stockIt[\\/]domain[\\/]llm[\\/]controller[\\/]CompanyDescribeController\.java$"/>
+    <suppress checks="AvoidStarImport" files="src[\\/]main[\\/]java[\\/]grit[\\/]stockIt[\\/]domain[\\/]member[\\/]controller[\\/]FavoriteStockController\.java$"/>
+    <suppress checks="AvoidStarImport" files="src[\\/]main[\\/]java[\\/]grit[\\/]stockIt[\\/]domain[\\/]member[\\/]controller[\\/]MemberController\.java$"/>
+    <suppress checks="UnusedImports" files="src[\\/]main[\\/]java[\\/]grit[\\/]stockIt[\\/]domain[\\/]member[\\/]dto[\\/]TitleSelectRequest\.java$"/>
+    <suppress checks="AvoidStarImport" files="src[\\/]main[\\/]java[\\/]grit[\\/]stockIt[\\/]domain[\\/]member[\\/]entity[\\/]FavoriteStock\.java$"/>
+    <suppress checks="AvoidStarImport" files="src[\\/]main[\\/]java[\\/]grit[\\/]stockIt[\\/]domain[\\/]member[\\/]entity[\\/]Member\.java$"/>
+    <suppress checks="AvoidStarImport" files="src[\\/]main[\\/]java[\\/]grit[\\/]stockIt[\\/]domain[\\/]member[\\/]service[\\/]LocalMemberService\.java$"/>
+    <suppress checks="AvoidStarImport|UnusedImports" files="src[\\/]main[\\/]java[\\/]grit[\\/]stockIt[\\/]domain[\\/]mission[\\/]controller[\\/]MissionController\.java$"/>
+    <suppress checks="AvoidStarImport" files="src[\\/]main[\\/]java[\\/]grit[\\/]stockIt[\\/]domain[\\/]mission[\\/]entity[\\/]Mission\.java$"/>
+    <suppress checks="AvoidStarImport" files="src[\\/]main[\\/]java[\\/]grit[\\/]stockIt[\\/]domain[\\/]mission[\\/]entity[\\/]MissionProgress\.java$"/>
+    <suppress checks="AvoidStarImport" files="src[\\/]main[\\/]java[\\/]grit[\\/]stockIt[\\/]domain[\\/]mission[\\/]entity[\\/]Reward\.java$"/>
+    <suppress checks="UnusedImports" files="src[\\/]main[\\/]java[\\/]grit[\\/]stockIt[\\/]domain[\\/]mission[\\/]repository[\\/]MissionRepository\.java$"/>
+    <suppress checks="UnusedImports" files="src[\\/]main[\\/]java[\\/]grit[\\/]stockIt[\\/]domain[\\/]mission[\\/]service[\\/]MissionService\.java$"/>
+    <suppress checks="AvoidStarImport" files="src[\\/]main[\\/]java[\\/]grit[\\/]stockIt[\\/]domain[\\/]notification[\\/]controller[\\/]AdminNotificationController\.java$"/>
+    <suppress checks="AvoidStarImport" files="src[\\/]main[\\/]java[\\/]grit[\\/]stockIt[\\/]domain[\\/]notification[\\/]controller[\\/]NotificationController\.java$"/>
+    <suppress checks="AvoidStarImport|UnusedImports" files="src[\\/]main[\\/]java[\\/]grit[\\/]stockIt[\\/]domain[\\/]notification[\\/]controller[\\/]TestNotificationController\.java$"/>
+    <suppress checks="AvoidStarImport" files="src[\\/]main[\\/]java[\\/]grit[\\/]stockIt[\\/]domain[\\/]notification[\\/]entity[\\/]Notification\.java$"/>
+    <suppress checks="UnusedImports" files="src[\\/]main[\\/]java[\\/]grit[\\/]stockIt[\\/]domain[\\/]notification[\\/]service[\\/]AdminNotificationService\.java$"/>
+    <suppress checks="AvoidStarImport" files="src[\\/]main[\\/]java[\\/]grit[\\/]stockIt[\\/]domain[\\/]ranking[\\/]controller[\\/]PerformanceTestController\.java$"/>
+    <suppress checks="AvoidStarImport" files="src[\\/]main[\\/]java[\\/]grit[\\/]stockIt[\\/]domain[\\/]ranking[\\/]controller[\\/]RankingController\.java$"/>
+    <suppress checks="AvoidStarImport" files="src[\\/]main[\\/]java[\\/]grit[\\/]stockIt[\\/]domain[\\/]ranking[\\/]service[\\/]RankingService\.java$"/>
+    <suppress checks="AvoidStarImport" files="src[\\/]main[\\/]java[\\/]grit[\\/]stockIt[\\/]domain[\\/]stock[\\/]analysis[\\/]controller[\\/]PortfolioAnalysisController\.java$"/>
+    <suppress checks="AvoidStarImport" files="src[\\/]main[\\/]java[\\/]grit[\\/]stockIt[\\/]domain[\\/]stock[\\/]analysis[\\/]controller[\\/]StockAnalysisController\.java$"/>
+    <suppress checks="AvoidStarImport" files="src[\\/]main[\\/]java[\\/]grit[\\/]stockIt[\\/]domain[\\/]stock[\\/]analysis[\\/]controller[\\/]StockRecommendController\.java$"/>
+    <suppress checks="UnusedImports" files="src[\\/]main[\\/]java[\\/]grit[\\/]stockIt[\\/]domain[\\/]stock[\\/]analysis[\\/]dto[\\/]StockAnalysisResponse\.java$"/>
+    <suppress checks="AvoidStarImport" files="src[\\/]main[\\/]java[\\/]grit[\\/]stockIt[\\/]domain[\\/]stock[\\/]analysis[\\/]service[\\/]PortfolioAnalysisService\.java$"/>
+    <suppress checks="AvoidStarImport" files="src[\\/]main[\\/]java[\\/]grit[\\/]stockIt[\\/]domain[\\/]stock[\\/]analysis[\\/]service[\\/]StockAnalysisService\.java$"/>
+    <suppress checks="AvoidStarImport" files="src[\\/]main[\\/]java[\\/]grit[\\/]stockIt[\\/]domain[\\/]stock[\\/]analysis[\\/]service[\\/]StockRecommendService\.java$"/>
+    <suppress checks="AvoidStarImport" files="src[\\/]main[\\/]java[\\/]grit[\\/]stockIt[\\/]domain[\\/]stock[\\/]controller[\\/]StockDetailController\.java$"/>
+    <suppress checks="AvoidStarImport" files="src[\\/]main[\\/]java[\\/]grit[\\/]stockIt[\\/]domain[\\/]stock[\\/]controller[\\/]StockRankingController\.java$"/>
+    <suppress checks="AvoidStarImport" files="src[\\/]main[\\/]java[\\/]grit[\\/]stockIt[\\/]domain[\\/]stock[\\/]entity[\\/]Stock\.java$"/>
+    <suppress checks="AvoidStarImport" files="src[\\/]main[\\/]java[\\/]grit[\\/]stockIt[\\/]domain[\\/]stock[\\/]service[\\/]StockSearchService\.java$"/>
+    <suppress checks="AvoidStarImport" files="src[\\/]main[\\/]java[\\/]grit[\\/]stockIt[\\/]domain[\\/]test[\\/]controller[\\/]DummyDataController\.java$"/>
+    <suppress checks="AvoidStarImport" files="src[\\/]main[\\/]java[\\/]grit[\\/]stockIt[\\/]domain[\\/]test[\\/]controller[\\/]LoadTestController\.java$"/>
+    <suppress checks="ConstantName" files="src[\\/]main[\\/]java[\\/]grit[\\/]stockIt[\\/]domain[\\/]test[\\/]service[\\/]DummyDataService\.java$"/>
+    <suppress checks="AvoidStarImport" files="src[\\/]main[\\/]java[\\/]grit[\\/]stockIt[\\/]domain[\\/]title[\\/]entity[\\/]MemberTitle\.java$"/>
+    <suppress checks="AvoidStarImport" files="src[\\/]main[\\/]java[\\/]grit[\\/]stockIt[\\/]domain[\\/]title[\\/]entity[\\/]Title\.java$"/>
+    <suppress checks="UnusedImports" files="src[\\/]main[\\/]java[\\/]grit[\\/]stockIt[\\/]domain[\\/]title[\\/]repository[\\/]MemberTitleRepository\.java$"/>
+    <suppress checks="AvoidStarImport" files="src[\\/]main[\\/]java[\\/]grit[\\/]stockIt[\\/]global[\\/]controller[\\/]KisTokenAdminController\.java$"/>
+    <suppress checks="RedundantImport" files="src[\\/]main[\\/]java[\\/]grit[\\/]stockIt[\\/]global[\\/]exception[\\/]GlobalExceptionHandler\.java$"/>
+    <suppress checks="UnusedImports" files="src[\\/]main[\\/]java[\\/]grit[\\/]stockIt[\\/]global[\\/]jwt[\\/]JwtToken\.java$"/>
+    <suppress checks="UnusedImports" files="src[\\/]main[\\/]java[\\/]grit[\\/]stockIt[\\/]job[\\/]runner[\\/]OneTimeMasterFileUpdater\.java$"/>
+    <suppress checks="AvoidStarImport" files="src[\\/]main[\\/]java[\\/]grit[\\/]stockIt[\\/]job[\\/]service[\\/]MasterFileUpdateService\.java$"/>
+    <suppress checks="AvoidStarImport" files="src[\\/]test[\\/]java[\\/]grit[\\/]stockIt[\\/]domain[\\/]matching[\\/]service[\\/]LimitOrderExecutionServiceTest\.java$"/>
+    <suppress checks="AvoidStarImport" files="src[\\/]test[\\/]java[\\/]grit[\\/]stockIt[\\/]domain[\\/]stock[\\/]service[\\/]StockRankingServiceTest\.java$"/>
+</suppressions>
