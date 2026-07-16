@@ -15,6 +15,7 @@ This file is the always-loaded orientation. For deep dives, read the relevant `d
 - `docs/websocket.md` — real-time streaming design (STOMP config, subscription reference-counting, KIS WebSocket client, broadcast flow)
 - `docs/deployment.md` — CI/CD pipeline, Docker Hub, SSH + `docker-compose.prod.yml`, secrets, monitoring
 - `docs/development.md` — local setup, profiles, testing, migrations
+- `docs/conventions.md` — **read before writing code**: naming rules (DTO suffixes, records), length guidelines, Spring/JPA rules, Checkstyle/ArchUnit/JaCoCo usage and baselines
 
 ## Build & Run Commands
 
@@ -100,8 +101,12 @@ GitHub Actions (`.github/workflows/ci-cd.yml`): builds with JDK 21 Temurin, push
 
 ## Code Conventions
 
-- **Lombok**: `@Getter`, `@Builder`, `@NoArgsConstructor(access = PROTECTED)`, `@Slf4j`
-- **DTOs**: `{Action}Request` / `{Domain}Response` in `dto/` packages
+Full rules live in `docs/conventions.md` — **read it before writing or renaming code**. Violations fail the build (Checkstyle + ArchUnit run in `./gradlew build`). Highlights:
+
+- **Lombok**: `@Getter`, `@Builder`, `@NoArgsConstructor(access = PROTECTED)`, `@Slf4j`; constructor injection only (`@RequiredArgsConstructor`, no field `@Autowired`); no `@Setter` on entities
+- **DTOs**: `{Action}Request` / `{Domain}Response` in `dto/` packages; prefer Java records; never use a `Dto` suffix. Renaming DTO **fields** changes the API contract (global SNAKE_CASE Jackson) — class renames are safe, field renames need frontend coordination
+- **Architecture**: controllers must not reference repositories directly (go through services)
 - **REST paths**: `/api/{domain}` (e.g., `/api/members`, `/api/orders`)
 - **Validation**: JSR-303 `@Valid` on request bodies
 - **API docs**: SpringDoc OpenAPI annotations (`@Operation`, `@Tag`) — Swagger UI at `/swagger-ui/`
+- **Baselines**: pre-existing violations are suppressed (`config/checkstyle/suppressions.xml`, `src/test/resources/archunit_store/`) — never add new entries to them
