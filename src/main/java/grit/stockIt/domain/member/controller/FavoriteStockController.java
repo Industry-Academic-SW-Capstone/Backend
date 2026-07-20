@@ -1,7 +1,7 @@
 package grit.stockIt.domain.member.controller;
 
 import grit.stockIt.domain.member.dto.CreateFavoriteRequest;
-import grit.stockIt.domain.member.dto.FavoriteStockDto;
+import grit.stockIt.domain.member.dto.FavoriteStockResponse;
 import grit.stockIt.domain.member.service.FavoriteStockService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -27,7 +27,7 @@ public class FavoriteStockController {
 
     @Operation(summary = "관심종목 추가", description = "종목을 관심목록에 추가합니다. 이미 등록되어 있으면 기존 엔티티를 반환합니다.")
     @PostMapping
-    public ResponseEntity<FavoriteStockDto> addFavorite(
+    public ResponseEntity<FavoriteStockResponse> addFavorite(
             @Valid @RequestBody CreateFavoriteRequest request,
             @Parameter(hidden = true) @AuthenticationPrincipal UserDetails userDetails) {
 
@@ -37,7 +37,7 @@ public class FavoriteStockController {
 
         String email = userDetails.getUsername();
         boolean existed = favoriteStockService.isFavorited(email, request.getStockCode());
-        FavoriteStockDto dto = favoriteStockService.addFavorite(email, request.getStockCode());
+        FavoriteStockResponse dto = favoriteStockService.addFavorite(email, request.getStockCode());
         if (existed) {
             return ResponseEntity.ok(dto);
         }
@@ -62,14 +62,14 @@ public class FavoriteStockController {
 
     @Operation(summary = "내 관심종목 목록 조회", description = "인증된 사용자의 관심종목 목록을 반환합니다.")
     @GetMapping
-    public ResponseEntity<List<FavoriteStockDto>> listFavorites(
+    public ResponseEntity<List<FavoriteStockResponse>> listFavorites(
             @Parameter(hidden = true) @AuthenticationPrincipal UserDetails userDetails) {
 
         if (userDetails == null) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
         }
 
-        List<FavoriteStockDto> list = favoriteStockService.listFavorites(userDetails.getUsername());
+        List<FavoriteStockResponse> list = favoriteStockService.listFavorites(userDetails.getUsername());
         return ResponseEntity.ok(list);
     }
 }

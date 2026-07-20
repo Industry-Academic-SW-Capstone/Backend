@@ -15,7 +15,7 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 @Builder
 @Schema(description = "랭킹 성능 비교 결과")
-public class PerformanceResult {
+public class PerformanceResponse {
 
     @Schema(description = "테스트 요청 수", example = "100")
     private Integer requestCount;

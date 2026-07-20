@@ -7,7 +7,7 @@ import lombok.Getter;
 import java.time.LocalDateTime;
 
 @Getter
-public class FavoriteStockDto {
+public class FavoriteStockResponse {
 
     private Long favoriteId;
     private String stockCode;
@@ -22,7 +22,7 @@ public class FavoriteStockDto {
     private LocalDateTime addedAt;
 
     @Builder
-    public FavoriteStockDto(Long favoriteId, String stockCode, String stockName, LocalDateTime addedAt,
+    public FavoriteStockResponse(Long favoriteId, String stockCode, String stockName, LocalDateTime addedAt,
                             String marketType, Integer currentPrice, Double changeRate, String changeSign, Integer changeAmount) {
         this.favoriteId = favoriteId;
         this.stockCode = stockCode;

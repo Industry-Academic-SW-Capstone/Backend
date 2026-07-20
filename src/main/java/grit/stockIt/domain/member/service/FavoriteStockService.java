@@ -1,6 +1,6 @@
 package grit.stockIt.domain.member.service;
 
-import grit.stockIt.domain.member.dto.FavoriteStockDto;
+import grit.stockIt.domain.member.dto.FavoriteStockResponse;
 import grit.stockIt.domain.member.entity.FavoriteStock;
 import grit.stockIt.domain.member.entity.Member;
 import grit.stockIt.domain.member.repository.FavoriteStockRepository;
@@ -27,7 +27,7 @@ public class FavoriteStockService {
         private final StockDetailService stockDetailService;
 
     @Transactional
-    public FavoriteStockDto addFavorite(String memberEmail, String stockCode) {
+    public FavoriteStockResponse addFavorite(String memberEmail, String stockCode) {
         Member member = memberRepository.findByEmail(memberEmail)
                 .orElseThrow(() -> new IllegalArgumentException("Member not found: " + memberEmail));
 
@@ -69,7 +69,7 @@ public class FavoriteStockService {
     }
 
     @Transactional
-    public List<FavoriteStockDto> listFavorites(String memberEmail) {
+    public List<FavoriteStockResponse> listFavorites(String memberEmail) {
         Member member = memberRepository.findByEmail(memberEmail)
                 .orElseThrow(() -> new IllegalArgumentException("Member not found: " + memberEmail));
 
@@ -79,7 +79,7 @@ public class FavoriteStockService {
                 )).collect(Collectors.toList());
     }
 
-        private FavoriteStockDto buildFavoriteDtoWithMarketData(Long favoriteId, String stockCode, String stockName, java.time.LocalDateTime addedAt) {
+        private FavoriteStockResponse buildFavoriteDtoWithMarketData(Long favoriteId, String stockCode, String stockName, java.time.LocalDateTime addedAt) {
                 String marketType = null;
                 Integer currentPrice = null;
                 Double changeRate = null;
@@ -113,7 +113,7 @@ public class FavoriteStockService {
                         // ignore
                 }
 
-                return FavoriteStockDto.builder()
+                return FavoriteStockResponse.builder()
                                 .favoriteId(favoriteId)
                                 .stockCode(stockCode)
                                 .stockName(stockName)

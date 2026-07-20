@@ -1,6 +1,6 @@
 package grit.stockIt.domain.ranking.controller;
 
-import grit.stockIt.domain.ranking.dto.PerformanceResult;
+import grit.stockIt.domain.ranking.dto.PerformanceResponse;
 import grit.stockIt.domain.ranking.dto.RankingResponse;
 import grit.stockIt.domain.ranking.service.PerformanceTestService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -77,7 +77,7 @@ public class PerformanceTestController {
             summary = "Main 계좌 랭킹 성능 비교",
             description = "캐시 O vs 캐시 X 성능을 비교합니다. requestCount만큼 반복 요청하여 평균 응답 시간, DB 쿼리 횟수 등을 측정합니다."
     )
-    public ResponseEntity<PerformanceResult> compareMainRankingPerformance(
+    public ResponseEntity<PerformanceResponse> compareMainRankingPerformance(
             @Parameter(description = "요청 횟수 (예: 100명 동시 요청 시뮬레이션)", example = "100")
             @RequestParam(defaultValue = "100") int requestCount
     ) {
@@ -87,7 +87,7 @@ public class PerformanceTestController {
             throw new IllegalArgumentException("요청 횟수는 1~1000 사이여야 합니다. (현재: " + requestCount + ")");
         }
         
-        PerformanceResult result = performanceTestService.compareMainRankingPerformance(requestCount);
+        PerformanceResponse result = performanceTestService.compareMainRankingPerformance(requestCount);
         return ResponseEntity.ok(result);
     }
 
@@ -102,7 +102,7 @@ public class PerformanceTestController {
             summary = "대회 계좌 랭킹 성능 비교",
             description = "캐시 O vs 캐시 X 성능을 비교합니다."
     )
-    public ResponseEntity<PerformanceResult> compareContestRankingPerformance(
+    public ResponseEntity<PerformanceResponse> compareContestRankingPerformance(
             @Parameter(description = "대회 ID", example = "1")
             @PathVariable Long contestId,
             
@@ -118,7 +118,7 @@ public class PerformanceTestController {
             throw new IllegalArgumentException("요청 횟수는 1~1000 사이여야 합니다.");
         }
         
-        PerformanceResult result = performanceTestService.compareContestRankingPerformance(contestId, sortBy, requestCount);
+        PerformanceResponse result = performanceTestService.compareContestRankingPerformance(contestId, sortBy, requestCount);
         return ResponseEntity.ok(result);
     }
 

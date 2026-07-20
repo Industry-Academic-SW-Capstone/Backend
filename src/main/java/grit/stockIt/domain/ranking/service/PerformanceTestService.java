@@ -4,8 +4,8 @@ import grit.stockIt.domain.account.entity.Account;
 import grit.stockIt.domain.account.repository.AccountRepository;
 import grit.stockIt.domain.contest.entity.Contest;
 import grit.stockIt.domain.contest.repository.ContestRepository;
-import grit.stockIt.domain.ranking.dto.PerformanceResult;
-import grit.stockIt.domain.ranking.dto.RankingDto;
+import grit.stockIt.domain.ranking.dto.PerformanceResponse;
+import grit.stockIt.domain.ranking.dto.RankingItemResponse;
 import grit.stockIt.domain.ranking.dto.RankingResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -48,8 +48,8 @@ public class PerformanceTestService {
         // 1. DB에서 Main 계좌 전체 조회 (잔액 내림차순)
         List<Account> accounts = accountRepository.findMainAccountsOrderByBalance();
 
-        // 2. Account → RankingDto 변환 (순위 부여)
-        List<RankingDto> rankings = convertToRankingDtos(accounts, false);
+        // 2. Account → RankingItemResponse 변환 (순위 부여)
+        List<RankingItemResponse> rankings = convertToRankingDtos(accounts, false);
 
         // 3. 전체 인원 수
         Long totalParticipants = accountRepository.countMainAccounts();
@@ -88,7 +88,7 @@ public class PerformanceTestService {
             accounts = accountRepository.findByContestIdOrderByBalance(contestId);
         }
 
-        List<RankingDto> rankings = convertToRankingDtos(accounts, isReturnRate);
+        List<RankingItemResponse> rankings = convertToRankingDtos(accounts, isReturnRate);
         Long totalParticipants = accountRepository.countByContest_ContestId(contestId);
 
         return RankingResponse.builder()
@@ -109,9 +109,9 @@ public class PerformanceTestService {
      * - Main 계좌 랭킹 기준
      *
      * @param requestCount 요청 횟수 (예: 100)
-     * @return PerformanceResult
+     * @return PerformanceResponse
      */
-    public PerformanceResult compareMainRankingPerformance(int requestCount) {
+    public PerformanceResponse compareMainRankingPerformance(int requestCount) {
         log.info("[성능 비교] 시작 - {} 회 요청 (Main 계좌)", requestCount);
 
         // 1. 캐시 사용 O 성능 측정
@@ -168,7 +168,7 @@ public class PerformanceTestService {
         log.info("[성능 비교] 완료 - {}", conclusion);
 
         // 4. 결과 반환
-        return PerformanceResult.builder()
+        return PerformanceResponse.builder()
                 .requestCount(requestCount)
                 .cachedAvgTimeMs(cachedAvgTime)
                 .noCacheAvgTimeMs(noCacheAvgTime)
@@ -194,9 +194,9 @@ public class PerformanceTestService {
      * @param contestId    대회 ID
      * @param sortBy       정렬 기준
      * @param requestCount 요청 횟수
-     * @return PerformanceResult
+     * @return PerformanceResponse
      */
-    public PerformanceResult compareContestRankingPerformance(Long contestId, String sortBy, int requestCount) {
+    public PerformanceResponse compareContestRankingPerformance(Long contestId, String sortBy, int requestCount) {
         log.info("[성능 비교] 시작 - {} 회 요청 (대회: {}, sortBy: {})", requestCount, contestId, sortBy);
 
         // 1. 캐시 사용 O
@@ -248,7 +248,7 @@ public class PerformanceTestService {
 
         log.info("[성능 비교] 완료 - {}", conclusion);
 
-        return PerformanceResult.builder()
+        return PerformanceResponse.builder()
                 .requestCount(requestCount)
                 .cachedAvgTimeMs(cachedAvgTime)
                 .noCacheAvgTimeMs(noCacheAvgTime)
@@ -271,10 +271,10 @@ public class PerformanceTestService {
     // ==================== Private 헬퍼 메서드 ====================
 
     /**
-     * Account 리스트를 RankingDto 리스트로 변환
+     * Account 리스트를 RankingItemResponse 리스트로 변환
      */
-    private List<RankingDto> convertToRankingDtos(List<Account> accounts, boolean includeReturn) {
-        List<RankingDto> rankings = new ArrayList<>();
+    private List<RankingItemResponse> convertToRankingDtos(List<Account> accounts, boolean includeReturn) {
+        List<RankingItemResponse> rankings = new ArrayList<>();
         int rank = 1;
 
         for (Account account : accounts) {
@@ -284,7 +284,7 @@ public class PerformanceTestService {
                 returnRate = calculateReturnRate(account, account.getContest());
             }
 
-            RankingDto dto = RankingDto.builder()
+            RankingItemResponse dto = RankingItemResponse.builder()
                     .rank(rank++)
                     .memberId(account.getMember().getMemberId())
                     .nickname(account.getMember().getName())

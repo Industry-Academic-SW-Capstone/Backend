@@ -1,7 +1,7 @@
 package grit.stockIt.domain.stock.analysis.service;
 
 import grit.stockIt.domain.stock.analysis.dto.KisFinancialRatioOutput;
-import grit.stockIt.domain.stock.analysis.dto.KisFinancialRatioResponseDto;
+import grit.stockIt.domain.stock.analysis.dto.KisFinancialRatioResponse;
 import grit.stockIt.global.auth.KisTokenManager;
 import grit.stockIt.global.config.KisApiProperties;
 import lombok.RequiredArgsConstructor;
@@ -40,7 +40,7 @@ public class KisFinancialRatioService {
                 .header("tr_id", TR_ID)
                 .header("custtype", "P")
                 .retrieve()
-                .bodyToMono(KisFinancialRatioResponseDto.class)
+                .bodyToMono(KisFinancialRatioResponse.class)
                 .map(response -> {
                     log.info("KIS 재무비율 API 응답 코드: {}, 메시지: {}", response.rtCd(), response.msg1());
 

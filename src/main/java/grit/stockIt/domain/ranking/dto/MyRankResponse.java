@@ -13,7 +13,7 @@ import java.math.BigDecimal;
 @AllArgsConstructor
 @Builder
 @Schema(description = "내 랭킹 정보")
-public class MyRankDto {
+public class MyRankResponse {
 
     @Schema(description = "잔액 기준 내 순위", example = "42")
     private Long balanceRank;

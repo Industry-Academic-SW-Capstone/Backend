@@ -1,7 +1,7 @@
 package grit.stockIt.domain.stock.analysis.service;
 
 import grit.stockIt.domain.stock.analysis.dto.KisDividendOutput;
-import grit.stockIt.domain.stock.analysis.dto.KisDividendResponseDto;
+import grit.stockIt.domain.stock.analysis.dto.KisDividendResponse;
 import grit.stockIt.global.auth.KisTokenManager;
 import grit.stockIt.global.config.KisApiProperties;
 import lombok.RequiredArgsConstructor;
@@ -56,7 +56,7 @@ public class KisDividendService {
                 .header("tr_id", TR_ID)
                 .header("custtype", "P")
                 .retrieve()
-                .bodyToMono(KisDividendResponseDto.class)
+                .bodyToMono(KisDividendResponse.class)
                 .map(response -> {
                     log.info("KIS 배당정보 API 응답 코드: {}, 메시지: {}", response.rtCd(), response.msg1());
 
