@@ -6,7 +6,7 @@ import java.time.LocalTime;
 /**
  * 주식 차트 데이터 DTO (클라이언트 응답용)
  */
-public record StockChartDto(
+public record StockChartResponse(
     String stockCode,              // 종목코드
     String periodType,             // 기간 타입 (day/week/month/year/minute)
     LocalDate date,                // 기준일자

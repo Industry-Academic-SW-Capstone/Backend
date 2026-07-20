@@ -8,7 +8,7 @@ import grit.stockIt.domain.member.repository.MemberRepository;
 import grit.stockIt.domain.stock.entity.Stock;
 import grit.stockIt.domain.stock.repository.StockRepository;
 import grit.stockIt.domain.stock.service.StockDetailService;
-import grit.stockIt.domain.stock.dto.StockDetailDto;
+import grit.stockIt.domain.stock.dto.StockDetailResponse;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -87,7 +87,7 @@ public class FavoriteStockService {
                 Integer changeAmount = null;
 
                 try {
-                        StockDetailDto detail = stockDetailService.getStockDetail(stockCode).block();
+                        StockDetailResponse detail = stockDetailService.getStockDetail(stockCode).block();
                         if (detail != null) {
                                 currentPrice = detail.currentPrice();
                                 changeAmount = detail.changeAmount();

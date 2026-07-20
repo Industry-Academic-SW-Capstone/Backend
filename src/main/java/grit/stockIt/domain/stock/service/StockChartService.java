@@ -1,9 +1,9 @@
 package grit.stockIt.domain.stock.service;
 
 import grit.stockIt.domain.stock.dto.KisChartDataDto;
-import grit.stockIt.domain.stock.dto.KisChartResponseDto;
+import grit.stockIt.domain.stock.dto.KisChartResponse;
 import grit.stockIt.domain.stock.dto.KisMinuteChartDataDto;
-import grit.stockIt.domain.stock.dto.StockChartDto;
+import grit.stockIt.domain.stock.dto.StockChartResponse;
 import grit.stockIt.global.auth.KisTokenManager;
 import grit.stockIt.global.config.KisApiProperties;
 import lombok.RequiredArgsConstructor;
@@ -63,7 +63,7 @@ public class StockChartService {
      * @param periodType 기간 타입 (1day/1week/3month/1year/5year)
      * @return 차트 데이터 리스트
      */
-    public Mono<List<StockChartDto>> getStockChart(
+    public Mono<List<StockChartResponse>> getStockChart(
             String stockCode,
             String periodType
     ) {
@@ -74,9 +74,9 @@ public class StockChartService {
         String cachedData = redisTemplate.opsForValue().get(cacheKey);
         if (cachedData != null) {
             try {
-                List<StockChartDto> chartData = objectMapper.readValue(
+                List<StockChartResponse> chartData = objectMapper.readValue(
                         cachedData,
-                        new TypeReference<List<StockChartDto>>() {}
+                        new TypeReference<List<StockChartResponse>>() {}
                 );
                 log.info("차트 데이터 캐시 히트: key={} ({}, {}개)", cacheKey, periodType, chartData.size());
                 return Mono.just(chartData);
@@ -116,7 +116,7 @@ public class StockChartService {
     /**
      * KIS API에서 차트 데이터 조회 (캐싱 없이)
      */
-    private Mono<List<StockChartDto>> fetchStockChartFromApi(
+    private Mono<List<StockChartResponse>> fetchStockChartFromApi(
             String stockCode,
             String periodType
     ) {
@@ -129,8 +129,8 @@ public class StockChartService {
                         return chartDataList.stream()
                                 .map(kisData -> mapMinuteToStockChartDto(stockCode, periodType, kisData))
                                 .sorted(Comparator
-                                        .comparing(StockChartDto::date)
-                                        .thenComparing(StockChartDto::time, Comparator.nullsLast(Comparator.naturalOrder()))) // 날짜+시간 기준 오름차순 정렬 (과거 → 현재)
+                                        .comparing(StockChartResponse::date)
+                                        .thenComparing(StockChartResponse::time, Comparator.nullsLast(Comparator.naturalOrder()))) // 날짜+시간 기준 오름차순 정렬 (과거 → 현재)
                                 .toList();
                     })
                     .doOnError(e -> log.error("주식 분봉 데이터 조회 중 오류 발생: {}", stockCode, e))
@@ -142,7 +142,7 @@ public class StockChartService {
             final int minuteInterval = 10;
             return getMinuteChartDataForWeek(stockCode, minuteInterval)
                     .map(chartDataList -> {
-                        List<StockChartDto> result = new ArrayList<>();
+                        List<StockChartResponse> result = new ArrayList<>();
                         LocalDateTime lastDateTime = null;
 
                         for (KisMinuteChartDataDto kisData : chartDataList) {
@@ -165,8 +165,8 @@ public class StockChartService {
                         // 날짜+시간 기준 오름차순 정렬 (과거 → 현재)
                         return result.stream()
                                 .sorted(Comparator
-                                        .comparing(StockChartDto::date)
-                                        .thenComparing(StockChartDto::time, Comparator.nullsLast(Comparator.naturalOrder())))
+                                        .comparing(StockChartResponse::date)
+                                        .thenComparing(StockChartResponse::time, Comparator.nullsLast(Comparator.naturalOrder())))
                                 .toList();
                     })
                     .doOnError(e -> log.error("주식 분봉 데이터 조회 중 오류 발생: {}", stockCode, e))
@@ -218,7 +218,7 @@ public class StockChartService {
                                 .toList();
                         
                         // 날짜 기준으로 7일 간격 필터링 (과거부터 현재까지)
-                        List<StockChartDto> result = new ArrayList<>();
+                        List<StockChartResponse> result = new ArrayList<>();
                         LocalDate lastSelectedDate = null;
                         
                         for (int i = 0; i < sortedList.size(); i++) {
@@ -238,7 +238,7 @@ public class StockChartService {
                         
                         // 날짜 기준 오름차순 정렬 (과거 → 현재) - 안전성을 위해 최종 정렬
                         return result.stream()
-                                .sorted(Comparator.comparing(StockChartDto::date))
+                                .sorted(Comparator.comparing(StockChartResponse::date))
                                 .toList();
                     })
                     .doOnError(e -> log.error("주식 차트 데이터 조회 중 오류 발생: {}", stockCode, e))
@@ -296,7 +296,7 @@ public class StockChartService {
                 .bodyToMono(String.class)
                 .map(rawResponse -> {
                     try {
-                        return objectMapper.readValue(rawResponse, KisChartResponseDto.class);
+                        return objectMapper.readValue(rawResponse, KisChartResponse.class);
                     } catch (Exception e) {
                         log.error("KIS API 응답 파싱 실패. 원본 응답: {}", rawResponse, e);
                         throw new RuntimeException("KIS API 응답 파싱 실패", e);
@@ -467,9 +467,9 @@ public class StockChartService {
                         return Mono.just(List.<KisMinuteChartDataDto>of());
                     }
 
-                    final KisChartResponseDto response;
+                    final KisChartResponse response;
                     try {
-                        response = objectMapper.readValue(trimmed, KisChartResponseDto.class);
+                        response = objectMapper.readValue(trimmed, KisChartResponse.class);
                     } catch (Exception e) {
                         log.error("KIS API 일별 분봉 응답 파싱 실패. 원본 응답: {}", trimmed, e);
                         return Mono.error(new RuntimeException("KIS API 응답 파싱 실패", e));
@@ -583,7 +583,7 @@ public class StockChartService {
                 .bodyToMono(String.class)
                 .map(rawResponse -> {
                     try {
-                        return objectMapper.readValue(rawResponse, KisChartResponseDto.class);
+                        return objectMapper.readValue(rawResponse, KisChartResponse.class);
                     } catch (Exception e) {
                         log.error("KIS API 분봉 응답 파싱 실패. 원본 응답: {}", rawResponse, e);
                         throw new RuntimeException("KIS API 응답 파싱 실패", e);
@@ -639,10 +639,10 @@ public class StockChartService {
     /**
      * KIS API 분봉 응답을 StockChartDto로 변환
      */
-    private StockChartDto mapMinuteToStockChartDto(String stockCode, String periodType, KisMinuteChartDataDto kisData) {
+    private StockChartResponse mapMinuteToStockChartDto(String stockCode, String periodType, KisMinuteChartDataDto kisData) {
         // 분봉은 전일대비 정보가 없으므로 0으로 설정
         // stck_prpr (현재가)를 종가로 사용
-        return new StockChartDto(
+        return new StockChartResponse(
                 stockCode,
                 periodType,
                 parseDate(kisData.date()),
@@ -661,7 +661,7 @@ public class StockChartService {
     /**
      * KIS API 응답을 StockChartDto로 변환
      */
-    private StockChartDto mapToStockChartDto(String stockCode, String periodType, KisChartDataDto kisData) {
+    private StockChartResponse mapToStockChartDto(String stockCode, String periodType, KisChartDataDto kisData) {
         // changeRate가 없으면 changeAmount와 closePrice로 계산
         String changeRate = kisData.changeRate();
         if (changeRate == null || changeRate.trim().isEmpty()) {
@@ -675,7 +675,7 @@ public class StockChartService {
             }
         }
         
-        return new StockChartDto(
+        return new StockChartResponse(
                 stockCode,
                 periodType,
                 parseDate(kisData.date()),

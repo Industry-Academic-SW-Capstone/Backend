@@ -4,7 +4,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 // 실시간 주식 호가창 DTO
-public record StockOrderBookDto(
+public record StockOrderBookResponse(
         String stockCode,
         String businessHour,
         String hourClassCode,
@@ -34,7 +34,7 @@ public record StockOrderBookDto(
     ) {}
     
     // KIS 실시간 호가 데이터로부터 생성
-    public static StockOrderBookDto from(String[] dataFields) {
+    public static StockOrderBookResponse from(String[] dataFields) {
         String stockCode = dataFields[0];
         String businessHour = dataFields.length > 1 ? dataFields[1] : "";
         String hourClassCode = dataFields.length > 2 ? dataFields[2] : "";
@@ -63,7 +63,7 @@ public record StockOrderBookDto(
             }
         }
         
-        return new StockOrderBookDto(
+        return new StockOrderBookResponse(
                 stockCode,
                 businessHour,
                 hourClassCode,

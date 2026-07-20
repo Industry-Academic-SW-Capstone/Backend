@@ -6,13 +6,13 @@ import java.time.LocalDateTime;
  * 실시간 주식 시세 업데이트 DTO
  * 웹소켓으로 클라이언트에게 전송
  */
-public record StockPriceUpdateDto(
+public record StockPriceUpdateResponse(
         String stockCode,
         String stockName,
         Integer currentPrice,
         Integer changeAmount,
         String changeRate,
-        StockRankingDto.PriceChangeSign changeSign,
+        StockRankingResponse.PriceChangeSign changeSign,
         Long volume,
         LocalDateTime timestamp
 ) {
@@ -20,7 +20,7 @@ public record StockPriceUpdateDto(
     /**
      * KIS 데이터로부터 생성
      */
-    public static StockPriceUpdateDto from(
+    public static StockPriceUpdateResponse from(
             String stockCode,
             String stockName,
             Integer currentPrice,
@@ -28,13 +28,13 @@ public record StockPriceUpdateDto(
             String changeRate,
             String changeSign,
             Long volume) {
-        return new StockPriceUpdateDto(
+        return new StockPriceUpdateResponse(
                 stockCode,
                 stockName,
                 currentPrice,
                 changeAmount,
                 changeRate,
-                StockRankingDto.PriceChangeSign.fromCode(changeSign),
+                StockRankingResponse.PriceChangeSign.fromCode(changeSign),
                 volume,
                 LocalDateTime.now()
         );

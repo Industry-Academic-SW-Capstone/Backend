@@ -2,8 +2,8 @@ package grit.stockIt.global.websocket.client;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import grit.stockIt.domain.order.entity.OrderMethod;
-import grit.stockIt.domain.stock.dto.StockOrderBookDto;
-import grit.stockIt.domain.stock.dto.StockPriceUpdateDto;
+import grit.stockIt.domain.stock.dto.StockOrderBookResponse;
+import grit.stockIt.domain.stock.dto.StockPriceUpdateResponse;
 import grit.stockIt.global.auth.KisTokenManager;
 import grit.stockIt.global.websocket.dto.KisWebSocketRequest;
 import grit.stockIt.global.websocket.dto.KisWebSocketResponse;
@@ -320,7 +320,7 @@ public class KisWebSocketClient extends TextWebSocketHandler {
             if ("H0STCNT0".equals(trId)) {
                 // 체결가 초기 응답 처리
                 var output = response.body().output();
-                StockPriceUpdateDto updateDto = StockPriceUpdateDto.from(
+                StockPriceUpdateResponse updateDto = StockPriceUpdateResponse.from(
                         output.stockCode(),
                         "", // 종목명은 클라이언트가 이미 알고 있음
                         parseIntValue(output.currentPrice()),
@@ -418,7 +418,7 @@ public class KisWebSocketClient extends TextWebSocketHandler {
                     dataFields[FIELD_INDEX_BIZ_DATE] : null;
             
             // DTO 변환
-            StockPriceUpdateDto updateDto = StockPriceUpdateDto.from(
+            StockPriceUpdateResponse updateDto = StockPriceUpdateResponse.from(
                     stockCode,
                     "", // 종목명은 클라이언트가 이미 알고 있음
                     parseIntValue(currentPrice),
@@ -459,7 +459,7 @@ public class KisWebSocketClient extends TextWebSocketHandler {
                 return;
             }
             
-            StockOrderBookDto orderBookDto = StockOrderBookDto.from(dataFields);
+            StockOrderBookResponse orderBookDto = StockOrderBookResponse.from(dataFields);
             
             // 클라이언트에게 브로드캐스트
             messagingTemplate.convertAndSend(

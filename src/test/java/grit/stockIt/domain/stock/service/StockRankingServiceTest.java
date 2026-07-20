@@ -1,6 +1,6 @@
 package grit.stockIt.domain.stock.service;
 
-import grit.stockIt.domain.stock.dto.StockRankingDto;
+import grit.stockIt.domain.stock.dto.StockRankingResponse;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
@@ -33,14 +33,14 @@ class StockRankingServiceTest {
         int expectedCount = 20;
 
         // When
-        List<StockRankingDto> stocks = stockRankingService.getAmountTopStocks(expectedCount).block();
+        List<StockRankingResponse> stocks = stockRankingService.getAmountTopStocks(expectedCount).block();
 
         // Then
         assertNotNull(stocks, "조회된 종목 리스트는 null이 아니어야 함");
         assertEquals(expectedCount, stocks.size(), "조회된 종목 수는 " + expectedCount + "개여야 함");
 
         // 첫 번째 종목 검증
-        StockRankingDto firstStock = stocks.get(0);
+        StockRankingResponse firstStock = stocks.get(0);
         assertNotNull(firstStock.stockCode(), "종목코드는 null이 아니어야 함");
         assertNotNull(firstStock.stockName(), "종목명은 null이 아니어야 함");
         assertTrue(firstStock.amount() > 0, "거래대금은 0보다 커야 함");
@@ -56,7 +56,7 @@ class StockRankingServiceTest {
         int expectedCount = 10;
 
         // When (DB 필터링 버전 사용 - marketType 포함)
-        List<StockRankingDto> stocks = stockRankingService.getAmountTopStocksFiltered(expectedCount).block();
+        List<StockRankingResponse> stocks = stockRankingService.getAmountTopStocksFiltered(expectedCount).block();
 
         // Then
         assertNotNull(stocks, "조회된 종목 리스트는 null이 아니어야 함");
@@ -68,7 +68,7 @@ class StockRankingServiceTest {
 
         // 상위 10개 종목의 모든 데이터 출력 (가격 정보 포함)
         for (int i = 0; i < Math.min(stocks.size(), 10); i++) {
-            StockRankingDto stock = stocks.get(i);
+            StockRankingResponse stock = stocks.get(i);
 
             System.out.println(String.format(
                 "[%2d위] %s (%s) - %s\n" +
@@ -94,7 +94,7 @@ class StockRankingServiceTest {
         System.out.println("=".repeat(100));
 
         // 데이터 검증
-        StockRankingDto firstStock = stocks.get(0);
+        StockRankingResponse firstStock = stocks.get(0);
         assertNotNull(firstStock.stockCode(), "종목코드는 null이 아니어야 함");
         assertNotNull(firstStock.stockName(), "종목명은 null이 아니어야 함");
         assertTrue(firstStock.amount() > 0, "거래대금은 0보다 커야 함");
@@ -103,7 +103,7 @@ class StockRankingServiceTest {
 
         // 가격 정보 포함 확인
         System.out.println("\nStockRankingDto에 가격 정보 포함 확인:");
-        StockRankingDto sample = stocks.get(0);
+        StockRankingResponse sample = stocks.get(0);
         System.out.println("   - 현재가: " + sample.currentPrice() + "원");
         System.out.println("   - 전일대비: " + sample.changeAmount() + "원");
         System.out.println("   - 전일대비율: " + sample.changeRate() + "%");
@@ -118,8 +118,8 @@ class StockRankingServiceTest {
         int expectedCount = 20;
 
         // When
-        List<StockRankingDto> allStocks = stockRankingService.getAmountTopStocks(expectedCount).block();
-        List<StockRankingDto> filteredStocks = stockRankingService.getAmountTopStocksFiltered(expectedCount).block();
+        List<StockRankingResponse> allStocks = stockRankingService.getAmountTopStocks(expectedCount).block();
+        List<StockRankingResponse> filteredStocks = stockRankingService.getAmountTopStocksFiltered(expectedCount).block();
 
         // Then
         assertNotNull(allStocks, "전체 종목 리스트는 null이 아니어야 함");
@@ -136,7 +136,7 @@ class StockRankingServiceTest {
         // 필터링된 종목의 시장구분 확인
         System.out.println("DB 필터링 후 종목 목록 (marketType 확인):");
         for (int i = 0; i < Math.min(filteredStocks.size(), 5); i++) {
-            StockRankingDto stock = filteredStocks.get(i);
+            StockRankingResponse stock = filteredStocks.get(i);
             System.out.println(String.format(
                     "   [%d] %s (%s) - %s",
                     i + 1,

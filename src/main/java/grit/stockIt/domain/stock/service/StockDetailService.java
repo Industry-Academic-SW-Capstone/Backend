@@ -5,9 +5,9 @@ import grit.stockIt.domain.stock.analysis.dto.MarketData;
 import grit.stockIt.domain.stock.analysis.dto.StockAnalysisResponse;
 import grit.stockIt.domain.stock.analysis.service.StockAnalysisService;
 import grit.stockIt.domain.stock.dto.KisStockDetailDto;
-import grit.stockIt.domain.stock.dto.KisStockDetailResponseDto;
-import grit.stockIt.domain.stock.dto.StockDetailDto;
-import grit.stockIt.domain.stock.dto.StockRankingDto;
+import grit.stockIt.domain.stock.dto.KisStockDetailResponse;
+import grit.stockIt.domain.stock.dto.StockDetailResponse;
+import grit.stockIt.domain.stock.dto.StockRankingResponse;
 import grit.stockIt.domain.stock.entity.Stock;
 import grit.stockIt.domain.stock.repository.StockRepository;
 import grit.stockIt.global.auth.KisTokenManager;
@@ -40,7 +40,7 @@ public class StockDetailService {
     private final StockAnalysisService stockAnalysisService;
 
     // 주식 상세 정보 조회
-    public Mono<StockDetailDto> getStockDetail(String stockCode) {
+    public Mono<StockDetailResponse> getStockDetail(String stockCode) {
         log.info("주식 상세 정보 조회 요청: {}", stockCode);
         
         // DB에서 종목 정보 조회
@@ -152,7 +152,7 @@ public class StockDetailService {
                 .header("tr_id", "FHKST01010100")  // 주식현재가 시세 조회 TR ID
                 .header("custtype", "P")
                 .retrieve()
-                .bodyToMono(KisStockDetailResponseDto.class)
+                .bodyToMono(KisStockDetailResponse.class)
                 .map(response -> {
                     log.info("KIS API 응답 코드: {}, 메시지: {}", response.rtCd(), response.msg1());
                     
@@ -171,7 +171,7 @@ public class StockDetailService {
     }
 
     // KIS API 응답과 DB 정보를 통합하여 StockDetailDto로 변환
-    private StockDetailDto mapToStockDetailDto(
+    private StockDetailResponse mapToStockDetailDto(
             String stockCode,
             Stock stock,
             KisStockDetailDto kisDetail,
@@ -179,9 +179,9 @@ public class StockDetailService {
             boolean tradeable
     ) {
         // 스코어 매핑 (nullable)
-        StockDetailDto.ScoreDetail scoreDetail = null;
+        StockDetailResponse.ScoreDetail scoreDetail = null;
         if (aiAnalysis.scores() != null) {
-            scoreDetail = new StockDetailDto.ScoreDetail(
+            scoreDetail = new StockDetailResponse.ScoreDetail(
                     aiAnalysis.scores().growthScore(),
                     aiAnalysis.scores().stabilityScore(),
                     aiAnalysis.scores().similarityScore(),
@@ -189,13 +189,13 @@ public class StockDetailService {
             );
         }
 
-        return new StockDetailDto(
+        return new StockDetailResponse(
                 stockCode,
                 kisDetail.stockName() != null ? kisDetail.stockName() : stock.getName(),
                 parseIntValue(kisDetail.currentPrice()),
                 parseIntValue(kisDetail.changeAmount()),
                 kisDetail.changeRate() != null ? kisDetail.changeRate() : "0",
-                StockRankingDto.PriceChangeSign.fromCode(kisDetail.changeSign()),
+                StockRankingResponse.PriceChangeSign.fromCode(kisDetail.changeSign()),
                 parseLongValue(kisDetail.volume()),
                 parseLongValue(kisDetail.amount()),
                 parseLongValue(kisDetail.marketCap()),

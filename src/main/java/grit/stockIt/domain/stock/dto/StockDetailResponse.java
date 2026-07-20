@@ -3,13 +3,13 @@ package grit.stockIt.domain.stock.dto;
 /**
  * 주식 상세 정보 DTO (클라이언트 응답용)
  */
-public record StockDetailDto(
+public record StockDetailResponse(
     String stockCode,              // 종목코드
     String stockName,               // 종목명
     Integer currentPrice,           // 현재가
     Integer changeAmount,           // 전일대비
     String changeRate,              // 전일대비율
-    StockRankingDto.PriceChangeSign changeSign, // 등락부호
+    StockRankingResponse.PriceChangeSign changeSign, // 등락부호
     Long volume,                    // 누적거래량
     Long amount,                    // 누적거래대금
     Long marketCap,                 // 시가총액 (원)

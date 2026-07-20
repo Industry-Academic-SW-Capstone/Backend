@@ -1,6 +1,6 @@
 package grit.stockIt.domain.stock.dto;
 
-public record StockSearchDto(
+public record StockSearchResponse(
         String stockCode,
         String stockName,
         double similarity
