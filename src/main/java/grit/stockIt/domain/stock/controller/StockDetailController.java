@@ -1,7 +1,7 @@
 package grit.stockIt.domain.stock.controller;
 
-import grit.stockIt.domain.stock.dto.StockChartDto;
-import grit.stockIt.domain.stock.dto.StockDetailDto;
+import grit.stockIt.domain.stock.dto.StockChartResponse;
+import grit.stockIt.domain.stock.dto.StockDetailResponse;
 import grit.stockIt.domain.stock.service.StockChartService;
 import grit.stockIt.domain.stock.service.StockDetailService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -33,7 +33,7 @@ public class StockDetailController {
      */
     @Operation(summary = "주식 상세 정보 조회", description = "종목코드로 주식의 현재가, 시가총액, PER, EPS, PBR 등 상세 정보를 조회합니다")
     @GetMapping("/{stockCode}")
-    public Mono<StockDetailDto> getStockDetail(@PathVariable String stockCode) {
+    public Mono<StockDetailResponse> getStockDetail(@PathVariable String stockCode) {
         log.info("주식 상세 정보 조회 요청: {}", stockCode);
         
         return stockDetailService.getStockDetail(stockCode)
@@ -58,7 +58,7 @@ public class StockDetailController {
                     "1year(1년, 7일 간격), 5year(5년, 1달 간격)."
     )
     @GetMapping("/{stockCode}/chart")
-    public Mono<List<StockChartDto>> getStockChart(
+    public Mono<List<StockChartResponse>> getStockChart(
             @PathVariable String stockCode,
             @RequestParam String periodType
     ) {

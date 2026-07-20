@@ -2,9 +2,9 @@ package grit.stockIt.domain.stock.service;
 
 import grit.stockIt.domain.industry.entity.Industry;
 import grit.stockIt.domain.industry.repository.IndustryRepository;
-import grit.stockIt.domain.stock.dto.IndustryStockRankingDto;
-import grit.stockIt.domain.stock.dto.StockRankingDto;
-import grit.stockIt.domain.stock.dto.KisRankingResponseDto;
+import grit.stockIt.domain.stock.dto.IndustryStockRankingResponse;
+import grit.stockIt.domain.stock.dto.StockRankingResponse;
+import grit.stockIt.domain.stock.dto.KisRankingResponse;
 import grit.stockIt.domain.stock.dto.KisStockDataDto;
 import grit.stockIt.domain.stock.entity.Stock;
 import grit.stockIt.domain.stock.repository.StockRepository;
@@ -34,7 +34,7 @@ public class StockRankingService {
     private final IndustryRepository industryRepository;
 
     // 거래대금 상위 종목 조회 (비동기)
-    public Mono<List<StockRankingDto>> getAmountTopStocks(int limit) {
+    public Mono<List<StockRankingResponse>> getAmountTopStocks(int limit) {
         String accessToken = kisTokenManager.getAccessToken();
 
         return webClient.get()
@@ -59,20 +59,20 @@ public class StockRankingService {
                 .header("tr_id", "FHPST01710000")
                 .header("custtype", "P")
                 .retrieve()
-                .bodyToMono(KisRankingResponseDto.class)
+                .bodyToMono(KisRankingResponse.class)
                 .map(response -> parseAmountRankingResponse(response, limit))
                 .doOnError(e -> log.error("거래대금 상위 종목 조회 중 오류 발생", e))
                 .onErrorResume(e -> Mono.error(new RuntimeException("거래대금 상위 종목 조회 실패", e)));
     }
 
     // 거래대금 상위 종목 조회 (DB에 있는 종목만 필터링) (비동기)
-    public Mono<List<StockRankingDto>> getAmountTopStocksFiltered(int limit) {
+    public Mono<List<StockRankingResponse>> getAmountTopStocksFiltered(int limit) {
         return getAmountTopStocks(limit)
                 .map(allStocks -> filterStocksInDatabase(allStocks, limit));
     }
 
     // 급등/급락 순위 조회 (비동기)
-    public Mono<List<StockRankingDto>> getFluctuationTopStocks(boolean rise) {
+    public Mono<List<StockRankingResponse>> getFluctuationTopStocks(boolean rise) {
         String accessToken = kisTokenManager.getAccessToken();
         String trId = "FHPST01700000"; // 등락 순위 조회 TR ID
 
@@ -102,20 +102,20 @@ public class StockRankingService {
                 .header("tr_id", trId)
                 .header("custtype", "P")
                 .retrieve()
-                .bodyToMono(KisRankingResponseDto.class)
+                .bodyToMono(KisRankingResponse.class)
                 .map(response -> parseFluctuationRankingResponse(response, 30))
                 .doOnError(e -> log.error("급{} 순위 조회 중 오류 발생", rise ? "등" : "락", e))
                 .onErrorResume(e -> Mono.error(new RuntimeException("급" + (rise ? "등" : "락") + " 순위 조회 실패", e)));
     }
 
     // 등락 순위 조회 - DB 필터링 포함
-    public Mono<List<StockRankingDto>> getFluctuationTopStocksFiltered(int limit, boolean rise) {
+    public Mono<List<StockRankingResponse>> getFluctuationTopStocksFiltered(int limit, boolean rise) {
         return getFluctuationTopStocks(rise)
                 .map(allStocks -> filterStocksInDatabase(allStocks, limit));
     }
 
     // 업종별 인기 종목 조회 
-    public Mono<List<IndustryStockRankingDto>> getPopularStocksByIndustry(int totalLimit) {
+    public Mono<List<IndustryStockRankingResponse>> getPopularStocksByIndustry(int totalLimit) {
         
         log.info("업종별 인기 종목 조회 시작 - 전체: {}개, 업종별 최대 5개 (동적 감지)", totalLimit);
         
@@ -123,7 +123,7 @@ public class StockRankingService {
                 .map(allStocks -> {
                     // 종목 코드 리스트 추출
                     List<String> stockCodeList = allStocks.stream()
-                            .map(StockRankingDto::stockCode)
+                            .map(StockRankingResponse::stockCode)
                             .filter(code -> code != null && !code.isEmpty())
                             .toList();
                     
@@ -133,7 +133,7 @@ public class StockRankingService {
                             .collect(Collectors.toMap(Stock::getCode, stock -> stock));
                     
                     // 업종 코드별로 그룹화 (거래대금 합계 계산)
-                    Map<String, List<StockRankingDto>> stocksByIndustry = allStocks.stream()
+                    Map<String, List<StockRankingResponse>> stocksByIndustry = allStocks.stream()
                             .filter(stock -> {
                                 Stock stockEntity = stockMap.get(stock.stockCode());
                                 return stockEntity != null && stockEntity.getIndustryCode() != null;
@@ -153,10 +153,10 @@ public class StockRankingService {
                             .sorted((e1, e2) -> {
                                 // 각 업종의 거래대금 합계 계산
                                 long sum1 = e1.getValue().stream()
-                                        .mapToLong(StockRankingDto::amount)
+                                        .mapToLong(StockRankingResponse::amount)
                                         .sum();
                                 long sum2 = e2.getValue().stream()
-                                        .mapToLong(StockRankingDto::amount)
+                                        .mapToLong(StockRankingResponse::amount)
                                         .sum();
                                 return Long.compare(sum2, sum1); // 내림차순
                             })
@@ -169,14 +169,14 @@ public class StockRankingService {
                             .collect(Collectors.toMap(Industry::getCode, industry -> industry));
                     
                     // 업종별로 정렬 후 최대 5개까지 선택
-                    List<IndustryStockRankingDto> result = new ArrayList<>();
+                    List<IndustryStockRankingResponse> result = new ArrayList<>();
                     final int MAX_PER_INDUSTRY = 5;
                     
                     for (String industryCode : sortedIndustryCodes) {
-                        List<StockRankingDto> stocks = stocksByIndustry.get(industryCode);
+                        List<StockRankingResponse> stocks = stocksByIndustry.get(industryCode);
                         
                         // 거래대금 기준 내림차순 정렬 후 최대 5개까지 선택
-                        List<StockRankingDto> topStocks = stocks.stream()
+                        List<StockRankingResponse> topStocks = stocks.stream()
                                 .sorted((a, b) -> Long.compare(b.amount(), a.amount()))
                                 .limit(MAX_PER_INDUSTRY)
                                 .toList();
@@ -186,7 +186,7 @@ public class StockRankingService {
                             Industry industry = industryMap.get(industryCode);
                             String industryName = industry != null ? industry.getName() : null;
                             
-                            result.add(new IndustryStockRankingDto(
+                            result.add(new IndustryStockRankingResponse(
                                     industryCode,
                                     industryName,
                                     topStocks
@@ -203,10 +203,10 @@ public class StockRankingService {
 
 
     // 데이터베이스에 있는 종목만 필터링 (marketType을 DB에서 조회)
-    private List<StockRankingDto> filterStocksInDatabase(List<StockRankingDto> stocks, int limit) {
+    private List<StockRankingResponse> filterStocksInDatabase(List<StockRankingResponse> stocks, int limit) {
         // 종목 코드 리스트 추출
         List<String> stockCodes = stocks.stream()
-                .map(StockRankingDto::stockCode)
+                .map(StockRankingResponse::stockCode)
                 .toList();
 
         // 데이터베이스에서 존재하는 종목들만 조회
@@ -227,7 +227,7 @@ public class StockRankingService {
                 .map(stockDto -> {
                     Stock stock = stockMap.get(stockDto.stockCode());
                     // DB의 marketType 정보로 DTO 재생성 (가격 정보 유지)
-                    return new StockRankingDto(
+                    return new StockRankingResponse(
                             stockDto.stockCode(),
                             stockDto.stockName(),
                             stockDto.volume(),
@@ -245,7 +245,7 @@ public class StockRankingService {
     }
 
     // 거래대금 순위 응답 파싱 
-    private List<StockRankingDto> parseAmountRankingResponse(KisRankingResponseDto response, int limit) {
+    private List<StockRankingResponse> parseAmountRankingResponse(KisRankingResponse response, int limit) {
         try {
             log.info("API 응답 코드: {}, 메시지: {}", response.rtCd(), response.msg1());
 
@@ -267,7 +267,7 @@ public class StockRankingService {
     }
 
     // 등락 순위 응답 파싱 (등락 전용: stck_shrn_iscd 강제 사용)
-    private List<StockRankingDto> parseFluctuationRankingResponse(KisRankingResponseDto response, int limit) {
+    private List<StockRankingResponse> parseFluctuationRankingResponse(KisRankingResponse response, int limit) {
         try {
             log.info("API 응답 코드: {}, 메시지: {}", response.rtCd(), response.msg1());
             List<Map<String, Object>> dataList = extractOutputMapList(response.output());
@@ -368,8 +368,8 @@ public class StockRankingService {
     }
 
     // KisStockDataDto를 StockRankingDto로 변환 
-    private StockRankingDto mapKisDataToStockRankingDto(KisStockDataDto kisData) {
-        return new StockRankingDto(
+    private StockRankingResponse mapKisDataToStockRankingDto(KisStockDataDto kisData) {
+        return new StockRankingResponse(
                 kisData.stockCode(),
                 kisData.stockName(),
                 parseLongValue(kisData.volume()),
@@ -380,7 +380,7 @@ public class StockRankingService {
                 parseIntValue(kisData.currentPrice()),
                 parseIntValue(kisData.changeAmount()),
                 kisData.changeRate(),
-                StockRankingDto.PriceChangeSign.fromCode(kisData.changeSign())
+                StockRankingResponse.PriceChangeSign.fromCode(kisData.changeSign())
         );
     }
 

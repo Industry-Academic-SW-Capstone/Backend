@@ -8,10 +8,10 @@ import java.util.List;
  * @param industryName 업종명
  * @param stocks 해당 업종의 인기 종목 리스트 (거래대금 기준)
  */
-public record IndustryStockRankingDto(
+public record IndustryStockRankingResponse(
         String industryCode,
         String industryName,
-        List<StockRankingDto> stocks
+        List<StockRankingResponse> stocks
 ) {
 }
 

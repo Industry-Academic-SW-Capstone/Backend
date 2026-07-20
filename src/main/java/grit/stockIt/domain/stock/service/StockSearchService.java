@@ -1,6 +1,6 @@
 package grit.stockIt.domain.stock.service;
 
-import grit.stockIt.domain.stock.dto.StockSearchDto;
+import grit.stockIt.domain.stock.dto.StockSearchResponse;
 import grit.stockIt.domain.stock.entity.Stock;
 import grit.stockIt.domain.stock.repository.StockRepository;
 import lombok.RequiredArgsConstructor;
@@ -15,7 +15,7 @@ public class StockSearchService {
 
     private final StockRepository stockRepository;
 
-    public List<StockSearchDto> searchByName(String query) {
+    public List<StockSearchResponse> searchByName(String query) {
         if (query == null || query.trim().isEmpty()) {
             return Collections.emptyList();
         }
@@ -25,7 +25,7 @@ public class StockSearchService {
         List<Stock> stocks = stockRepository.findAll();
 
         // 계산 및 필터링
-        List<StockSearchDto> matches = new ArrayList<>();
+        List<StockSearchResponse> matches = new ArrayList<>();
         for (Stock s : stocks) {
             String name = s.getName();
             String normalizedName = normalize(name);
@@ -37,13 +37,13 @@ public class StockSearchService {
                 sim = jaccardByNGram(normalizedQuery, normalizedName, 2);
             }
             if (sim > 0d) {
-                matches.add(new StockSearchDto(s.getCode(), s.getName(), sim));
+                matches.add(new StockSearchResponse(s.getCode(), s.getName(), sim));
             }
         }
 
         // 유사도 내림차순 정렬
         return matches.stream()
-                .sorted(Comparator.comparingDouble(StockSearchDto::similarity).reversed())
+                .sorted(Comparator.comparingDouble(StockSearchResponse::similarity).reversed())
                 .collect(Collectors.toList());
     }
 

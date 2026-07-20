@@ -12,7 +12,7 @@ package grit.stockIt.domain.stock.dto;
  * @param changeRate 전일대비율
  * @param changeSign 등락 부호
  */
-public record StockRankingDto(
+public record StockRankingResponse(
         String stockCode,
         String stockName,
         Long volume,

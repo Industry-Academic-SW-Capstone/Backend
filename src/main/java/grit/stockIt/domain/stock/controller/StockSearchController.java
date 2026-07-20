@@ -1,6 +1,6 @@
 package grit.stockIt.domain.stock.controller;
 
-import grit.stockIt.domain.stock.dto.StockSearchDto;
+import grit.stockIt.domain.stock.dto.StockSearchResponse;
 import grit.stockIt.domain.stock.service.StockSearchService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -23,8 +23,8 @@ public class StockSearchController {
 
     @Operation(summary = "종목 검색", description = "종목명을 기준으로 자카드 유사도 내림차순으로 결과 반환(유사도 0 초과)")
     @GetMapping("/search")
-    public ResponseEntity<List<StockSearchDto>> searchStocks(@RequestParam(name = "q") String q) {
-        List<StockSearchDto> results = stockSearchService.searchByName(q);
+    public ResponseEntity<List<StockSearchResponse>> searchStocks(@RequestParam(name = "q") String q) {
+        List<StockSearchResponse> results = stockSearchService.searchByName(q);
         return ResponseEntity.ok(results);
     }
 }

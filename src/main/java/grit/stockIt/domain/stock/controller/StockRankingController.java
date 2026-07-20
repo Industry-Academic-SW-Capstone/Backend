@@ -1,7 +1,7 @@
 package grit.stockIt.domain.stock.controller;
 
-import grit.stockIt.domain.stock.dto.IndustryStockRankingDto;
-import grit.stockIt.domain.stock.dto.StockRankingDto;
+import grit.stockIt.domain.stock.dto.IndustryStockRankingResponse;
+import grit.stockIt.domain.stock.dto.StockRankingResponse;
 import grit.stockIt.domain.stock.service.StockRankingService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -25,7 +25,7 @@ public class StockRankingController {
     // 거래대금 상위 종목 조회 
     @Operation(summary = "거래대금 상위 종목 조회", description = "거래대금 기준 상위 30개 종목을 조회합니다")
     @GetMapping("/amount")
-    public Mono<List<StockRankingDto>> getAmountTopStocks() {
+    public Mono<List<StockRankingResponse>> getAmountTopStocks() {
         
         log.info("거래대금 상위 20개 종목 조회 요청");
         
@@ -41,7 +41,7 @@ public class StockRankingController {
     // 급등/급락 순위 조회
     @Operation(summary = "등락 순위 조회", description = "type 파라미터로 급등(rise)/급락(fall)을 지정하여 상위 30개 종목을 조회합니다.")
     @GetMapping("/fluctuations")
-    public Mono<List<StockRankingDto>> getFluctuationTopStocks(@RequestParam(name = "type", defaultValue = "rise") String type) {
+    public Mono<List<StockRankingResponse>> getFluctuationTopStocks(@RequestParam(name = "type", defaultValue = "rise") String type) {
         String normalized = type.trim().toLowerCase();
 
         if (!"rise".equals(normalized) && !"fall".equals(normalized)) {
@@ -52,7 +52,7 @@ public class StockRankingController {
 
         log.info("등락 순위 조회 요청 - type: {}", normalized);
 
-        Mono<List<StockRankingDto>> result = stockRankingService.getFluctuationTopStocksFiltered(30, isRise);
+        Mono<List<StockRankingResponse>> result = stockRankingService.getFluctuationTopStocksFiltered(30, isRise);
 
         return result
                 .doOnSuccess(stocks ->
@@ -66,7 +66,7 @@ public class StockRankingController {
     // 업종별 인기 종목 조회 
     @Operation(summary = "업종별 인기 종목 조회", description = "거래대금 상위 종목을 업종별로 그룹화하여 각 업종 최대 5개 종목을 반환합니다")
     @GetMapping("/industries")
-    public Mono<List<IndustryStockRankingDto>> getPopularStocksByIndustry() {
+    public Mono<List<IndustryStockRankingResponse>> getPopularStocksByIndustry() {
         log.info("업종별 인기 종목 조회 요청 (동적 감지, 각 업종별 최대 5개)");
         
         return stockRankingService.getPopularStocksByIndustry(30)
