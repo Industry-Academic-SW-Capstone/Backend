@@ -256,7 +256,7 @@ public class StockRankingService {
 
             return stockDataList.stream()
                     .limit(limit)
-                    .map(this::mapKisDataToStockRankingDto)
+                    .map(this::mapKisDataToStockRankingResponse)
                     .toList();
 
         } catch (Exception e) {
@@ -276,7 +276,7 @@ public class StockRankingService {
             return dataList.stream()
                     .limit(limit)
                     .map(this::mapToKisStockDataDtoFluctuation)
-                    .map(this::mapKisDataToStockRankingDto)
+                    .map(this::mapKisDataToStockRankingResponse)
                     .toList();
         } catch (Exception e) {
             log.error("등락 순위 응답 파싱 중 오류 발생", e);
@@ -367,8 +367,8 @@ public class StockRankingService {
         );
     }
 
-    // KisStockDataDto를 StockRankingDto로 변환 
-    private StockRankingResponse mapKisDataToStockRankingDto(KisStockDataDto kisData) {
+    // KisStockDataDto를 StockRankingResponse로 변환 
+    private StockRankingResponse mapKisDataToStockRankingResponse(KisStockDataDto kisData) {
         return new StockRankingResponse(
                 kisData.stockCode(),
                 kisData.stockName(),

@@ -102,7 +102,7 @@ class StockRankingServiceTest {
         assertNotEquals("UNKNOWN", firstStock.marketType(), "DB에서 조회한 시장구분이 있어야 함");
 
         // 가격 정보 포함 확인
-        System.out.println("\nStockRankingDto에 가격 정보 포함 확인:");
+        System.out.println("\nStockRankingResponse에 가격 정보 포함 확인:");
         StockRankingResponse sample = stocks.get(0);
         System.out.println("   - 현재가: " + sample.currentPrice() + "원");
         System.out.println("   - 전일대비: " + sample.changeAmount() + "원");

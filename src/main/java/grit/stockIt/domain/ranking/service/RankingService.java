@@ -485,7 +485,7 @@ public class RankingService {
     /**
      * AccountWithAssets 리스트를 RankingItemResponse 리스트로 변환 (총자산 기준)
      */
-    private List<RankingItemResponse> convertToRankingDtosWithAssets(List<AccountWithAssets> accountsWithAssets, boolean includeReturn) {
+    private List<RankingItemResponse> convertToRankingItemResponsesWithAssets(List<AccountWithAssets> accountsWithAssets, boolean includeReturn) {
         List<RankingItemResponse> rankings = new ArrayList<>();
         int rank = 1;
         BigDecimal prevValue = null;
@@ -541,7 +541,7 @@ public class RankingService {
      * AccountWithAssets 리스트를 RankingItemResponse 리스트로 변환 (수익률 기준)
      * - totalAssets에는 실제 총자산, returnRate에는 수익률 표시
      */
-    private List<RankingItemResponse> convertToRankingDtosWithAssetsForReturnRate(
+    private List<RankingItemResponse> convertToRankingItemResponsesWithAssetsForReturnRate(
             List<AccountWithAssets> accountsWithAssets, Contest contest, Map<String, BigDecimal> currentPrices,
             Map<Account, List<AccountStock>> accountStocksMap) {
         
@@ -622,7 +622,7 @@ public class RankingService {
                 .collect(Collectors.toList());
 
         // 4. Account → RankingItemResponse 변환 (순위 부여)
-        List<RankingItemResponse> rankings = convertToRankingDtosWithAssets(accountsWithAssets, false);
+        List<RankingItemResponse> rankings = convertToRankingItemResponsesWithAssets(accountsWithAssets, false);
 
         // 5. 전체 인원 수
         Long totalParticipants = accountRepository.countMainAccounts();
@@ -688,8 +688,8 @@ public class RankingService {
 
         // 4. Account → RankingItemResponse 변환
         List<RankingItemResponse> rankings = isReturnRate
-                ? convertToRankingDtosWithAssetsForReturnRate(accountsWithAssets, contest, currentPrices, accountStocksMap)
-                : convertToRankingDtosWithAssets(accountsWithAssets, false);
+                ? convertToRankingItemResponsesWithAssetsForReturnRate(accountsWithAssets, contest, currentPrices, accountStocksMap)
+                : convertToRankingItemResponsesWithAssets(accountsWithAssets, false);
 
         // 5. 전체 인원 수
         Long totalParticipants = accountRepository.countByContest_ContestId(contestId);

@@ -49,7 +49,7 @@ public class PerformanceTestService {
         List<Account> accounts = accountRepository.findMainAccountsOrderByBalance();
 
         // 2. Account → RankingItemResponse 변환 (순위 부여)
-        List<RankingItemResponse> rankings = convertToRankingDtos(accounts, false);
+        List<RankingItemResponse> rankings = convertToRankingItemResponses(accounts, false);
 
         // 3. 전체 인원 수
         Long totalParticipants = accountRepository.countMainAccounts();
@@ -88,7 +88,7 @@ public class PerformanceTestService {
             accounts = accountRepository.findByContestIdOrderByBalance(contestId);
         }
 
-        List<RankingItemResponse> rankings = convertToRankingDtos(accounts, isReturnRate);
+        List<RankingItemResponse> rankings = convertToRankingItemResponses(accounts, isReturnRate);
         Long totalParticipants = accountRepository.countByContest_ContestId(contestId);
 
         return RankingResponse.builder()
@@ -273,7 +273,7 @@ public class PerformanceTestService {
     /**
      * Account 리스트를 RankingItemResponse 리스트로 변환
      */
-    private List<RankingItemResponse> convertToRankingDtos(List<Account> accounts, boolean includeReturn) {
+    private List<RankingItemResponse> convertToRankingItemResponses(List<Account> accounts, boolean includeReturn) {
         List<RankingItemResponse> rankings = new ArrayList<>();
         int rank = 1;
 
