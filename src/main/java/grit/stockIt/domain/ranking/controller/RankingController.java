@@ -1,6 +1,6 @@
 package grit.stockIt.domain.ranking.controller;
 
-import grit.stockIt.domain.ranking.dto.MyRankDto;
+import grit.stockIt.domain.ranking.dto.MyRankResponse;
 import grit.stockIt.domain.ranking.dto.RankingResponse;
 import grit.stockIt.domain.ranking.service.RankingService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -95,7 +95,7 @@ public class RankingController {
             summary = "내 랭킹 조회",
             description = "내 랭킹 정보를 조회합니다. contestId가 없으면 Main 계좌, 있으면 해당 대회의 랭킹을 반환합니다."
     )
-    public ResponseEntity<MyRankDto> getMyRank(
+    public ResponseEntity<MyRankResponse> getMyRank(
             @Parameter(description = "회원 ID", example = "42", required = true)
             @RequestParam(name = "memberId") Long memberId,
 
@@ -103,7 +103,7 @@ public class RankingController {
             @RequestParam(name = "contestId", required = false) Long contestId
     ) {
         log.info("🔍 [API 호출] 내 랭킹 조회 (memberId: {}, contestId: {})", memberId, contestId);
-        MyRankDto response = rankingService.getMyRank(memberId, contestId);
+        MyRankResponse response = rankingService.getMyRank(memberId, contestId);
         return ResponseEntity.ok(response);
     }
 

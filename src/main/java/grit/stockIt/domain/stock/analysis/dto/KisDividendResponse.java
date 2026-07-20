@@ -4,11 +4,11 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 
 import java.util.List;
 
-// KIS API 재무비율 응답 DTO
-public record KisFinancialRatioResponseDto(
+// KIS API 배당정보 응답 DTO
+public record KisDividendResponse(
     @JsonProperty("rt_cd") String rtCd,
     @JsonProperty("msg_cd") String msgCd,
     @JsonProperty("msg1") String msg1,
-    @JsonProperty("output") List<KisFinancialRatioOutput> output
+    @JsonProperty("output1") List<KisDividendOutput> output1
 ) {}
 

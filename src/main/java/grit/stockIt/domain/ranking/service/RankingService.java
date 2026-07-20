@@ -9,8 +9,8 @@ import grit.stockIt.domain.contest.repository.ContestRepository;
 import grit.stockIt.domain.matching.repository.RedisMarketDataRepository;
 import grit.stockIt.domain.mission.service.MissionService;
 import grit.stockIt.domain.mission.dto.UserTierStatusResponse;
-import grit.stockIt.domain.ranking.dto.MyRankDto;
-import grit.stockIt.domain.ranking.dto.RankingDto;
+import grit.stockIt.domain.ranking.dto.MyRankResponse;
+import grit.stockIt.domain.ranking.dto.RankingItemResponse;
 import grit.stockIt.domain.ranking.dto.RankingResponse;
 import grit.stockIt.domain.stock.service.StockDetailService;
 import com.google.common.util.concurrent.RateLimiter;
@@ -88,7 +88,7 @@ public class RankingService {
             if (mainRanking != null && mainRanking.getRankings() != null) {
                 List<Long> top10MemberIds = mainRanking.getRankings().stream()
                         .filter(dto -> dto.getRank() <= 10) // 1위~10위 필터링
-                        .map(RankingDto::getMemberId)       // MemberId 추출
+                        .map(RankingItemResponse::getMemberId)       // MemberId 추출
                         .collect(Collectors.toList());
 
                 // MissionService로 Top 10 명단 전달 (미션 달성 처리)
@@ -177,9 +177,9 @@ public class RankingService {
      *
      * @param memberId  회원 ID
      * @param contestId 대회 ID (null이면 Main 계좌)
-     * @return MyRankDto
+     * @return MyRankResponse
      */
-    public MyRankDto getMyRank(Long memberId, Long contestId) {
+    public MyRankResponse getMyRank(Long memberId, Long contestId) {
         log.info("🔍 내 랭킹 조회 (memberId: {}, contestId: {})", memberId, contestId);
 
         // 1. 내 계좌 찾기
@@ -211,7 +211,7 @@ public class RankingService {
                     : null;
             String tier = getTierForMember(member);
             
-            return MyRankDto.builder()
+            return MyRankResponse.builder()
                     .balanceRank(balanceRank)
                     .returnRateRank(null) // Main 계좌는 수익률 없음
                     .totalParticipants(mainRankings.getTotalParticipants())
@@ -248,7 +248,7 @@ public class RankingService {
                 : null;
         String tier = getTierForMember(member);
 
-        return MyRankDto.builder()
+        return MyRankResponse.builder()
                 .balanceRank(balanceRank)
                 .returnRateRank(returnRateRank)
                 .totalParticipants(balanceRankings.getTotalParticipants())
@@ -264,10 +264,10 @@ public class RankingService {
     /**
      * 랭킹 리스트에서 특정 회원의 순위 찾기
      */
-    private Long findMyRankInList(List<RankingDto> rankings, Long memberId) {
+    private Long findMyRankInList(List<RankingItemResponse> rankings, Long memberId) {
         return rankings.stream()
                 .filter(dto -> dto.getMemberId().equals(memberId))
-                .map(RankingDto::getRank)
+                .map(RankingItemResponse::getRank)
                 .findFirst()
                 .map(Integer::longValue)
                 .orElse(null);
@@ -483,10 +483,10 @@ public class RankingService {
     }
 
     /**
-     * AccountWithAssets 리스트를 RankingDto 리스트로 변환 (총자산 기준)
+     * AccountWithAssets 리스트를 RankingItemResponse 리스트로 변환 (총자산 기준)
      */
-    private List<RankingDto> convertToRankingDtosWithAssets(List<AccountWithAssets> accountsWithAssets, boolean includeReturn) {
-        List<RankingDto> rankings = new ArrayList<>();
+    private List<RankingItemResponse> convertToRankingItemResponsesWithAssets(List<AccountWithAssets> accountsWithAssets, boolean includeReturn) {
+        List<RankingItemResponse> rankings = new ArrayList<>();
         int rank = 1;
         BigDecimal prevValue = null;
         int sameRankCount = 0;
@@ -517,7 +517,7 @@ public class RankingService {
                     : null;
             String tier = getTierForMember(account.getMember());
 
-            RankingDto dto = RankingDto.builder()
+            RankingItemResponse dto = RankingItemResponse.builder()
                     .rank(rank)
                     .memberId(account.getMember().getMemberId())
                     .nickname(account.getMember().getName())
@@ -538,14 +538,14 @@ public class RankingService {
     }
 
     /**
-     * AccountWithAssets 리스트를 RankingDto 리스트로 변환 (수익률 기준)
+     * AccountWithAssets 리스트를 RankingItemResponse 리스트로 변환 (수익률 기준)
      * - totalAssets에는 실제 총자산, returnRate에는 수익률 표시
      */
-    private List<RankingDto> convertToRankingDtosWithAssetsForReturnRate(
+    private List<RankingItemResponse> convertToRankingItemResponsesWithAssetsForReturnRate(
             List<AccountWithAssets> accountsWithAssets, Contest contest, Map<String, BigDecimal> currentPrices,
             Map<Account, List<AccountStock>> accountStocksMap) {
         
-        List<RankingDto> rankings = new ArrayList<>();
+        List<RankingItemResponse> rankings = new ArrayList<>();
         int rank = 1;
         BigDecimal prevReturnRate = null;
         int sameRankCount = 0;
@@ -576,7 +576,7 @@ public class RankingService {
                     : null;
             String tier = getTierForMember(account.getMember());
 
-            RankingDto dto = RankingDto.builder()
+            RankingItemResponse dto = RankingItemResponse.builder()
                     .rank(rank)
                     .memberId(account.getMember().getMemberId())
                     .nickname(account.getMember().getName())
@@ -621,8 +621,8 @@ public class RankingService {
                 .sorted((a, b) -> b.totalAssets.compareTo(a.totalAssets)) // 총자산 내림차순
                 .collect(Collectors.toList());
 
-        // 4. Account → RankingDto 변환 (순위 부여)
-        List<RankingDto> rankings = convertToRankingDtosWithAssets(accountsWithAssets, false);
+        // 4. Account → RankingItemResponse 변환 (순위 부여)
+        List<RankingItemResponse> rankings = convertToRankingItemResponsesWithAssets(accountsWithAssets, false);
 
         // 5. 전체 인원 수
         Long totalParticipants = accountRepository.countMainAccounts();
@@ -686,10 +686,10 @@ public class RankingService {
                     .collect(Collectors.toList());
         }
 
-        // 4. Account → RankingDto 변환
-        List<RankingDto> rankings = isReturnRate
-                ? convertToRankingDtosWithAssetsForReturnRate(accountsWithAssets, contest, currentPrices, accountStocksMap)
-                : convertToRankingDtosWithAssets(accountsWithAssets, false);
+        // 4. Account → RankingItemResponse 변환
+        List<RankingItemResponse> rankings = isReturnRate
+                ? convertToRankingItemResponsesWithAssetsForReturnRate(accountsWithAssets, contest, currentPrices, accountStocksMap)
+                : convertToRankingItemResponsesWithAssets(accountsWithAssets, false);
 
         // 5. 전체 인원 수
         Long totalParticipants = accountRepository.countByContest_ContestId(contestId);

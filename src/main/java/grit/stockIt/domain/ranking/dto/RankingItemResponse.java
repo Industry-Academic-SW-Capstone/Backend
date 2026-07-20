@@ -13,7 +13,7 @@ import java.math.BigDecimal;
 @AllArgsConstructor
 @Builder
 @Schema(description = "랭킹 정보")
-public class RankingDto {
+public class RankingItemResponse {
 
     @Schema(description = "순위", example = "1")
     private Integer rank;

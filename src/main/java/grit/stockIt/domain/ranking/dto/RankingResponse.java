@@ -26,7 +26,7 @@ public class RankingResponse {
     private String sortBy;
 
     @Schema(description = "랭킹 목록")
-    private List<RankingDto> rankings;
+    private List<RankingItemResponse> rankings;
 
     @Schema(description = "전체 참가자 수", example = "850")
     private Long totalParticipants;
