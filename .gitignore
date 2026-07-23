@@ -54,3 +54,5 @@ traefik/letsencrypt/acme.json
 
 ### Claude Code (local) ###
 .claude/settings.local.json
+### Understand Agent (code analysis cache) ###
+.ua/
