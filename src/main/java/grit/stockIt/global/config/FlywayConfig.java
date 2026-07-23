@@ -1,8 +1,8 @@
 package grit.stockIt.global.config;
 
 import jakarta.annotation.PostConstruct;
+import lombok.RequiredArgsConstructor;
 import org.flywaydb.core.Flyway;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Configuration;
 
@@ -10,10 +10,10 @@ import javax.sql.DataSource;
 
 @Configuration
 @ConditionalOnProperty(name = "spring.flyway.enabled", havingValue = "true", matchIfMissing = true)
+@RequiredArgsConstructor
 public class FlywayConfig {
 
-    @Autowired
-    private DataSource dataSource;
+    private final DataSource dataSource;
 
     /**
      * Flyway를 JPA 초기화 전에 명시적으로 실행
