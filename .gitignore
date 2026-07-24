@@ -53,6 +53,10 @@ traefik/letsencrypt/acme.json
 .conductor/
 
 ### Claude Code (local) ###
-.claude/settings.local.json
+.claude/*
+!.claude/skills/
+
+### Gajae Code (local session state) ###
+.gjc/
 ### Understand Agent (code analysis cache) ###
 .ua/
