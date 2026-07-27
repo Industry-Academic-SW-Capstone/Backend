@@ -1,6 +1,6 @@
 package grit.stockIt.domain.mission.scheduler;
 
-import grit.stockIt.domain.mission.service.MissionService;
+import grit.stockIt.domain.mission.service.MissionBatchService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -11,7 +11,7 @@ import org.springframework.stereotype.Component;
 @RequiredArgsConstructor
 public class MissionScheduler {
 
-    private final MissionService missionService;
+    private final MissionBatchService missionBatchService;
 
     /**
      * [수정됨] 매일 자정 (00:00)
@@ -24,10 +24,10 @@ public class MissionScheduler {
         try {
             // 1. [순서 중요] 먼저 출석 체크 안 한 사람의 연속 기록을 날려야 함
             // (일일 미션을 리셋해버리면 누가 안 했는지 알 수 없으므로 이게 먼저 와야 함)
-            missionService.checkAndResetAttendanceStreaks();
+            missionBatchService.checkAndResetAttendanceStreaks();
 
             // 2. 그 다음 일일 미션 상태를 0으로 리셋
-            missionService.resetDailyMissions();
+            missionBatchService.resetDailyMissions();
 
             log.info("=== 자정 미션 스케줄러 완료 ===");
         } catch (Exception e) {
@@ -44,7 +44,7 @@ public class MissionScheduler {
     public void dailyHoldingProgressTask() {
         log.info("=== 홀딩 미션 진행도 업데이트 스케줄러 시작 ===");
         try {
-            missionService.processDailyHoldingUpdate();
+            missionBatchService.processDailyHoldingUpdate();
             log.info("=== 홀딩 미션 진행도 업데이트 완료 ===");
         } catch (Exception e) {
             log.error("홀딩 미션 업데이트 중 오류 발생", e);

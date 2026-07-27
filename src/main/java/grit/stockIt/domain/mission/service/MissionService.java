@@ -43,51 +43,6 @@ public class MissionService {
     private final MissionRewardService missionRewardService;
 
     /**
-     * [신규] 스케줄러 호출용: 매일 자정에 보유 주식이 있으면 홀딩 일수 +1
-     */
-    public void processDailyHoldingUpdate() {
-        // 1. 'HOLDING_DAYS' 조건이면서 '진행 중'인 미션들만 조회
-        List<MissionProgress> holdingProgressList = missionProgressRepository
-                .findAllByMission_ConditionTypeAndStatus(MissionConditionType.HOLDING_DAYS, MissionStatus.IN_PROGRESS);
-
-        for (MissionProgress progress : holdingProgressList) {
-            Member member = progress.getMember();
-
-            // 2. 회원이 주식을 하나라도 가지고 있는지 확인 (수량 > 0)
-            boolean hasStock = accountStockRepository.existsByAccount_MemberAndQuantityGreaterThan(member, 0);
-
-            if (hasStock) {
-                progress.incrementProgress(1);
-                log.info("홀딩 미션 +1일 증가: MemberId={}, MissionId={}, NewValue={}",
-                        member.getMemberId(), progress.getMission().getId(), progress.getCurrentValue());
-                missionRewardService.checkMissionCompletion(progress);
-            }
-        }
-    }
-
-    // ... 기존 메서드들 ...
-
-    /**
-     * [리팩토링] 연속 출석 초기화 로직
-     * - 타입 안전성을 위해 Enum 상수를 직접 인자로 전달합니다.
-     */
-    @Transactional
-    public void checkAndResetAttendanceStreaks() {
-        log.info("연속 출석 끊김 여부 확인 및 초기화 시작 (Bulk Update)...");
-
-        // 변경된 메서드 시그니처에 맞춰 Enum 값 전달
-        int updatedCount = missionProgressRepository.bulkResetLoginStreakForAbsentees(
-                MissionTrack.ACHIEVEMENT,           // :streakTrack (업적 트랙)
-                MissionConditionType.LOGIN_STREAK,  // :streakCondition (연속 출석 체크용)
-                MissionTrack.DAILY,                 // :dailyTrack (일일 미션 트랙)
-                MissionConditionType.LOGIN_COUNT,   // :dailyCondition (일일 출석 여부 확인용)
-                MissionStatus.COMPLETED             // :completedStatus (완료 상태 기준)
-        );
-
-        log.info("총 {}건의 연속 출석 기록이 일괄 초기화되었습니다.", updatedCount);
-    }
-
-    /**
      * [신규] 인생 2회차 (파산 신청) API 로직
      * - 조건: (보유 현금 + 보유 주식의 원금 총액) < 50,000원
      */
@@ -140,26 +95,6 @@ public class MissionService {
 
         log.info("파산 승인 및 티어 초기화 완료: Member={}", member.getName());
         return bankruptcyProgress.getMission().getReward();
-    }
-
-    @Transactional
-    public void resetDailyMissions() {
-        log.info("일일 미션 전체 초기화 시작...");
-        List<MissionProgress> dailyProgressList = missionProgressRepository.findAllByMission_Track(MissionTrack.DAILY);
-        for (MissionProgress progress : dailyProgressList) {
-            progress.reset();
-        }
-
-        // 2. [신규] Track = ACHIEVEMENT 이지만 'DAILY_TRADE_COUNT' 타입인 미션(카이팅 장인) 초기화
-        // (완료하지 못한 경우에만 리셋해야 함)
-        List<MissionProgress> kitingMissions = missionProgressRepository
-                .findAllByMission_ConditionTypeAndStatus(MissionConditionType.DAILY_TRADE_COUNT, MissionStatus.IN_PROGRESS);
-
-        for (MissionProgress mp : kitingMissions) {
-            // 업적이라 트랙은 ACHIEVEMENT지만 성격은 Daily이므로 매일 리셋
-            mp.setCurrentValue(0);
-        }
-        log.info("일일 미션 총 {}건 초기화 완료.", dailyProgressList.size());
     }
 
     @Transactional

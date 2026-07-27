@@ -55,6 +55,9 @@ class MissionSchedulerFlowIntegrationTest extends IntegrationTestSupport {
     private MissionService missionService;
 
     @Autowired
+    private MissionBatchService missionBatchService;
+
+    @Autowired
     private MemberRepository memberRepository;
 
     @Autowired
@@ -93,7 +96,7 @@ class MissionSchedulerFlowIntegrationTest extends IntegrationTestSupport {
         missionProgressRepository.flush();
 
         // when
-        missionService.checkAndResetAttendanceStreaks();
+        missionBatchService.checkAndResetAttendanceStreaks();
 
         // then: 미출석 회원의 LOGIN_STREAK 계열(트래커 900 포함)은 전부 0으로 벌크 리셋
         assertThat(progressOf(absentee, STREAK_TRACKER_ID).getCurrentValue()).isZero();
@@ -125,7 +128,7 @@ class MissionSchedulerFlowIntegrationTest extends IntegrationTestSupport {
         missionProgressRepository.flush();
 
         // when
-        missionService.resetDailyMissions();
+        missionBatchService.resetDailyMissions();
 
         // then: DAILY 트랙 전체가 0/IN_PROGRESS로 리셋 (완료된 출석 미션 포함)
         assertThat(progressOf(member, DAILY_ATTENDANCE_ID).getCurrentValue()).isZero();
@@ -155,7 +158,7 @@ class MissionSchedulerFlowIntegrationTest extends IntegrationTestSupport {
         missionProgressRepository.flush();
 
         // when
-        missionService.resetDailyMissions();
+        missionBatchService.resetDailyMissions();
 
         // then: IN_PROGRESS 상태의 DAILY_TRADE_COUNT만 리셋되므로 완료본은 보존
         assertThat(progressOf(member, KITING_ACHIEVEMENT_ID).getCurrentValue()).isEqualTo(50);
@@ -174,7 +177,7 @@ class MissionSchedulerFlowIntegrationTest extends IntegrationTestSupport {
         missionProgressRepository.flush();
 
         // when
-        missionService.processDailyHoldingUpdate();
+        missionBatchService.processDailyHoldingUpdate();
 
         // then: 진행 중(IN_PROGRESS)인 홀딩 미션(301, 401)만 +1
         assertThat(progressOf(holder, SWING_HOLDING_2D_ID).getCurrentValue()).isEqualTo(1);
@@ -202,8 +205,8 @@ class MissionSchedulerFlowIntegrationTest extends IntegrationTestSupport {
         missionProgressRepository.flush();
 
         // when: 이틀치 스케줄 실행
-        missionService.processDailyHoldingUpdate();
-        missionService.processDailyHoldingUpdate();
+        missionBatchService.processDailyHoldingUpdate();
+        missionBatchService.processDailyHoldingUpdate();
 
         // then: 301(목표 2)은 완료 전이
         MissionProgress swingHolding = progressOf(holder, SWING_HOLDING_2D_ID);
