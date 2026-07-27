@@ -3,7 +3,7 @@ package grit.stockIt.domain.mission.service;
 import grit.stockIt.domain.account.entity.Account;
 import grit.stockIt.domain.account.entity.AccountStock;
 import grit.stockIt.domain.account.repository.AccountRepository;
-import grit.stockIt.domain.account.repository.AccountStockRepository; // [추가]
+import grit.stockIt.domain.account.repository.AccountStockRepository;
 import grit.stockIt.domain.member.entity.Member;
 import grit.stockIt.domain.member.repository.MemberRepository;
 import grit.stockIt.domain.mission.entity.Mission;
@@ -27,6 +27,12 @@ import java.util.List;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+/**
+ * [B-6 잔류] 회원 액션 전담 서비스.
+ * - 신규 회원 미션 초기화, 출석 보상, 파산 신청, 일일 단순 미션(리포트 조회·포트폴리오 분석) 처리.
+ * - 거래 이벤트 진행도는 MissionProgressService, 자정 배치는 MissionBatchService,
+ *   조회는 MissionQueryService, 완료 판정·보상은 MissionRewardService가 담당한다.
+ */
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -38,7 +44,7 @@ public class MissionService {
     private final MissionRepository missionRepository;
     private final MissionProgressRepository missionProgressRepository;
     private final AccountRepository accountRepository;
-    private final AccountStockRepository accountStockRepository; // [추가됨] 홀딩 여부 확인용
+    private final AccountStockRepository accountStockRepository; // 파산 신청 시 보유 주식 평가용
     private final MissionTrackPolicy missionTrackPolicy;
     private final MissionRewardService missionRewardService;
 
