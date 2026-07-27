@@ -59,6 +59,8 @@ class MissionServiceIntegrationTest extends IntegrationTestSupport {
     @Autowired
     private MissionService missionService;
     @Autowired
+    private MissionProgressService missionProgressService;
+    @Autowired
     private MemberRepository memberRepository;
     @Autowired
     private ContestRepository contestRepository;
@@ -194,7 +196,7 @@ class MissionServiceIntegrationTest extends IntegrationTestSupport {
     @Test
     @DisplayName("2. BUY 이벤트: TRADE_COUNT 계열 진행도가 증가하고 일일 거래 미션(102)이 즉시 완료된다")
     void updateMissionProgress_매수이벤트_TRADE_COUNT_증가() {
-        missionService.updateMissionProgress(buyEvent(defaultAccountId, 2, "10000"));
+        missionProgressService.updateMissionProgress(buyEvent(defaultAccountId, 2, "10000"));
 
         // 특성화: data.sql에는 BUY_COUNT/BUY_AMOUNT 미션이 없어 TRADE_COUNT 계열만 반응한다
         assertThat(progress(201L).getCurrentValue()).isEqualTo(1);   // SHORT_TERM TRADE_COUNT
@@ -222,7 +224,7 @@ class MissionServiceIntegrationTest extends IntegrationTestSupport {
         mutateProgress(301L, p -> p.setCurrentValue(1)); // 홀딩 1일차 상태에서 매도
 
         // 2주를 평단 10,000원에 사서 12,000원에 매도 -> 수익 4,000원
-        missionService.updateMissionProgress(sellEvent(defaultAccountId, 2, "12000", "10000"));
+        missionProgressService.updateMissionProgress(sellEvent(defaultAccountId, 2, "12000", "10000"));
 
         // 특성화: SELL 발생 시 HOLDING_DAYS는 무조건 0으로 리셋 (상태는 IN_PROGRESS 유지)
         assertThat(progress(301L).getCurrentValue()).isZero();
@@ -275,7 +277,7 @@ class MissionServiceIntegrationTest extends IntegrationTestSupport {
             return aux.getAccountId();
         });
 
-        missionService.updateMissionProgress(buyEvent(auxAccountId, 2, "10000"));
+        missionProgressService.updateMissionProgress(buyEvent(auxAccountId, 2, "10000"));
 
         // 아무것도 집계되지 않는다
         assertThat(progress(201L).getCurrentValue()).isZero();
@@ -290,7 +292,7 @@ class MissionServiceIntegrationTest extends IntegrationTestSupport {
     @DisplayName("4-1. AccountId가 null인 이벤트는 경고만 남기고 그대로 집계된다")
     void updateMissionProgress_AccountId_null_이벤트_집계진행() {
         // 특성화: 현재 동작, 버그 의심 — accountId가 null이면 기본 계좌 검증을 건너뛰고 집계를 진행한다
-        missionService.updateMissionProgress(buyEvent(null, 1, "10000"));
+        missionProgressService.updateMissionProgress(buyEvent(null, 1, "10000"));
 
         assertThat(progress(201L).getCurrentValue()).isEqualTo(1);
         assertThat(progress(102L).getStatus()).isEqualTo(MissionStatus.COMPLETED);
@@ -304,7 +306,7 @@ class MissionServiceIntegrationTest extends IntegrationTestSupport {
     void checkMissionCompletion_완료시_보상지급_및_다음미션_활성화() {
         mutateProgress(201L, p -> p.setCurrentValue(9)); // goal 10 직전
 
-        missionService.updateMissionProgress(buyEvent(defaultAccountId, 1, "10000"));
+        missionProgressService.updateMissionProgress(buyEvent(defaultAccountId, 1, "10000"));
 
         // 201 완료
         assertThat(progress(201L).getStatus()).isEqualTo(MissionStatus.COMPLETED);
@@ -344,7 +346,7 @@ class MissionServiceIntegrationTest extends IntegrationTestSupport {
         });
 
         // 익절 매도 -> 204 진행도 3 도달
-        missionService.updateMissionProgress(sellEvent(defaultAccountId, 1, "11000", "10000"));
+        missionProgressService.updateMissionProgress(sellEvent(defaultAccountId, 1, "11000", "10000"));
 
         // 특성화: 현재 동작, 버그 의심 — 204 완료 직후 resetMissionTrack이 트랙 전체(자기 자신 포함)를
         // reset+deactivate 하므로 204의 COMPLETED 기록과 진행도가 소실된다(보상 현금은 이미 지급됨)
@@ -371,8 +373,8 @@ class MissionServiceIntegrationTest extends IntegrationTestSupport {
     @Test
     @DisplayName("7. 수익 매도 일회성 업적(달콤한 첫입)은 두 번째 수익에도 중복 지급되지 않는다")
     void checkSpecialAchievement_첫수익업적_일회성() {
-        missionService.updateMissionProgress(sellEvent(defaultAccountId, 1, "11000", "10000"));
-        missionService.updateMissionProgress(sellEvent(defaultAccountId, 1, "11000", "10000"));
+        missionProgressService.updateMissionProgress(sellEvent(defaultAccountId, 1, "11000", "10000"));
+        missionProgressService.updateMissionProgress(sellEvent(defaultAccountId, 1, "11000", "10000"));
 
         assertThat(progress(902L).getStatus()).isEqualTo(MissionStatus.COMPLETED);
         assertThat(progress(902L).getCurrentValue()).isEqualTo(1);
@@ -392,7 +394,7 @@ class MissionServiceIntegrationTest extends IntegrationTestSupport {
     @DisplayName("8. processRankerAchievement: Top10 진입 시 909 완료 + 랭커 칭호, 재호출 시 중복 지급 없음")
     void processRankerAchievement_랭커업적_완료() {
         // 존재하지 않는 회원 ID는 조용히 건너뛴다
-        missionService.processRankerAchievement(List.of(memberId, 999_999_999L));
+        missionProgressService.processRankerAchievement(List.of(memberId, 999_999_999L));
 
         assertThat(progress(909L).getStatus()).isEqualTo(MissionStatus.COMPLETED);
         // 특성화: 목표치 10을 하드코딩으로 setCurrentValue(10) 처리
@@ -402,7 +404,7 @@ class MissionServiceIntegrationTest extends IntegrationTestSupport {
         assertThat(progress(998L).getCurrentValue()).isEqualTo(1210);
 
         // 재호출: 이미 완료된 회원은 보상/칭호 중복 지급 없음
-        missionService.processRankerAchievement(List.of(memberId));
+        missionProgressService.processRankerAchievement(List.of(memberId));
         assertThat(titleNames()).containsExactly("랭커");
         assertThat(defaultAccountCash()).isEqualByComparingTo(new BigDecimal("16000000"));
     }

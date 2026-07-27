@@ -15,14 +15,15 @@ import org.springframework.scheduling.annotation.Async;
 public class MissionEventListener {
 
     private final MissionService missionService;
+    private final MissionProgressService missionProgressService;
 
     /**
      * 주식 '체결 완료' 이벤트를 수신합니다.
      */
     @EventListener
     public void handleTradeCompletionEvent(TradeCompletionEvent event) { // 2. [수정] 메서드명과 파라미터 변경
-        // 모든 로직을 MissionService에 위임합니다.
-        missionService.updateMissionProgress(event);
+        // 거래 진행도 로직은 MissionProgressService에 위임합니다.
+        missionProgressService.updateMissionProgress(event);
     }
     /**
      * [신규] 종목 분석 완료 이벤트 수신

@@ -7,7 +7,7 @@ import grit.stockIt.domain.account.repository.AccountStockRepository;
 import grit.stockIt.domain.contest.entity.Contest;
 import grit.stockIt.domain.contest.repository.ContestRepository;
 import grit.stockIt.domain.matching.repository.RedisMarketDataRepository;
-import grit.stockIt.domain.mission.service.MissionService;
+import grit.stockIt.domain.mission.service.MissionProgressService;
 import grit.stockIt.domain.mission.service.MissionQueryService;
 import grit.stockIt.domain.mission.dto.UserTierStatusResponse;
 import grit.stockIt.domain.ranking.dto.MyRankResponse;
@@ -46,7 +46,7 @@ public class RankingService {
     private final AccountRepository accountRepository;
     private final AccountStockRepository accountStockRepository;
     private final ContestRepository contestRepository;
-    private final MissionService missionService;
+    private final MissionProgressService missionProgressService;
     private final MissionQueryService missionQueryService;
     private final RedisMarketDataRepository redisMarketDataRepository;
     private final StockDetailService stockDetailService;
@@ -93,9 +93,9 @@ public class RankingService {
                         .map(RankingItemResponse::getMemberId)       // MemberId 추출
                         .collect(Collectors.toList());
 
-                // MissionService로 Top 10 명단 전달 (미션 달성 처리)
+                // MissionProgressService로 Top 10 명단 전달 (미션 달성 처리)
                 if (!top10MemberIds.isEmpty()) {
-                    missionService.processRankerAchievement(top10MemberIds);
+                    missionProgressService.processRankerAchievement(top10MemberIds);
                 }
             }
             // 2. 진행 중인 대회 랭킹 갱신
