@@ -2,6 +2,7 @@ package grit.stockIt.domain.mission.service;
 
 import grit.stockIt.domain.member.event.MemberRegisteredEvent;
 import grit.stockIt.domain.mission.event.PortfolioAnalyzedEvent;
+import grit.stockIt.domain.mission.event.RankerAchievedEvent;
 import grit.stockIt.domain.mission.event.StockAnalyzedEvent;
 import grit.stockIt.domain.order.event.TradeCompletionEvent;
 import lombok.RequiredArgsConstructor;
@@ -35,6 +36,16 @@ public class MissionEventListener {
     public void handleMemberRegisteredEvent(MemberRegisteredEvent event) {
         log.info("Event Received: Member Registered for {}", event.member().getEmail());
         missionService.initializeMissionsForNewMember(event.member());
+    }
+
+    /**
+     * 랭커 달성 이벤트를 수신하여 Top 10 명단의 랭커 미션 진행/완료를 처리합니다.
+     * 동기 리스너 — 예외는 발행자(RankingService)에게 그대로 전파되어 기존 catch에 흡수됩니다.
+     */
+    @EventListener
+    public void handleRankerAchievedEvent(RankerAchievedEvent event) {
+        log.info("Event Received: Ranker Achieved for {} members", event.top10MemberIds().size());
+        missionProgressService.processRankerAchievement(event.top10MemberIds());
     }
     /**
      * [신규] 종목 분석 완료 이벤트 수신

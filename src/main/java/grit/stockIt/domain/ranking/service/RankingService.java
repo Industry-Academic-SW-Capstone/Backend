@@ -7,7 +7,7 @@ import grit.stockIt.domain.account.repository.AccountStockRepository;
 import grit.stockIt.domain.contest.entity.Contest;
 import grit.stockIt.domain.contest.repository.ContestRepository;
 import grit.stockIt.domain.matching.repository.RedisMarketDataRepository;
-import grit.stockIt.domain.mission.service.MissionProgressService;
+import grit.stockIt.domain.mission.event.RankerAchievedEvent;
 import grit.stockIt.domain.mission.service.MissionQueryService;
 import grit.stockIt.domain.mission.dto.UserTierStatusResponse;
 import grit.stockIt.domain.ranking.dto.MyRankResponse;
@@ -17,6 +17,7 @@ import grit.stockIt.domain.stock.service.StockDetailService;
 import com.google.common.util.concurrent.RateLimiter;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.core.env.Environment;
@@ -46,7 +47,7 @@ public class RankingService {
     private final AccountRepository accountRepository;
     private final AccountStockRepository accountStockRepository;
     private final ContestRepository contestRepository;
-    private final MissionProgressService missionProgressService;
+    private final ApplicationEventPublisher eventPublisher;
     private final MissionQueryService missionQueryService;
     private final RedisMarketDataRepository redisMarketDataRepository;
     private final StockDetailService stockDetailService;
@@ -93,9 +94,9 @@ public class RankingService {
                         .map(RankingItemResponse::getMemberId)       // MemberId 추출
                         .collect(Collectors.toList());
 
-                // MissionProgressService로 Top 10 명단 전달 (미션 달성 처리)
+                // 랭커 달성 이벤트 발행 (동기 리스너가 미션 달성 처리 — 예외는 아래 catch에 흡수)
                 if (!top10MemberIds.isEmpty()) {
-                    missionProgressService.processRankerAchievement(top10MemberIds);
+                    eventPublisher.publishEvent(new RankerAchievedEvent(top10MemberIds));
                 }
             }
             // 2. 진행 중인 대회 랭킹 갱신
