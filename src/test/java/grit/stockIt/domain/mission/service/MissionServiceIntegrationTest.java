@@ -7,6 +7,7 @@ import grit.stockIt.domain.contest.repository.ContestRepository;
 import grit.stockIt.domain.member.entity.AuthProvider;
 import grit.stockIt.domain.member.entity.Member;
 import grit.stockIt.domain.member.repository.MemberRepository;
+import grit.stockIt.domain.mission.event.RankerAchievedEvent;
 import grit.stockIt.domain.mission.entity.Mission;
 import grit.stockIt.domain.mission.entity.MissionProgress;
 import grit.stockIt.domain.mission.enums.MissionStatus;
@@ -407,6 +408,17 @@ class MissionServiceIntegrationTest extends IntegrationTestSupport {
         missionProgressService.processRankerAchievement(List.of(memberId));
         assertThat(titleNames()).containsExactly("랭커");
         assertThat(defaultAccountCash()).isEqualByComparingTo(new BigDecimal("16000000"));
+    }
+
+    @Test
+    @DisplayName("8-1. RankerAchievedEvent 발행 경유: 동기 리스너 배선으로 랭커 미션이 처리된다")
+    void 랭커이벤트_발행경유_리스너배선_동작() {
+        // Risk 9(리스너 미배선 = 조용한 미션 미처리) 방어선 — 이벤트 배선이 끊기면 이 테스트가 red
+        txTemplate.executeWithoutResult(status ->
+                eventPublisher.publishEvent(new RankerAchievedEvent(List.of(memberId))));
+
+        assertThat(progress(909L).getStatus()).isEqualTo(MissionStatus.COMPLETED);
+        assertThat(titleNames()).containsExactly("랭커");
     }
 
     // --- 시나리오 9 ---
