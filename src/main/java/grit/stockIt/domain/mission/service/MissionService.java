@@ -56,6 +56,9 @@ public class MissionService {
     private final AccountStockRepository accountStockRepository; // [추가됨] 홀딩 여부 확인용
     private final StockRepository stockRepository;
     private final ApplicationEventPublisher eventPublisher;
+    private final MissionConditionEvaluator missionConditionEvaluator;
+    private final MissionProgressCalculator missionProgressCalculator;
+    private final MissionTrackPolicy missionTrackPolicy;
 
     private static final long JUNK_STOCK_MARKET_CAP_THRESHOLD = 100000000000L;
     private static final int MISSION_COMPLETION_ACTIVITY_POINTS = 10;
@@ -108,7 +111,7 @@ public class MissionService {
             }
 
             // 3. 그 외 조건 매칭 여부 확인 및 업데이트
-            if (isMissionConditionMatches(mission, event)) {
+            if (missionConditionEvaluator.isMissionConditionMatches(mission, event)) {
                 updateProgressValue(progress, mission, event);
             }
         }
@@ -150,7 +153,7 @@ public class MissionService {
                             member.getName(), profitInt, newTotalProfit);
 
                     // Legend 달성 체크 (현재 총 수익금 기반으로 점수 환산하여 체크)
-                    checkLegendTier(member, getActivityScore(member) + calculateScoreFromProfit(newTotalProfit));
+                    checkLegendTier(member, getActivityScore(member) + missionProgressCalculator.calculateScoreFromProfit(newTotalProfit));
                 });
     }
 
@@ -195,7 +198,7 @@ public class MissionService {
         int totalProfit = missionProgressRepository.findByMemberAndMissionTypeWithMission(member, MissionTrack.ACHIEVEMENT, MissionConditionType.SKILL_SCORE)
                 .map(MissionProgress::getCurrentValue).orElse(0);
 
-        int skillScore = calculateScoreFromProfit(totalProfit);
+        int skillScore = missionProgressCalculator.calculateScoreFromProfit(totalProfit);
         int totalScore = activityScore + skillScore;
 
         // 3. 티어 계산
@@ -385,8 +388,8 @@ public class MissionService {
         int goal = mission.getGoalValue();
 
         // A. 누적형 (카운트 증가) - 기존과 동일
-        if (isCumulativeType(type)) {
-            int valueToIncrease = calculateIncreaseValue(type, event);
+        if (missionConditionEvaluator.isCumulativeType(type)) {
+            int valueToIncrease = missionProgressCalculator.calculateIncreaseValue(type, event);
             if (valueToIncrease > 0) {
                 progress.incrementProgress(valueToIncrease);
                 log.info("미션(누적) 갱신: MissionId={}, Added={}, Current={}",
@@ -395,8 +398,8 @@ public class MissionService {
             }
         }
         // B. 달성형 (임계값 돌파 / 최고 기록 갱신) - [수정됨]
-        else if (isThresholdType(type)) {
-            int eventValue = calculateThresholdValue(type, event);
+        else if (missionConditionEvaluator.isThresholdType(type)) {
+            int eventValue = missionProgressCalculator.calculateThresholdValue(type, event);
 
             // 현재 기록보다 더 높은 기록이 나오면 갱신 (Best Record)
             if (eventValue > progress.getCurrentValue()) {
@@ -413,136 +416,6 @@ public class MissionService {
                 }
             }
         }
-    }
-
-
-    private boolean isCumulativeType(MissionConditionType type) {
-        return switch (type) {
-            case TRADE_COUNT, BUY_COUNT, SELL_COUNT,
-                 BUY_AMOUNT, SELL_AMOUNT,
-                 TOTAL_TRADE_AMOUNT, DAILY_PROFIT_COUNT, DAILY_TRADE_COUNT,
-
-                 PROFIT_RATE // [추가] 수익률도 이제 차곡차곡 쌓는 '누적형'입니다.
-                    -> true;
-
-            default -> false;
-        };
-    }
-
-    private boolean isThresholdType(MissionConditionType type) {
-        // HOLDING_DAYS는 스케줄러가 처리하므로 제외
-        return switch (type) {
-            case PROFIT_AMOUNT -> true;
-            default -> false;
-        };
-    }
-
-    private int calculateIncreaseValue(MissionConditionType type, TradeCompletionEvent event) {
-        return switch (type) {
-            case TRADE_COUNT, BUY_COUNT, SELL_COUNT, DAILY_TRADE_COUNT -> 1;
-
-            case BUY_AMOUNT, SELL_AMOUNT, TOTAL_TRADE_AMOUNT ->
-                    event.getFilledAmount().intValue();
-
-            case DAILY_PROFIT_COUNT -> {
-                // 매도(SELL)이면서, 체결가가 평단가보다 크면 익절 (1회 증가)
-                boolean isSell = event.getOrderMethod() == OrderMethod.SELL;
-                boolean isProfit = event.getFilledPrice().compareTo(event.getBuyAveragePrice()) > 0;
-                yield (isSell && isProfit) ? 1 : 0;
-            }
-
-            // [신규 이동] 수익률 누적 계산
-            case PROFIT_RATE -> {
-                if (event.getOrderMethod() != OrderMethod.SELL) yield 0;
-
-                BigDecimal sellPrice = event.getFilledPrice();
-                BigDecimal avgBuyPrice = event.getBuyAveragePrice();
-
-                if (avgBuyPrice == null || avgBuyPrice.compareTo(BigDecimal.ZERO) == 0) {
-                    yield 0;
-                }
-
-                // 수익률 공식: ((매도가 - 평단가) / 평단가) * 100
-                BigDecimal profitRate = sellPrice.subtract(avgBuyPrice)
-                        .divide(avgBuyPrice, 4, java.math.RoundingMode.HALF_UP)
-                        .multiply(BigDecimal.valueOf(100));
-
-                // 예: 5.5% 수익 -> 6점 증가 (반올림)
-                // 예: -10% 손실 -> -10점 (진행도 깎임) -> 원치 않으시면 Math.max(0, ...) 처리 필요
-                yield profitRate.setScale(0, java.math.RoundingMode.HALF_UP).intValue();
-            }
-
-            default -> 0;
-        };
-    }
-
-    // [수정] 값 계산 시 반올림 적용 (선택 사항이나 권장)
-    private int calculateThresholdValue(MissionConditionType type, TradeCompletionEvent event) {
-        // 매도가 아니면 수익률/수익금 계산 불가
-        if (event.getOrderMethod() != OrderMethod.SELL) return 0;
-
-        // 1. 수익률 (PROFIT_RATE) 계산
-        if (type == MissionConditionType.PROFIT_RATE) {
-            // [수정] event.getProfitRate()를 신뢰하지 않고 직접 계산 로직을 우선 사용
-
-            BigDecimal sellPrice = event.getFilledPrice();     // 매도 체결가
-            BigDecimal avgBuyPrice = event.getBuyAveragePrice(); // 평단가
-
-            // 평단가가 0이거나 없으면 계산 불가 (0 리턴)
-            if (avgBuyPrice == null || avgBuyPrice.compareTo(BigDecimal.ZERO) == 0) {
-                log.warn("수익률 계산 실패: 평단가가 0입니다. StockCode={}", event.getStockCode());
-                return 0;
-            }
-
-            // 공식: ((매도가 - 평단가) / 평단가) * 100
-            // 예: 매도가 10500, 평단가 10000 -> (500 / 10000) * 100 = 5%
-            BigDecimal profitRate = sellPrice.subtract(avgBuyPrice)
-                    .divide(avgBuyPrice, 4, java.math.RoundingMode.HALF_UP) // 소수점 4자리까지 확보 (0.0500)
-                    .multiply(BigDecimal.valueOf(100)); // 백분율 변환 (5.00)
-
-            // 로그로 계산 과정 출력 (디버깅용)
-            log.info("수익률 계산: ({} - {}) / {} * 100 = {}%",
-                    sellPrice, avgBuyPrice, avgBuyPrice, profitRate);
-
-            // 소수점 반올림하여 정수로 반환 (예: 4.9% -> 5%, 4.4% -> 4%)
-            return profitRate.setScale(0, java.math.RoundingMode.HALF_UP).intValue();
-        }
-
-        // 2. 수익금 (PROFIT_AMOUNT) 계산
-        if (type == MissionConditionType.PROFIT_AMOUNT) {
-            // 수익금은 직접 계산: (판 금액 - (평단가 * 수량))
-            BigDecimal totalSellAmount = event.getFilledAmount();
-            BigDecimal totalBuyCost = event.getBuyAveragePrice()
-                    .multiply(BigDecimal.valueOf(event.getFilledQuantity()));
-
-            BigDecimal profitAmount = totalSellAmount.subtract(totalBuyCost);
-
-            return profitAmount.intValue();
-        }
-
-        return 0;
-    }
-
-    private boolean isMissionConditionMatches(Mission mission, TradeCompletionEvent event) {
-        MissionConditionType type = mission.getConditionType();
-        OrderMethod method = event.getOrderMethod();
-
-        // 매수 전용
-        if (type == MissionConditionType.BUY_COUNT || type == MissionConditionType.BUY_AMOUNT)
-            return method == OrderMethod.BUY;
-
-        // 매도 전용
-        if (type == MissionConditionType.SELL_COUNT || type == MissionConditionType.SELL_AMOUNT ||
-                type == MissionConditionType.PROFIT_RATE || type == MissionConditionType.DAILY_PROFIT_COUNT ||
-                type == MissionConditionType.PROFIT_AMOUNT)
-            return method == OrderMethod.SELL;
-
-        // 공통
-        if (type == MissionConditionType.TRADE_COUNT || type == MissionConditionType.TOTAL_TRADE_AMOUNT ||
-                type == MissionConditionType.DAILY_TRADE_COUNT)
-            return true;
-
-        return false;
     }
 
     // ... 기존 메서드들 ...
@@ -758,16 +631,6 @@ public class MissionService {
         return bankruptcyProgress.getMission().getReward();
     }
 
-    /**
-     * [신규] 수익금을 점수로 환산하는 헬퍼 메서드
-     * - 공식: Score = sqrt(max(0, TotalProfit))
-     * - 수익금이 마이너스(손실 중)라면 0점으로 처리
-     */
-    private int calculateScoreFromProfit(int totalProfit) {
-        if (totalProfit <= 0) return 0;
-        return (int) Math.sqrt(totalProfit / 10.0);
-    }
-
     private void distributeReward(Member member, Reward reward) {
         if (reward == null) return;
 
@@ -896,17 +759,12 @@ public class MissionService {
             progress.deactivate();
 
             // 트랙의 첫 번째 미션(중급 1단계)만 다시 활성화
-            if (progress.getMission().getType() == MissionType.INTERMEDIATE && isFirstMissionInTrack(progress.getMission())) {
+            if (progress.getMission().getType() == MissionType.INTERMEDIATE
+                    && missionTrackPolicy.isFirstMissionInTrack(progress.getMission().getId())) {
                 progress.activate();
                 log.info("트랙 첫 미션 재활성화: MissionId={}", progress.getMission().getId());
             }
         }
-    }
-
-    private boolean isFirstMissionInTrack(Mission mission) {
-        long id = mission.getId();
-        // data.sql 기준 첫 미션 ID (201: 단타, 301: 스윙, 401: 장기)
-        return id == 201 || id == 301 || id == 401;
     }
 
     @Transactional
@@ -959,7 +817,7 @@ public class MissionService {
                 initialStatus = MissionStatus.IN_PROGRESS;
             }
             // 2. 트랙 미션 -> 첫 번째 미션만 진행 중
-            else if (isFirstMissionInTrack(mission)) {
+            else if (missionTrackPolicy.isFirstMissionInTrack(mission.getId())) {
                 initialStatus = MissionStatus.IN_PROGRESS;
             }
 
