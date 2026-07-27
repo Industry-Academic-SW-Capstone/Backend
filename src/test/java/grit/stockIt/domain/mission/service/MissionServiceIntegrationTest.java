@@ -45,6 +45,10 @@ import static org.assertj.core.api.Assertions.assertThat;
  *   테스트에서 직접 ResourceDatabasePopulator로 시드한다(ON CONFLICT upsert라 반복 실행에 안전).
  * - data.sql에는 BUY_COUNT/BUY_AMOUNT/SELL_COUNT/SELL_AMOUNT 조건의 미션이 존재하지 않는다.
  *   따라서 매수/매도 이벤트의 진행도 증가는 TRADE_COUNT(102, 201)와 DAILY_TRADE_COUNT(904)로 관찰한다.
+ * - MissionCompletedEvent 발행 자체는 직접 단언하지 않는다: 수신부(MissionNotificationService)가
+ *   @Async라 flaky해지므로, 소비자 효과(901 완료 카운트, 998 활동 점수)로 간접 고정한다.
+ * - processRankerAchievement 예외 시 호출측(RankingService L113 catch) 흡수 시맨틱스는 검증하지 않는다:
+ *   스케줄러 직접 기동이 필요해 flaky하므로 문서화만 한다(승인된 계획 A-5의 명시 결정).
  */
 @DisplayName("MissionService 특성화 테스트 (리팩토링 전 현재 동작 고정)")
 class MissionServiceIntegrationTest extends IntegrationTestSupport {
@@ -447,5 +451,22 @@ class MissionServiceIntegrationTest extends IntegrationTestSupport {
         assertThat(progress(904L).getCurrentValue()).isEqualTo(1);
         assertThat(progress(102L).getStatus()).isEqualTo(MissionStatus.COMPLETED);
         assertThat(defaultAccountCash()).isEqualByComparingTo(new BigDecimal("1150000"));
+    }
+
+    @Test
+    @DisplayName("10-1. 동기 리스너 경유: 발행자 트랜잭션이 롤백되면 진행도도 함께 롤백된다")
+    void 동기리스너_경유_발행자_롤백시_진행도_미반영() {
+        // Risk 1(롤백 시맨틱스) 특성화: 동기 리스너는 발행자 tx에 REQUIRED로 참여하므로
+        // 발행자가 롤백하면 리스너가 만든 진행도 변경도 함께 사라져야 한다
+        int before = progress(201L).getCurrentValue();
+
+        txTemplate.executeWithoutResult(status -> {
+            eventPublisher.publishEvent(buyEvent(defaultAccountId, 2, "10000"));
+            status.setRollbackOnly();
+        });
+
+        assertThat(progress(201L).getCurrentValue()).isEqualTo(before);
+        assertThat(progress(102L).getStatus()).isEqualTo(MissionStatus.IN_PROGRESS);
+        assertThat(defaultAccountCash()).isEqualByComparingTo(INITIAL_CASH);
     }
 }

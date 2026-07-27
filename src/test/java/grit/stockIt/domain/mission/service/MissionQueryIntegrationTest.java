@@ -348,6 +348,9 @@ class MissionQueryIntegrationTest extends IntegrationTestSupport {
     }
 
     // --- 7. RankingService.getTierForMember 경유 계약 ---
+    // 리플렉션 사용 사유: getTierForMember는 private이고 유일한 공개 경유는 @Scheduled 배치라 flaky.
+    // A-4의 '리플렉션 금지'는 순수 계산 로직 특성화에 한정된 제약이며, 이 계약은 B-2에서
+    // MissionQueryService 공개 계약 테스트로 승격 예정(승인된 계획 Verification Plan 'B-2 후' 항목).
 
     @Test
     @DisplayName("RankingService.getTierForMember: 정상 조회 시 현재 티어 문자열을 반환한다")
