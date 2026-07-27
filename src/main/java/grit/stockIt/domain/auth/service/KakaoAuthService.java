@@ -9,11 +9,13 @@ import grit.stockIt.domain.auth.dto.KakaoUserInfoResponse;
 import grit.stockIt.domain.auth.entity.KakaoToken;
 import grit.stockIt.domain.member.entity.AuthProvider;
 import grit.stockIt.domain.member.entity.Member;
+import grit.stockIt.domain.member.event.MemberRegisteredEvent;
 import grit.stockIt.domain.member.repository.MemberRepository;
 import grit.stockIt.global.jwt.JwtService;
 import grit.stockIt.global.jwt.JwtToken;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
@@ -22,7 +24,6 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDateTime;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
-import grit.stockIt.domain.mission.service.MissionService;
 
 @Slf4j
 @Service
@@ -34,7 +35,7 @@ public class KakaoAuthService {
     private final MemberRepository memberRepository;
     private final JwtService jwtService;
     private final AccountService accountService;
-    private final MissionService missionService;
+    private final ApplicationEventPublisher eventPublisher;
 
     /**
      * 카카오 로그인 (비동기 처리)
@@ -105,8 +106,8 @@ public class KakaoAuthService {
             // 디폴트 계좌 생성 (회원당 1개 보장)
             accountService.createDefaultAccountForMember(savedMember);
 
-            // 미션 초기화
-            missionService.initializeMissionsForNewMember(savedMember);
+            // 미션 초기화 (동기 이벤트 — 리스너 예외는 그대로 전파되어 가입 전체 롤백)
+            eventPublisher.publishEvent(new MemberRegisteredEvent(savedMember));
 
             String jwt = jwtService.generateToken(savedMember.getEmail());
             return JwtToken.builder().accessToken(jwt).build();

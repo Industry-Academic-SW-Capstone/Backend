@@ -1,5 +1,6 @@
 package grit.stockIt.domain.mission.service;
 
+import grit.stockIt.domain.member.event.MemberRegisteredEvent;
 import grit.stockIt.domain.mission.event.PortfolioAnalyzedEvent;
 import grit.stockIt.domain.mission.event.StockAnalyzedEvent;
 import grit.stockIt.domain.order.event.TradeCompletionEvent;
@@ -24,6 +25,16 @@ public class MissionEventListener {
     public void handleTradeCompletionEvent(TradeCompletionEvent event) { // 2. [수정] 메서드명과 파라미터 변경
         // 거래 진행도 로직은 MissionProgressService에 위임합니다.
         missionProgressService.updateMissionProgress(event);
+    }
+
+    /**
+     * 회원 가입 완료 이벤트를 수신하여 신규 회원 미션을 초기화합니다.
+     * 동기 리스너 — 가입 트랜잭션에 참여하며, 예외는 발행자(가입 서비스)에게 그대로 전파됩니다.
+     */
+    @EventListener
+    public void handleMemberRegisteredEvent(MemberRegisteredEvent event) {
+        log.info("Event Received: Member Registered for {}", event.member().getEmail());
+        missionService.initializeMissionsForNewMember(event.member());
     }
     /**
      * [신규] 종목 분석 완료 이벤트 수신
