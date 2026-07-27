@@ -18,27 +18,18 @@ import grit.stockIt.domain.order.entity.OrderStatus;
 import grit.stockIt.domain.order.repository.OrderHoldRepository;
 import grit.stockIt.domain.order.repository.OrderRepository;
 import grit.stockIt.domain.execution.repository.ExecutionRepository;
+import grit.stockIt.global.support.IntegrationTestSupport;
 import grit.stockIt.domain.stock.entity.Stock;
 import grit.stockIt.domain.stock.repository.StockRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.data.redis.core.StringRedisTemplate;
-import org.springframework.test.context.ActiveProfiles;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
-import org.springframework.test.context.TestPropertySource;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.TransactionStatus;
 import org.springframework.transaction.support.DefaultTransactionDefinition;
-import org.testcontainers.containers.GenericContainer;
-import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
-import org.testcontainers.utility.DockerImageName;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -50,37 +41,11 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-@SpringBootTest
-@ActiveProfiles("test")
-@Testcontainers
-@TestPropertySource(properties = "spring.task.scheduling.enabled=false")
+// 컨테이너·프로파일 설정은 IntegrationTestSupport 싱글턴을 상속 — 자체 @Container 선언은
+// reuse 활성 환경에서 같은 해시의 공유 컨테이너를 클래스 종료 시 stop시켜, 캐시된 다른
+// 테스트 컨텍스트를 전멸시키는 원인이었다(동일 설정이라 동작은 그대로).
 @DisplayName("LimitOrderMatchingService 동시성 제어 테스트 (통합 테스트)")
-class LimitOrderMatchingServiceConcurrencyTest {
-
-    @Container
-    static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>(DockerImageName.parse("postgres:15"))
-            .withDatabaseName("test_database")
-            .withUsername("test_user")
-            .withPassword("test_password")
-            .withReuse(true);  // 컨테이너 재사용으로 성능 향상
-
-    @Container
-    static GenericContainer<?> redis = new GenericContainer<>(DockerImageName.parse("redis:7"))
-            .withExposedPorts(6379)
-            .withReuse(true);  // 컨테이너 재사용으로 성능 향상
-
-    @DynamicPropertySource
-    static void configureProperties(DynamicPropertyRegistry registry) {
-        // PostgreSQL 설정
-        registry.add("spring.datasource.url", postgres::getJdbcUrl);
-        registry.add("spring.datasource.username", postgres::getUsername);
-        registry.add("spring.datasource.password", postgres::getPassword);
-        registry.add("spring.datasource.driver-class-name", () -> "org.postgresql.Driver");
-        
-        // Redis 설정
-        registry.add("spring.data.redis.host", redis::getHost);
-        registry.add("spring.data.redis.port", redis::getFirstMappedPort);
-    }
+class LimitOrderMatchingServiceConcurrencyTest extends IntegrationTestSupport {
 
     @Autowired
     private LimitOrderMatchingService limitOrderMatchingService;
