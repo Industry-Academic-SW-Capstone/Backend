@@ -19,8 +19,8 @@ import grit.stockIt.domain.mission.entity.Reward;
 import grit.stockIt.domain.mission.enums.MissionStatus;
 import grit.stockIt.domain.mission.repository.MissionProgressRepository;
 import grit.stockIt.domain.mission.repository.MissionRepository;
-import grit.stockIt.domain.ranking.service.RankingService;
 import grit.stockIt.global.support.IntegrationTestSupport;
+import jakarta.persistence.EntityNotFoundException;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.UUID;
@@ -28,11 +28,12 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.test.context.jdbc.Sql;
-import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * [특성화 테스트] MissionService 조회/API 계약(AC8 근거)의 현재 응답 값을 그대로 고정한다.
+ * [특성화 테스트] 미션 조회/API 계약(AC8 근거)의 현재 응답 값을 그대로 고정한다.
+ * B-2 이후 조회 4종(getMissionDashboard/getMissionsByTrack/getMyTitles/getTierInfo)은
+ * MissionQueryService를, 쓰기 액션(claimDailyAttendance/applyForBankruptcy)은 MissionService를 표적한다.
  * 리팩토링 전 안전망이므로 "이상해 보이는" 동작(잘못된 track -> 빈 목록, 파산 기준 100만원 등)도
  * 관찰된 그대로 단언하고 수정하지 않는다.
  */
@@ -52,7 +53,7 @@ class MissionQueryIntegrationTest extends IntegrationTestSupport {
     private MissionService missionService;
 
     @Autowired
-    private RankingService rankingService;
+    private MissionQueryService missionQueryService;
 
     @Autowired
     private MemberRepository memberRepository;
@@ -76,7 +77,7 @@ class MissionQueryIntegrationTest extends IntegrationTestSupport {
     void getMissionDashboard_신규회원은_연속출석0_남은일일미션4() {
         Member member = createMemberWithMissions();
 
-        MissionDashboardResponse response = missionService.getMissionDashboard(member.getEmail());
+        MissionDashboardResponse response = missionQueryService.getMissionDashboard(member.getEmail());
 
         assertThat(response.getConsecutiveAttendanceDays()).isZero();
         assertThat(response.getRemainingDailyMissions()).isEqualTo(4);
@@ -88,7 +89,7 @@ class MissionQueryIntegrationTest extends IntegrationTestSupport {
         Member member = createMemberWithMissions();
         missionService.claimDailyAttendance(member.getEmail());
 
-        MissionDashboardResponse response = missionService.getMissionDashboard(member.getEmail());
+        MissionDashboardResponse response = missionQueryService.getMissionDashboard(member.getEmail());
 
         // 특성화: goalValue가 가장 큰 LOGIN_STREAK 미션(900, 목표 100,000)의 현재값이 연속 출석 일수
         assertThat(response.getConsecutiveAttendanceDays()).isEqualTo(1);
@@ -103,9 +104,9 @@ class MissionQueryIntegrationTest extends IntegrationTestSupport {
         Member member = createMemberWithMissions();
 
         // 특성화: data.sql 기준 DAILY 4 + ACHIEVEMENT 13(트래커 900/998/999 포함) + 트랙 12 = 29
-        assertThat(missionService.getMissionsByTrack(member.getEmail(), "ALL")).hasSize(29);
-        assertThat(missionService.getMissionsByTrack(member.getEmail(), "all")).hasSize(29);
-        assertThat(missionService.getMissionsByTrack(member.getEmail(), null)).hasSize(29);
+        assertThat(missionQueryService.getMissionsByTrack(member.getEmail(), "ALL")).hasSize(29);
+        assertThat(missionQueryService.getMissionsByTrack(member.getEmail(), "all")).hasSize(29);
+        assertThat(missionQueryService.getMissionsByTrack(member.getEmail(), null)).hasSize(29);
     }
 
     @Test
@@ -113,7 +114,7 @@ class MissionQueryIntegrationTest extends IntegrationTestSupport {
     void getMissionsByTrack_DAILY_필터와_응답필드값() {
         Member member = createMemberWithMissions();
 
-        List<MissionListResponse> daily = missionService.getMissionsByTrack(member.getEmail(), "DAILY");
+        List<MissionListResponse> daily = missionQueryService.getMissionsByTrack(member.getEmail(), "DAILY");
 
         assertThat(daily).hasSize(4);
         assertThat(daily).allMatch(m -> "DAILY".equals(m.getTrack()));
@@ -136,7 +137,7 @@ class MissionQueryIntegrationTest extends IntegrationTestSupport {
     void getMissionsByTrack_ACHIEVEMENT_필터와_칭호설명_매핑() {
         Member member = createMemberWithMissions();
 
-        List<MissionListResponse> achievements = missionService.getMissionsByTrack(member.getEmail(), "ACHIEVEMENT");
+        List<MissionListResponse> achievements = missionQueryService.getMissionsByTrack(member.getEmail(), "ACHIEVEMENT");
 
         assertThat(achievements).hasSize(13);
 
@@ -164,7 +165,7 @@ class MissionQueryIntegrationTest extends IntegrationTestSupport {
     void getMissionsByTrack_소문자_트랙명도_필터링된다() {
         Member member = createMemberWithMissions();
 
-        assertThat(missionService.getMissionsByTrack(member.getEmail(), "daily")).hasSize(4);
+        assertThat(missionQueryService.getMissionsByTrack(member.getEmail(), "daily")).hasSize(4);
     }
 
     @Test
@@ -172,8 +173,8 @@ class MissionQueryIntegrationTest extends IntegrationTestSupport {
     void getMissionsByTrack_잘못된_트랙명은_빈목록을_반환한다() {
         Member member = createMemberWithMissions();
 
-        // 특성화: MissionService L610~617 — IllegalArgumentException을 삼키고 List.of() 반환, 버그 의심
-        assertThat(missionService.getMissionsByTrack(member.getEmail(), "NOT_A_TRACK")).isEmpty();
+        // 특성화: MissionQueryService.getMissionsByTrack — IllegalArgumentException을 삼키고 List.of() 반환, 버그 의심
+        assertThat(missionQueryService.getMissionsByTrack(member.getEmail(), "NOT_A_TRACK")).isEmpty();
     }
 
     // --- 6. getMyTitles / getTierInfo / claimDailyAttendance / applyForBankruptcy ---
@@ -183,7 +184,7 @@ class MissionQueryIntegrationTest extends IntegrationTestSupport {
     void getMyTitles_신규회원은_빈목록() {
         Member member = createMemberWithMissions();
 
-        assertThat(missionService.getMyTitles(member.getEmail())).isEmpty();
+        assertThat(missionQueryService.getMyTitles(member.getEmail())).isEmpty();
     }
 
     @Test
@@ -191,7 +192,7 @@ class MissionQueryIntegrationTest extends IntegrationTestSupport {
     void getTierInfo_신규회원은_활동점수1200으로_SILVER1() {
         Member member = createMemberWithMissions();
 
-        UserTierStatusResponse tier = missionService.getTierInfo(member.getEmail());
+        UserTierStatusResponse tier = missionQueryService.getTierInfo(member.getEmail());
 
         // 특성화: 활동 점수 트래커(998) 초기값 1200으로 신규 회원은 SILVER 1에서 시작
         assertThat(tier.getCurrentTier()).isEqualTo("SILVER 1");
@@ -210,7 +211,7 @@ class MissionQueryIntegrationTest extends IntegrationTestSupport {
         progressOf(member, SKILL_SCORE_TRACKER_ID).setCurrentValue(1000);
         missionProgressRepository.flush();
 
-        UserTierStatusResponse tier = missionService.getTierInfo(member.getEmail());
+        UserTierStatusResponse tier = missionQueryService.getTierInfo(member.getEmail());
 
         // 특성화: sqrt(1000 / 10) = 10점
         assertThat(tier.getSkillScore()).isEqualTo(10);
@@ -222,7 +223,7 @@ class MissionQueryIntegrationTest extends IntegrationTestSupport {
         // 누적 손실이면 실력 점수 0
         progressOf(member, SKILL_SCORE_TRACKER_ID).setCurrentValue(-500);
         missionProgressRepository.flush();
-        assertThat(missionService.getTierInfo(member.getEmail()).getSkillScore()).isZero();
+        assertThat(missionQueryService.getTierInfo(member.getEmail()).getSkillScore()).isZero();
     }
 
     @Test
@@ -232,7 +233,7 @@ class MissionQueryIntegrationTest extends IntegrationTestSupport {
         progressOf(member, ACTIVITY_SCORE_TRACKER_ID).setCurrentValue(3600);
         missionProgressRepository.flush();
 
-        UserTierStatusResponse tier = missionService.getTierInfo(member.getEmail());
+        UserTierStatusResponse tier = missionQueryService.getTierInfo(member.getEmail());
 
         assertThat(tier.getCurrentTier()).isEqualTo("LEGEND");
         assertThat(tier.getNextTier()).isEqualTo("MAX");
@@ -318,12 +319,12 @@ class MissionQueryIntegrationTest extends IntegrationTestSupport {
         assertThat(progressOf(member, SKILL_SCORE_TRACKER_ID).getCurrentValue()).isZero();
 
         // 칭호 획득 반영
-        List<MemberTitleResponse> titles = missionService.getMyTitles(member.getEmail());
+        List<MemberTitleResponse> titles = missionQueryService.getMyTitles(member.getEmail());
         assertThat(titles).hasSize(1);
         assertThat(titles.get(0).getName()).isEqualTo("인생 2회차");
 
         // 특성화: 점수 초기화로 BRONZE 1 / 총점 0으로 강등
-        UserTierStatusResponse tier = missionService.getTierInfo(member.getEmail());
+        UserTierStatusResponse tier = missionQueryService.getTierInfo(member.getEmail());
         assertThat(tier.getCurrentTier()).isEqualTo("BRONZE 1");
         assertThat(tier.getTotalScore()).isZero();
         assertThat(tier.getScoreToNextTier()).isEqualTo(800);
@@ -347,35 +348,29 @@ class MissionQueryIntegrationTest extends IntegrationTestSupport {
                 .hasMessage("이미 구조 지원금을 받으셨습니다.");
     }
 
-    // --- 7. RankingService.getTierForMember 경유 계약 ---
-    // 리플렉션 사용 사유: getTierForMember는 private이고 유일한 공개 경유는 @Scheduled 배치라 flaky.
-    // A-4의 '리플렉션 금지'는 순수 계산 로직 특성화에 한정된 제약이며, 이 계약은 B-2에서
-    // MissionQueryService 공개 계약 테스트로 승격 예정(승인된 계획 Verification Plan 'B-2 후' 항목).
+    // --- 7. RankingService.getTierForMember 경유 계약 (B-2 승격) ---
+    // Phase A의 리플렉션 특성화를 계획(Verification Plan 'B-2 후')대로 MissionQueryService 공개 계약으로 승격.
+    // getTierForMember는 missionQueryService.getTierInfo(email).getCurrentTier()를 사용하고,
+    // 조회 예외는 catch하여 null 폴백한다 — 그 전제(반환 티어 문자열 / 미존재 회원 예외)를 고정한다.
 
     @Test
-    @DisplayName("RankingService.getTierForMember: 정상 조회 시 현재 티어 문자열을 반환한다")
-    void getTierForMember_정상조회시_현재티어_문자열을_반환한다() {
+    @DisplayName("getTierForMember가 의존하는 공개 계약: getTierInfo는 현재 티어 문자열을 반환한다")
+    void getTierForMember_공개계약_정상조회시_현재티어_문자열을_반환한다() {
         Member member = createMemberWithMissions();
 
-        String tier = ReflectionTestUtils.invokeMethod(rankingService, "getTierForMember", member);
+        String tier = missionQueryService.getTierInfo(member.getEmail()).getCurrentTier();
 
         assertThat(tier).isEqualTo("SILVER 1");
     }
 
     @Test
-    @DisplayName("RankingService.getTierForMember: 조회 실패 시 예외를 삼키고 null을 반환한다")
-    void getTierForMember_조회실패시_null을_반환한다() {
-        // DB에 존재하지 않는 이메일을 가진 비영속 회원
-        Member ghost = Member.builder()
-                .name("ghost")
-                .email("ghost-" + UUID.randomUUID() + "@test.com")
-                .provider(AuthProvider.LOCAL)
-                .build();
+    @DisplayName("getTierForMember가 의존하는 공개 계약: 미존재 회원 조회는 EntityNotFoundException을 던진다")
+    void getTierForMember_공개계약_미존재회원이면_EntityNotFoundException이_발생한다() {
+        // 특성화: RankingService.getTierForMember는 이 예외를 catch하여 경고 로그 후 null 폴백한다
+        String ghostEmail = "ghost-" + UUID.randomUUID() + "@test.com";
 
-        // 특성화: RankingService L279~287 — EntityNotFoundException을 catch하여 경고 로그 후 null 폴백
-        String tier = ReflectionTestUtils.invokeMethod(rankingService, "getTierForMember", ghost);
-
-        assertThat(tier).isNull();
+        assertThatThrownBy(() -> missionQueryService.getTierInfo(ghostEmail))
+                .isInstanceOf(EntityNotFoundException.class);
     }
 
     // --- 헬퍼 (슬라이스 자체 소유, 다른 테스트와 공유하지 않음) ---
