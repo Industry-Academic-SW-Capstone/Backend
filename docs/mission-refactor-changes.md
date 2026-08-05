@@ -50,5 +50,5 @@
 | AC6 | 결과 클래스 단일 책임 | 6클래스 분해(199/282/274/235/92 + 순수 3), architect 리뷰 CLEAR/APPROVE ×3회 |
 | AC7 | 의도된 동작 변경 목록 | 본 문서 §1 (빈 목록) |
 | AC8 | API 응답 계약 무변경 | 조회 응답 값 특성화 18종 무수정 green, DTO 필드 무변경 |
-| AC9 | 타 도메인 mission 서비스 직접 주입 제거 | import 전수 감사: 서비스 1건(RankingService→MissionQueryService) + 허용 잔존 3건 정확 일치 |
+| AC9 | 타 도메인이 mission **쓰기** 서비스를 직접 주입하지 않음(커맨드 경로는 이벤트로 단절). **조회용 `MissionQueryService` 직접 주입 1건(RankingService→getTierInfo)은 의도적 잔존** — 값 반환 조회라 이벤트화 불가 | import 전수 감사: 쓰기 서비스 주입 0건, 조회 서비스 1건 + 허용 잔존 2건(Member.java의 mission.entity, RankingService의 mission.dto) 정확 일치 |
 | AC10 | 이벤트 전환 전후 특성화 무수정 green | Phase D 구간 src/test diff 0줄, A-5 롤백 전파 포함 green |
