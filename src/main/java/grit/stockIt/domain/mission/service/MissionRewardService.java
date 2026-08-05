@@ -74,7 +74,7 @@ public class MissionRewardService {
 
     // 레전드 미션(903) 달성 체크
     public void checkLegendTier(Member member, int totalScore) {
-        if (totalScore >= 3600) { // Legend 기준 점수
+        if (totalScore >= MissionTierPolicy.LEGEND_THRESHOLD_SCORE) { // Legend 기준 점수
             missionRepository.findAllByTrackAndConditionType(MissionTrack.ACHIEVEMENT, MissionConditionType.REACH_LEGEND)
                     .stream().findFirst().ifPresent(legendMission -> {
                         missionProgressRepository.findByMemberAndMission(member, legendMission)

@@ -185,15 +185,15 @@ public class MissionQueryService {
             nextTier = "GRANDMASTER 3";
             currentTierStartScore = 3200;
             nextTierScore = 3400;
-        } else if (totalScore < 3600) {
+        } else if (totalScore < MissionTierPolicy.LEGEND_THRESHOLD_SCORE) {
             currentTier = "GRANDMASTER 3";
             nextTier = "LEGEND";
             currentTierStartScore = 3400;
-            nextTierScore = 3600;
+            nextTierScore = MissionTierPolicy.LEGEND_THRESHOLD_SCORE;
         } else {
             currentTier = "LEGEND";
             nextTier = "MAX";
-            currentTierStartScore = 3600;
+            currentTierStartScore = MissionTierPolicy.LEGEND_THRESHOLD_SCORE;
             nextTierScore = totalScore; // Legend는 목표치가 없으므로 현재 점수와 동일시
         }
 
