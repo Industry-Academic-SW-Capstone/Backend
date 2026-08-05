@@ -4,6 +4,7 @@ import grit.stockIt.domain.mission.dto.*;
 import grit.stockIt.domain.mission.entity.MissionProgress;
 import grit.stockIt.domain.mission.entity.Reward;
 import grit.stockIt.domain.mission.service.MissionService;
+import grit.stockIt.domain.mission.service.MissionQueryService;
 import io.swagger.v3.oas.annotations.Operation;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -24,6 +25,7 @@ import java.util.stream.Collectors;
 public class MissionController {
 
     private final MissionService missionService;
+    private final MissionQueryService missionQueryService;
     private final MissionScheduler missionScheduler;
 
     /**
@@ -34,7 +36,7 @@ public class MissionController {
     @GetMapping("/dashboard")
     @Operation(summary = "미션 대시보드 요약", description = "메인화면 상단 위젯에 표시할 연속 출석일과 남은 미션 수를 반환합니다.")
     public ResponseEntity<MissionDashboardResponse> getDashboardSummary(@AuthenticationPrincipal UserDetails userDetails) {
-        return ResponseEntity.ok(missionService.getMissionDashboard(userDetails.getUsername()));
+        return ResponseEntity.ok(missionQueryService.getMissionDashboard(userDetails.getUsername()));
     }
 
     /**
@@ -48,7 +50,7 @@ public class MissionController {
             @AuthenticationPrincipal UserDetails userDetails,
             @RequestParam(required = false, defaultValue = "ALL") String track
     ) {
-        return ResponseEntity.ok(missionService.getMissionsByTrack(userDetails.getUsername(), track));
+        return ResponseEntity.ok(missionQueryService.getMissionsByTrack(userDetails.getUsername(), track));
     }
 
     /**
@@ -57,7 +59,7 @@ public class MissionController {
     @GetMapping("/titles")
     @Operation(summary = "보유 칭호 조회", description = "사용자가 획득한 모든 칭호 목록을 반환합니다.")
     public ResponseEntity<List<MemberTitleResponse>> getMyTitles(@AuthenticationPrincipal UserDetails userDetails) {
-        return ResponseEntity.ok(missionService.getMyTitles(userDetails.getUsername()));
+        return ResponseEntity.ok(missionQueryService.getMyTitles(userDetails.getUsername()));
     }
 
     /**
@@ -104,6 +106,6 @@ public class MissionController {
     @GetMapping("/tier")
     @Operation(summary = "티어 및 점수 조회", description = "활동 점수와 실력 점수를 합산한 현재 티어 정보를 반환합니다.")
     public ResponseEntity<UserTierStatusResponse> getMyTierStatus(@AuthenticationPrincipal UserDetails userDetails) {
-        return ResponseEntity.ok(missionService.getTierInfo(userDetails.getUsername()));
+        return ResponseEntity.ok(missionQueryService.getTierInfo(userDetails.getUsername()));
     }
 }
