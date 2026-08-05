@@ -34,7 +34,7 @@ public class MissionEventListener {
      */
     @EventListener
     public void handleMemberRegisteredEvent(MemberRegisteredEvent event) {
-        log.info("Event Received: Member Registered for {}", event.member().getEmail());
+        log.info("Event Received: Member Registered for memberId={}", event.member().getMemberId());
         missionService.initializeMissionsForNewMember(event.member());
     }
 
