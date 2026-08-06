@@ -201,25 +201,21 @@ public class LimitOrderExecutionService {
                 if (order.getRemainingQuantity() <= 0) {
                     finalizeFilledOrder(order, account);
 
-                    try {
-                        TradeCompletionEvent missionEvent = new TradeCompletionEvent(
-                                account.getMember().getMemberId(),
-                                account.getAccountId(),
-                                order.getStock().getCode(),
-                                order.getOrderMethod(),
-                                order.getQuantity(),         // 총 주문 수량
-                                event.price(),               // 체결 가격 (매도 단가)
-                                null,
-                                null,
-                                0,
-                                currentAvgPrice
-                        );
-                        eventPublisher.publishEvent(missionEvent);
-                        log.info("미션 시스템 이벤트 발행 (주문 완료 기준): MemberId={}", missionEvent.getMemberId());
-
-                    } catch (Exception e) {
-                        log.error("미션 이벤트 발행 실패: orderId={}", order.getOrderId(), e);
-                    }
+                    TradeCompletionEvent missionEvent = new TradeCompletionEvent(
+                            account.getMember().getMemberId(),
+                            account.getAccountId(),
+                            order.getStock().getCode(),
+                            order.getOrderMethod(),
+                            order.getQuantity(),         // 총 주문 수량
+                            event.price(),               // 체결 가격 (매도 단가)
+                            null,
+                            null,
+                            0,
+                            currentAvgPrice
+                    );
+                    // 미션 리스너는 AFTER_COMMIT이라 발행은 커밋 후 처리를 등록만 한다(체결에 영향 없음).
+                    eventPublisher.publishEvent(missionEvent);
+                    log.info("미션 시스템 이벤트 발행 (주문 완료 기준): MemberId={}", missionEvent.getMemberId());
                 }
             } catch (IllegalArgumentException ex) {
                 log.error("주문 체결 처리 중 오류 발생. orderId={} fillQuantity={}", orderId, actualFillQuantity, ex);
