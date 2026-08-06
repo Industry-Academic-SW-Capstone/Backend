@@ -10,6 +10,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
 import org.springframework.scheduling.annotation.Async;
+import org.springframework.transaction.event.TransactionPhase;
+import org.springframework.transaction.event.TransactionalEventListener;
 
 @Slf4j
 @Component
@@ -21,11 +23,17 @@ public class MissionEventListener {
 
     /**
      * 주식 '체결 완료' 이벤트를 수신합니다.
+     * 체결 트랜잭션 커밋 후(AFTER_COMMIT) 별도 스레드(@Async)에서 실행하여, 미션 로직의 실패가
+     * 체결 트랜잭션을 롤백시키지 못하게 한다. 단, 커밋 이후 실행이라 실패 시 갱신은 유실될 수 있다.
      */
-    @EventListener
-    public void handleTradeCompletionEvent(TradeCompletionEvent event) { // 2. [수정] 메서드명과 파라미터 변경
-        // 거래 진행도 로직은 MissionProgressService에 위임합니다.
-        missionProgressService.updateMissionProgress(event);
+    @Async
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    public void handleTradeCompletionEvent(TradeCompletionEvent event) {
+        try {
+            missionProgressService.updateMissionProgress(event);
+        } catch (Exception e) {
+            log.error("거래 미션 진행도 갱신 실패: memberId={}", event.getMemberId(), e);
+        }
     }
 
     /**
