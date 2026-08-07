@@ -33,6 +33,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.mock.mockito.SpyBean;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
@@ -53,6 +54,12 @@ import static org.mockito.Mockito.verify;
 
 // OrderService Phase A 특성화: cancelOrder / getOrder / getPendingOrders / 인증 미보유 경로.
 // 현재 관찰 가능한 동작(버그 의심 b, f 포함)을 그대로 동결한다. 프로덕션 코드는 수정하지 않는다.
+// 격리 경화: 이 클래스는 OrderBookInvariantCharacterizationTest와 동일한
+// @SpyBean(redisOrderBookRepository/orderSubscriptionCoordinator) 구성이라 스프링이 캐시된
+// ApplicationContext(=동일 spy 싱글턴)를 재사용한다. @BeforeEach의 Mockito.reset()만으로는 형제
+// 클래스 간 invocation 누출을 완전히 배제할 수 없으므로, 클래스 종료 시 컨텍스트를 폐기해 다음
+// 클래스가 항상 새 spy 인스턴스를 받도록 구조적으로 격리한다(느리지만 결정적).
+@DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 @DisplayName("OrderService 취소·조회·권한 특성화 테스트 (통합 테스트)")
 class OrderCancelQueryCharacterizationTest extends IntegrationTestSupport {
 

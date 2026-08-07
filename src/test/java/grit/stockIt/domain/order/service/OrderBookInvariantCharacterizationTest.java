@@ -27,6 +27,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.boot.test.mock.mockito.SpyBean;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.security.core.context.SecurityContextHolder;
 import reactor.core.publisher.Mono;
 
@@ -45,6 +46,12 @@ import static org.mockito.Mockito.verify;
 // 컨테이너·프로파일 설정은 IntegrationTestSupport 싱글턴을 상속.
 // 오더북(afterCommit) 불변식은 실 커밋에 의존하므로 테스트 메서드에 @Transactional을 붙이지 않는다
 // (스프링 @Transactional 롤백 테스트는 afterCommit 콜백을 발화시키지 않아 계획에서 금지됨).
+// 격리 경화: 이 클래스는 OrderCancelQueryCharacterizationTest와 동일한
+// @SpyBean(redisOrderBookRepository/orderSubscriptionCoordinator) + @MockBean(StockDetailService) 구성이라
+// 스프링이 캐시된 ApplicationContext(=동일 spy 싱글턴)를 재사용한다. @BeforeEach의 Mockito.reset()만으로는
+// 형제 클래스 간 invocation 누출을 완전히 배제할 수 없으므로, 클래스 종료 시 컨텍스트를 폐기해
+// 다음 클래스가 항상 새 spy 인스턴스를 받도록 구조적으로 격리한다(느리지만 결정적).
+@DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 @DisplayName("OrderService 오더북(afterCommit) 불변식 특성화 테스트 (Phase A, 프로덕션 무수정)")
 class OrderBookInvariantCharacterizationTest extends IntegrationTestSupport {
 

@@ -35,6 +35,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.boot.test.mock.mockito.SpyBean;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.security.core.context.SecurityContextHolder;
 import reactor.core.publisher.Mono;
 
@@ -59,6 +60,11 @@ import static org.mockito.Mockito.when;
  * reuse 활성 환경에서 같은 해시의 공유 컨테이너를 클래스 종료 시 stop시켜, 캐시된 다른
  * 테스트 컨텍스트를 전멸시키는 원인이었다(동일 설정이라 동작은 그대로).
  */
+// 격리 경화: @SpyBean(orderSubscriptionCoordinator) 구성이 다른 특성화 클래스와 우연히 일치하면
+// 스프링이 캐시된 ApplicationContext(=동일 spy 싱글턴)를 재사용할 수 있다. @BeforeEach의
+// Mockito.reset()만으로는 형제 클래스 간 invocation 누출을 완전히 배제할 수 없으므로, 클래스 종료 시
+// 컨텍스트를 폐기해 다음 클래스가 항상 새 spy 인스턴스를 받도록 구조적으로 격리한다(느리지만 결정적).
+@DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 @DisplayName("OrderService 주문 생성 특성화 테스트 (통합 테스트)")
 class OrderCreateCharacterizationTest extends IntegrationTestSupport {
 
