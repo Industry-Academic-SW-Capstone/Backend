@@ -21,15 +21,12 @@ import grit.stockIt.domain.stock.entity.Stock;
 import grit.stockIt.domain.stock.repository.StockRepository;
 import grit.stockIt.domain.stock.service.StockDetailService;
 import grit.stockIt.global.exception.BadRequestException;
-import grit.stockIt.global.exception.ForbiddenException;
 import grit.stockIt.global.exception.UntradeableStockException;
 import grit.stockIt.global.util.TransactionHandler;
 import grit.stockIt.global.websocket.manager.OrderSubscriptionCoordinator;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.security.core.Authentication;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -52,6 +49,7 @@ public class OrderService {
     private final AccountStockRepository accountStockRepository;
     private final RedisMarketDataRepository redisMarketDataRepository;
     private final StockDetailService stockDetailService;
+    private final OrderAuthorizationService orderAuthorizationService;
 
     @Value("${order.market.hold-buffer-rate:0.05}")
     private BigDecimal marketHoldBufferRate;
@@ -62,7 +60,7 @@ public class OrderService {
         Account account = accountRepository.findByIdWithLock(request.accountId())
                 .orElseThrow(() -> new BadRequestException("계좌를 찾을 수 없습니다."));
 
-        ensureAccountOwner(account);
+        orderAuthorizationService.ensureAccountOwner(account);
 
         Stock stock = stockRepository.findById(request.stockCode())
                 .orElseThrow(() -> new BadRequestException("존재하지 않는 종목입니다."));
@@ -115,7 +113,7 @@ public class OrderService {
         Account account = accountRepository.findByIdWithLock(request.accountId())
                 .orElseThrow(() -> new BadRequestException("계좌를 찾을 수 없습니다."));
 
-        ensureAccountOwner(account);
+        orderAuthorizationService.ensureAccountOwner(account);
 
         Stock stock = stockRepository.findById(request.stockCode())
                 .orElseThrow(() -> new BadRequestException("존재하지 않는 종목입니다."));
@@ -172,7 +170,7 @@ public class OrderService {
         Order order = orderRepository.findById(orderId)
                 .orElseThrow(() -> new BadRequestException("주문을 찾을 수 없습니다."));
 
-        ensureAccountOwner(order.getAccount());
+        orderAuthorizationService.ensureAccountOwner(order.getAccount());
 
         if (order.getStatus() == OrderStatus.CANCELLED) {
             throw new BadRequestException("이미 취소된 주문입니다.");
@@ -203,7 +201,7 @@ public class OrderService {
     public OrderResponse getOrder(Long orderId) {
         Order order = orderRepository.findByIdWithStockAndAccount(orderId)
                 .orElseThrow(() -> new BadRequestException("주문을 찾을 수 없습니다."));
-        ensureAccountOwner(order.getAccount());
+        orderAuthorizationService.ensureAccountOwner(order.getAccount());
         return OrderResponse.from(order);
     }
 
@@ -213,7 +211,7 @@ public class OrderService {
         Account account = accountRepository.findById(accountId)
                 .orElseThrow(() -> new BadRequestException("계좌를 찾을 수 없습니다."));
 
-        ensureAccountOwner(account);
+        orderAuthorizationService.ensureAccountOwner(account);
 
         // 대기 주문 목록 조회 (PENDING, PARTIALLY_FILLED)
         List<Order> pendingOrders = orderRepository.findAllPendingOrdersByAccountId(
@@ -332,22 +330,6 @@ public class OrderService {
                 order.getOrderId(), stock.getCode(), e);
             // 복구 로직은 별도 스케줄러에서 처리
         }
-    }
-
-    private void ensureAccountOwner(Account account) {
-        String memberEmail = getAuthenticatedEmail();
-        if (!account.getMember().getEmail().equals(memberEmail)) {
-            throw new ForbiddenException("해당 계좌에 대한 권한이 없습니다.");
-        }
-    }
-
-    private String getAuthenticatedEmail() {
-        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        if (authentication == null || !authentication.isAuthenticated()
-                || "anonymousUser".equals(authentication.getPrincipal())) {
-            throw new ForbiddenException("로그인이 필요합니다.");
-        }
-        return authentication.getName();
     }
 
     // 거래 가능 종목인지 검증
