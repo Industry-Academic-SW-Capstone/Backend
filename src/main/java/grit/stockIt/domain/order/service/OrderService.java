@@ -2,7 +2,6 @@ package grit.stockIt.domain.order.service;
 
 import grit.stockIt.domain.account.entity.Account;
 import grit.stockIt.domain.account.repository.AccountRepository;
-import grit.stockIt.domain.matching.repository.RedisOrderBookRepository;
 import grit.stockIt.domain.order.dto.LimitOrderCreateRequest;
 import grit.stockIt.domain.order.dto.MarketOrderCreateRequest;
 import grit.stockIt.domain.order.dto.OrderResponse;
@@ -15,8 +14,6 @@ import grit.stockIt.domain.order.repository.OrderRepository;
 import grit.stockIt.domain.stock.entity.Stock;
 import grit.stockIt.domain.stock.repository.StockRepository;
 import grit.stockIt.global.exception.BadRequestException;
-import grit.stockIt.global.util.TransactionHandler;
-import grit.stockIt.global.websocket.manager.OrderSubscriptionCoordinator;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -24,6 +21,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.util.List;
 
+// 주문 오케스트레이션(권한·가격·홀딩·오더북 조율)
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -32,11 +30,10 @@ public class OrderService {
     private final OrderRepository orderRepository;
     private final AccountRepository accountRepository;
     private final StockRepository stockRepository;
-    private final RedisOrderBookRepository redisOrderBookRepository;
-    private final OrderSubscriptionCoordinator orderSubscriptionCoordinator;
     private final OrderAuthorizationService orderAuthorizationService;
     private final OrderPricingService orderPricingService;
     private final OrderHoldService orderHoldService;
+    private final OrderBookRegistrationService orderBookRegistrationService;
 
     // 지정가 주문 생성
     @Transactional
@@ -82,9 +79,7 @@ public class OrderService {
         }
 
         // DB 커밋 후에만 Redis 오더북에 주문 추가 (유령 주문 방지)
-        TransactionHandler.afterCommit(() -> 
-            addOrderToRedisAfterCommit(savedOrder, stock)
-        );
+        orderBookRegistrationService.registerAfterCommit(savedOrder, stock);
 
         log.info("지정가 주문 생성 완료: orderId={} stock={} quantity={}", savedOrder.getOrderId(), stock.getCode(), savedOrder.getQuantity());
         return OrderResponse.from(savedOrder);
@@ -120,7 +115,7 @@ public class OrderService {
 
         // 시장가 주문도 지정가 주문처럼 웹소켓 구독을 먼저 시작
         // 최근 체결가 조회 전에 구독이 시작되어 체결 이벤트를 받을 수 있도록 함
-        orderSubscriptionCoordinator.registerLimitOrder(stock.getCode());
+        orderBookRegistrationService.preSubscribe(stock.getCode());
 
         BigDecimal holdAmount = BigDecimal.ZERO;
         if (orderMethod == OrderMethod.SELL) {
@@ -138,9 +133,7 @@ public class OrderService {
         }
 
         // DB 커밋 후에만 Redis 오더북에 주문 추가 (유령 주문 방지)
-        TransactionHandler.afterCommit(() -> 
-            addOrderToRedisAfterCommit(savedOrder, stock)
-        );
+        orderBookRegistrationService.registerAfterCommit(savedOrder, stock);
 
         log.info("시장가 주문 생성 완료: orderId={} stock={} quantity={}", savedOrder.getOrderId(), stock.getCode(), savedOrder.getQuantity());
         return OrderResponse.from(savedOrder);
@@ -165,8 +158,7 @@ public class OrderService {
         orderRepository.save(order);
 
         if (order.getRemainingQuantity() > 0) {
-            redisOrderBookRepository.removeOrder(order.getOrderId(), order.getStock().getCode(), order.getOrderMethod());
-            orderSubscriptionCoordinator.unregisterLimitOrder(order.getStock().getCode());
+            orderBookRegistrationService.removeOnCancel(order);
         }
 
         if (order.getOrderMethod() == OrderMethod.BUY) {
@@ -225,18 +217,6 @@ public class OrderService {
 
         log.info("대기 주문 조회 완료: accountId={}, count={}", accountId, orderItems.size());
         return new PendingOrdersResponse(orderItems);
-    }
-
-    // DB 커밋 후 Redis 오더북에 주문을 추가하는 메서드
-    private void addOrderToRedisAfterCommit(Order order, Stock stock) {
-        try {
-            redisOrderBookRepository.addOrder(order);
-            orderSubscriptionCoordinator.registerLimitOrder(stock.getCode());
-        } catch (Exception e) {
-            log.error("주문 생성 후 Redis 업데이트 실패. orderId={} stockCode={}", 
-                order.getOrderId(), stock.getCode(), e);
-            // 복구 로직은 별도 스케줄러에서 처리
-        }
     }
 
 }
