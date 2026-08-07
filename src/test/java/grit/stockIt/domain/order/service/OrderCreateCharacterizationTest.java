@@ -26,12 +26,14 @@ import grit.stockIt.domain.stock.service.StockDetailService;
 import grit.stockIt.global.exception.BadRequestException;
 import grit.stockIt.global.exception.UntradeableStockException;
 import grit.stockIt.global.support.IntegrationTestSupport;
+import grit.stockIt.global.websocket.manager.OrderSubscriptionCoordinator;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.boot.test.mock.mockito.SpyBean;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
 import reactor.core.publisher.Mono;
@@ -45,6 +47,9 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
@@ -88,10 +93,15 @@ class OrderCreateCharacterizationTest extends IntegrationTestSupport {
     @MockBean
     private StockDetailService stockDetailService;
 
+    @SpyBean
+    private OrderSubscriptionCoordinator orderSubscriptionCoordinator;
+
     private String memberEmail;
 
     @BeforeEach
     void setUp() {
+        // @SpyBean은 캐시된 컨텍스트에서 테스트 간 공유되므로, 각 테스트 시작 시 호출기록을 초기화한다(격리).
+        org.mockito.Mockito.reset(orderSubscriptionCoordinator);
         memberEmail = "order-create-" + UUID.randomUUID() + "@test.com";
         // 기본적으로 거래 가능 종목으로 취급 (개별 테스트에서 필요 시 재정의)
         when(stockDetailService.getStockDetail(anyString()))
@@ -386,6 +396,10 @@ class OrderCreateCharacterizationTest extends IntegrationTestSupport {
 
         OrderHold hold = orderHoldRepository.findById(response.orderId()).orElseThrow();
         assertThat(hold.getHoldAmount()).isEqualByComparingTo(expectedHold);
+
+        // 버그 a 동결: registerLimitOrder는 save 이전 직접호출(선구독) 1회 + afterCommit의
+        // addOrderToRedisAfterCommit에서 재호출 1회 = 총 2회.
+        verify(orderSubscriptionCoordinator, times(2)).registerLimitOrder(fx.stock().getCode());
     }
 
     // ===== 9. 시장가 BUY 캐시미스 -> KIS성공 =====
@@ -499,6 +513,10 @@ class OrderCreateCharacterizationTest extends IntegrationTestSupport {
         AccountStock updated = accountStockRepository.findByAccountAndStock(fx.account(), fx.stock()).orElseThrow();
         assertThat(updated.getHoldQuantity()).isEqualTo(quantity);
         assertThat(orderHoldRepository.findById(response.orderId())).isEmpty();
+
+        // 버그 d 동결: SELL도 BUY와 동일하게 registerLimitOrder가 save 이전 직접호출(선구독) 1회 +
+        // afterCommit의 addOrderToRedisAfterCommit에서 재호출 1회 = 총 2회.
+        verify(orderSubscriptionCoordinator, times(2)).registerLimitOrder(fx.stock().getCode());
     }
 
     // ===== 14. 시장가 SELL 무보유 =====
@@ -515,6 +533,11 @@ class OrderCreateCharacterizationTest extends IntegrationTestSupport {
         assertThatThrownBy(() -> orderService.createMarketOrder(request))
                 .isInstanceOf(BadRequestException.class)
                 .hasMessage("보유 중인 종목이 없습니다.");
+
+        // 버그 d 동결: registerLimitOrder는 applySellHold(예외 발생 지점)보다 앞서 직접 호출되므로
+        // 트랜잭션 롤백과 무관하게 1회 호출 잔존. 보상(unregister) 로직 없음.
+        verify(orderSubscriptionCoordinator, times(1)).registerLimitOrder(fx.stock().getCode());
+        verify(orderSubscriptionCoordinator, never()).unregisterLimitOrder(fx.stock().getCode());
     }
 
     // ===== 23. applyBuyHold save 경계: 지정가/시장가 모두 OrderHold FK·금액 동결 =====

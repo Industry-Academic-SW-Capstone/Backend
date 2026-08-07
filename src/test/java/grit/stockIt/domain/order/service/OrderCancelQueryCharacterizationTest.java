@@ -6,6 +6,7 @@ import grit.stockIt.domain.account.repository.AccountRepository;
 import grit.stockIt.domain.account.repository.AccountStockRepository;
 import grit.stockIt.domain.contest.entity.Contest;
 import grit.stockIt.domain.contest.repository.ContestRepository;
+import grit.stockIt.domain.matching.repository.RedisOrderBookRepository;
 import grit.stockIt.domain.member.entity.AuthProvider;
 import grit.stockIt.domain.member.entity.Member;
 import grit.stockIt.domain.member.repository.MemberRepository;
@@ -23,11 +24,13 @@ import grit.stockIt.domain.stock.repository.StockRepository;
 import grit.stockIt.global.exception.BadRequestException;
 import grit.stockIt.global.exception.ForbiddenException;
 import grit.stockIt.global.support.IntegrationTestSupport;
+import grit.stockIt.global.websocket.manager.OrderSubscriptionCoordinator;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.mock.mockito.SpyBean;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -44,6 +47,9 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 
 // OrderService Phase A 특성화: cancelOrder / getOrder / getPendingOrders / 인증 미보유 경로.
 // 현재 관찰 가능한 동작(버그 의심 b, f 포함)을 그대로 동결한다. 프로덕션 코드는 수정하지 않는다.
@@ -80,12 +86,20 @@ class OrderCancelQueryCharacterizationTest extends IntegrationTestSupport {
     @Autowired
     private PlatformTransactionManager transactionManager;
 
+    @SpyBean
+    private RedisOrderBookRepository redisOrderBookRepository;
+
+    @SpyBean
+    private OrderSubscriptionCoordinator orderSubscriptionCoordinator;
+
     private Member member;
     private Account account;
     private Stock stock;
 
     @BeforeEach
     void setUp() {
+        // @SpyBean은 캐시된 컨텍스트에서 테스트 간 공유되므로, 각 테스트 시작 시 호출기록을 초기화한다(격리).
+        org.mockito.Mockito.reset(redisOrderBookRepository, orderSubscriptionCoordinator);
         String uniqueId = UUID.randomUUID().toString().substring(0, 8);
 
         member = memberRepository.save(Member.builder()
@@ -193,6 +207,10 @@ class OrderCancelQueryCharacterizationTest extends IntegrationTestSupport {
         OrderHold reloadedHold = orderHoldRepository.findById(order.getOrderId()).orElseThrow();
         assertThat(reloadedHold.getStatus()).isEqualTo(OrderHoldStatus.RELEASED);
         assertThat(reloadedHold.getHoldAmount()).isEqualByComparingTo(BigDecimal.ZERO);
+
+        // 버그 f 동결: remaining>0 취소 시 removeOrder/unregisterLimitOrder가 커밋 전 동기 호출된다.
+        verify(redisOrderBookRepository, times(1)).removeOrder(order.getOrderId(), stock.getCode(), OrderMethod.BUY);
+        verify(orderSubscriptionCoordinator, times(1)).unregisterLimitOrder(stock.getCode());
     }
 
     // 16. PENDING(remaining>0) SELL 취소 — releaseSellHold로 AccountStock.holdQuantity 감소
@@ -209,6 +227,10 @@ class OrderCancelQueryCharacterizationTest extends IntegrationTestSupport {
 
         AccountStock reloadedAccountStock = accountStockRepository.findByAccountAndStock(account, stock).orElseThrow();
         assertThat(reloadedAccountStock.getHoldQuantity()).isEqualTo(0);
+
+        // 버그 f 동결: remaining>0 취소 시 removeOrder/unregisterLimitOrder가 커밋 전 동기 호출된다.
+        verify(redisOrderBookRepository, times(1)).removeOrder(order.getOrderId(), stock.getCode(), OrderMethod.SELL);
+        verify(orderSubscriptionCoordinator, times(1)).unregisterLimitOrder(stock.getCode());
     }
 
     // 17. PARTIALLY_FILLED 취소 — remaining>0 경로 동일, 부분수량 반영 동결
@@ -258,6 +280,10 @@ class OrderCancelQueryCharacterizationTest extends IntegrationTestSupport {
 
         AccountStock reloadedAccountStock = accountStockRepository.findByAccountAndStock(account, stock).orElseThrow();
         assertThat(reloadedAccountStock.getHoldQuantity()).isEqualTo(5);
+
+        // remaining<=0 가드 동결: removeOrder/unregisterLimitOrder는 호출되지 않는다.
+        verify(redisOrderBookRepository, never()).removeOrder(order.getOrderId(), stock.getCode(), OrderMethod.SELL);
+        verify(orderSubscriptionCoordinator, never()).unregisterLimitOrder(stock.getCode());
     }
 
     // 19. 이미 취소된 주문
@@ -271,6 +297,10 @@ class OrderCancelQueryCharacterizationTest extends IntegrationTestSupport {
         assertThatThrownBy(() -> orderService.cancelOrder(order.getOrderId()))
                 .isInstanceOf(BadRequestException.class)
                 .hasMessage("이미 취소된 주문입니다.");
+
+        // 상태 가드에서 조기 예외 발생 → 오더북/구독 코디네이터 미호출 동결.
+        verify(redisOrderBookRepository, never()).removeOrder(order.getOrderId(), stock.getCode(), OrderMethod.SELL);
+        verify(orderSubscriptionCoordinator, never()).unregisterLimitOrder(stock.getCode());
     }
 
     // 20. 이미 체결된 주문
@@ -285,6 +315,10 @@ class OrderCancelQueryCharacterizationTest extends IntegrationTestSupport {
         assertThatThrownBy(() -> orderService.cancelOrder(order.getOrderId()))
                 .isInstanceOf(BadRequestException.class)
                 .hasMessage("이미 체결된 주문은 취소할 수 없습니다.");
+
+        // 상태 가드에서 조기 예외 발생 → 오더북/구독 코디네이터 미호출 동결.
+        verify(redisOrderBookRepository, never()).removeOrder(order.getOrderId(), stock.getCode(), OrderMethod.SELL);
+        verify(orderSubscriptionCoordinator, never()).unregisterLimitOrder(stock.getCode());
     }
 
     // 21. 주문 미존재
