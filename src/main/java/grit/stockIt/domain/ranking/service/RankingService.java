@@ -52,6 +52,7 @@ public class RankingService {
     private final RedisMarketDataRepository redisMarketDataRepository;
     private final StockDetailService stockDetailService;
     private final Environment environment;
+    private final RankingCalculationService rankingCalculationService;
     
     // Rate Limiter: KIS API 초당 30개 제한 (안전하게 25개로 설정)
     private final RateLimiter kisApiRateLimiter = RateLimiter.create(25.0);
@@ -196,7 +197,7 @@ public class RankingService {
         List<AccountStock> allAccountStocks = accountStockRepository.findAllByAccount(myAccount);
         Map<Account, List<AccountStock>> accountStocksMap = Map.of(myAccount, allAccountStocks);
         
-        BigDecimal myTotalAssets = calculateTotalAssets(myAccount, currentPrices, accountStocksMap);
+        BigDecimal myTotalAssets = rankingCalculationService.calculateTotalAssets(myAccount, currentPrices, accountStocksMap);
 
         // 3. Main 계좌인 경우
         if (contestId == null) {
@@ -232,7 +233,7 @@ public class RankingService {
                 .orElseThrow(() -> new IllegalArgumentException("대회를 찾을 수 없습니다. (ID: " + contestId + ")"));
 
         // 4-1. 내 수익률 계산 (총자산 기준)
-        BigDecimal myReturnRate = calculateReturnRateFromAssets(myTotalAssets, contest);
+        BigDecimal myReturnRate = rankingCalculationService.calculateReturnRateFromAssets(myTotalAssets, contest);
 
         // 4-2. 캐시된 대회 랭킹에서 내 순위 찾기
         RankingResponse balanceRankings = getContestRankings(contestId, "totalAssets");
@@ -308,55 +309,6 @@ public class RankingService {
             return accountRepository.findByMemberIdAndContestId(memberId, contestId)
                     .orElseThrow(() -> new IllegalArgumentException("대회 계좌를 찾을 수 없습니다."));
         }
-    }
-
-    /**
-     * 수익률 계산 (레거시 - getMyRank에서만 사용)
-     * - 수익률 = (현재잔액 - 시드머니) / 시드머니 * 100
-     * - 소수점 2자리까지 표시
-     *
-     * @param account 계좌
-     * @param contest 대회
-     * @return 수익률 (%)
-     */
-    private BigDecimal calculateReturnRate(Account account, Contest contest) {
-        if (contest == null || contest.getSeedMoney() == null) {
-            return BigDecimal.ZERO;
-        }
-
-        BigDecimal seedMoney = BigDecimal.valueOf(contest.getSeedMoney());
-        if (seedMoney.compareTo(BigDecimal.ZERO) == 0) {
-            return BigDecimal.ZERO; // 0으로 나누기 방지
-        }
-
-        // (현재잔액 - 시드머니) / 시드머니 * 100
-        BigDecimal profit = account.getCash().subtract(seedMoney);
-        BigDecimal returnRate = profit.divide(seedMoney, 4, RoundingMode.HALF_UP)
-                .multiply(BigDecimal.valueOf(100));
-
-        // 소수점 2자리까지 반올림
-        return returnRate.setScale(2, RoundingMode.HALF_UP);
-    }
-
-    /**
-     * 총자산으로부터 수익률 계산
-     */
-    private BigDecimal calculateReturnRateFromAssets(BigDecimal totalAssets, Contest contest) {
-        if (contest == null || contest.getSeedMoney() == null) {
-            return BigDecimal.ZERO;
-        }
-
-        BigDecimal seedMoney = BigDecimal.valueOf(contest.getSeedMoney());
-        if (seedMoney.compareTo(BigDecimal.ZERO) == 0) {
-            return BigDecimal.ZERO;
-        }
-
-        // (총자산 - 시드머니) / 시드머니 * 100
-        BigDecimal profit = totalAssets.subtract(seedMoney);
-        BigDecimal returnRate = profit.divide(seedMoney, 4, RoundingMode.HALF_UP)
-                .multiply(BigDecimal.valueOf(100));
-
-        return returnRate.setScale(2, RoundingMode.HALF_UP);
     }
 
     // ==================== 배치 현재가 수집 ====================
@@ -441,35 +393,6 @@ public class RankingService {
         log.info("🔄 KIS API 호출 완료 - 성공: {}, 실패: {}", successCount, failCount);
     }
 
-    /**
-     * 계좌의 총자산 계산
-     * 총자산 = 잔액 + Σ(보유수량 × 현재가)
-     * 
-     * @param account       계좌
-     * @param currentPrices 종목코드별 현재가 Map
-     * @param accountStocksMap Account별 AccountStock 리스트 Map
-     * @return 총자산
-     */
-    private BigDecimal calculateTotalAssets(Account account, Map<String, BigDecimal> currentPrices, 
-                                           Map<Account, List<AccountStock>> accountStocksMap) {
-        BigDecimal cash = account.getCash();
-        BigDecimal stockValue = BigDecimal.ZERO;
-
-        List<AccountStock> holdings = accountStocksMap.getOrDefault(account, Collections.emptyList());
-        for (AccountStock holding : holdings) {
-            if (holding.getQuantity() <= 0) {
-                continue;
-            }
-
-            String stockCode = holding.getStock().getCode();
-            BigDecimal currentPrice = currentPrices.getOrDefault(stockCode, BigDecimal.ZERO);
-            BigDecimal value = currentPrice.multiply(BigDecimal.valueOf(holding.getQuantity()));
-            stockValue = stockValue.add(value);
-        }
-
-        return cash.add(stockValue);
-    }
-
     // ==================== 헬퍼 클래스 ====================
 
     /**
@@ -490,25 +413,20 @@ public class RankingService {
      */
     private List<RankingItemResponse> convertToRankingItemResponsesWithAssets(List<AccountWithAssets> accountsWithAssets, boolean includeReturn) {
         List<RankingItemResponse> rankings = new ArrayList<>();
-        int rank = 1;
-        BigDecimal prevValue = null;
-        int sameRankCount = 0;
+        List<BigDecimal> sortedValues = accountsWithAssets.stream()
+                .map(awa -> awa.totalAssets)
+                .collect(Collectors.toList());
+        List<Integer> ranks = rankingCalculationService.assignCompetitionRanks(sortedValues);
 
-        for (AccountWithAssets awa : accountsWithAssets) {
+        for (int i = 0; i < accountsWithAssets.size(); i++) {
+            AccountWithAssets awa = accountsWithAssets.get(i);
             Account account = awa.account;
             BigDecimal currentValue = awa.totalAssets;
-
-            // 동률 처리: 이전 값과 같으면 같은 순위
-            if (prevValue != null && prevValue.compareTo(currentValue) == 0) {
-                sameRankCount++;
-            } else {
-                rank += sameRankCount;
-                sameRankCount = 1;
-            }
+            int rank = ranks.get(i);
 
             BigDecimal returnRate = null;
             if (includeReturn && account.getContest() != null) {
-                returnRate = calculateReturnRate(account, account.getContest());
+                returnRate = rankingCalculationService.calculateReturnRate(account, account.getContest());
             }
 
             // 칭호와 티어 정보 조회
@@ -534,7 +452,6 @@ public class RankingService {
                     .build();
 
             rankings.add(dto);
-            prevValue = currentValue;
         }
 
         return rankings;
@@ -549,26 +466,21 @@ public class RankingService {
             Map<Account, List<AccountStock>> accountStocksMap) {
         
         List<RankingItemResponse> rankings = new ArrayList<>();
-        int rank = 1;
-        BigDecimal prevReturnRate = null;
-        int sameRankCount = 0;
+        List<BigDecimal> sortedValues = accountsWithAssets.stream()
+                .map(awa -> awa.totalAssets)
+                .collect(Collectors.toList());
+        List<Integer> ranks = rankingCalculationService.assignCompetitionRanks(sortedValues);
 
-        for (AccountWithAssets awa : accountsWithAssets) {
+        for (int i = 0; i < accountsWithAssets.size(); i++) {
+            AccountWithAssets awa = accountsWithAssets.get(i);
             Account account = awa.account;
             BigDecimal returnRateValue = awa.totalAssets;  // totalAssets에 수익률이 들어있음
-
-            // 동률 처리
-            if (prevReturnRate != null && prevReturnRate.compareTo(returnRateValue) == 0) {
-                sameRankCount++;
-            } else {
-                rank += sameRankCount;
-                sameRankCount = 1;
-            }
+            int rank = ranks.get(i);
 
             // 실제 총자산 계산
             BigDecimal actualTotalAssets = currentPrices.isEmpty()
                     ? account.getCash()
-                    : calculateTotalAssets(account, currentPrices, accountStocksMap);
+                    : rankingCalculationService.calculateTotalAssets(account, currentPrices, accountStocksMap);
 
             // 칭호와 티어 정보 조회
             String representativeTitle = account.getMember().getRepresentativeTitle() != null 
@@ -593,7 +505,6 @@ public class RankingService {
                     .build();
 
             rankings.add(dto);
-            prevReturnRate = returnRateValue;
         }
 
         return rankings;
@@ -618,7 +529,7 @@ public class RankingService {
                 .map(account -> {
                     BigDecimal totalAssets = currentPrices.isEmpty() 
                             ? account.getCash()  // 현재가 없으면 잔액만 사용 (레거시)
-                            : calculateTotalAssets(account, currentPrices, accountStocksMap);
+                            : rankingCalculationService.calculateTotalAssets(account, currentPrices, accountStocksMap);
                     return new AccountWithAssets(account, totalAssets);
                 })
                 .sorted((a, b) -> b.totalAssets.compareTo(a.totalAssets)) // 총자산 내림차순
@@ -670,8 +581,8 @@ public class RankingService {
                     .map(account -> {
                         BigDecimal totalAssets = currentPrices.isEmpty()
                                 ? account.getCash()
-                                : calculateTotalAssets(account, currentPrices, accountStocksMap);
-                        BigDecimal returnRate = calculateReturnRateFromAssets(totalAssets, contest);
+                                : rankingCalculationService.calculateTotalAssets(account, currentPrices, accountStocksMap);
+                        BigDecimal returnRate = rankingCalculationService.calculateReturnRateFromAssets(totalAssets, contest);
                         return new AccountWithAssets(account, returnRate);  // returnRate로 정렬
                     })
                     .sorted((a, b) -> b.totalAssets.compareTo(a.totalAssets))
@@ -682,7 +593,7 @@ public class RankingService {
                     .map(account -> {
                         BigDecimal totalAssets = currentPrices.isEmpty()
                                 ? account.getCash()
-                                : calculateTotalAssets(account, currentPrices, accountStocksMap);
+                                : rankingCalculationService.calculateTotalAssets(account, currentPrices, accountStocksMap);
                         return new AccountWithAssets(account, totalAssets);
                     })
                     .sorted((a, b) -> b.totalAssets.compareTo(a.totalAssets))
