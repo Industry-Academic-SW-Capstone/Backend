@@ -6,15 +6,12 @@ import grit.stockIt.domain.account.repository.AccountRepository;
 import grit.stockIt.domain.account.repository.AccountStockRepository;
 import grit.stockIt.domain.contest.entity.Contest;
 import grit.stockIt.domain.contest.repository.ContestRepository;
-import grit.stockIt.domain.matching.repository.RedisMarketDataRepository;
 import grit.stockIt.domain.mission.event.RankerAchievedEvent;
 import grit.stockIt.domain.mission.service.MissionQueryService;
 import grit.stockIt.domain.mission.dto.UserTierStatusResponse;
 import grit.stockIt.domain.ranking.dto.MyRankResponse;
 import grit.stockIt.domain.ranking.dto.RankingItemResponse;
 import grit.stockIt.domain.ranking.dto.RankingResponse;
-import grit.stockIt.domain.stock.service.StockDetailService;
-import com.google.common.util.concurrent.RateLimiter;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
@@ -27,7 +24,6 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
-import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.*;
 import java.util.stream.Collectors;
@@ -49,13 +45,9 @@ public class RankingService {
     private final ContestRepository contestRepository;
     private final ApplicationEventPublisher eventPublisher;
     private final MissionQueryService missionQueryService;
-    private final RedisMarketDataRepository redisMarketDataRepository;
-    private final StockDetailService stockDetailService;
     private final Environment environment;
     private final RankingCalculationService rankingCalculationService;
-    
-    // Rate Limiter: KIS API 초당 30개 제한 (안전하게 25개로 설정)
-    private final RateLimiter kisApiRateLimiter = RateLimiter.create(25.0);
+    private final RankingPriceCollectionService rankingPriceCollectionService;
     // ==================== 스케줄러 ====================
 
     /**
@@ -78,10 +70,10 @@ public class RankingService {
 
         try {
             // 0. 모든 보유 종목의 현재가 배치 수집
-            Set<String> requiredStockCodes = collectAllHeldStockCodes();
+            Set<String> requiredStockCodes = rankingPriceCollectionService.collectAllHeldStockCodes();
             log.info("📦 전체 보유 종목 수: {}개", requiredStockCodes.size());
-            
-            Map<String, BigDecimal> currentPrices = batchFetchCurrentPrices(requiredStockCodes);
+
+            Map<String, BigDecimal> currentPrices = rankingPriceCollectionService.batchFetchCurrentPrices(requiredStockCodes);
             log.info("💰 현재가 수집 완료: {}개 (캐시 히트 포함)", currentPrices.size());
 
             // 1. Main 계좌 랭킹 갱신 (총자산 기준)
@@ -133,8 +125,8 @@ public class RankingService {
         log.info("Main 계좌 랭킹 조회 (총자산 기준 - DB에서 로드)");
 
         // 1. 모든 보유 종목의 현재가 배치 수집
-        Set<String> requiredStockCodes = collectAllHeldStockCodes();
-        Map<String, BigDecimal> currentPrices = batchFetchCurrentPrices(requiredStockCodes);
+        Set<String> requiredStockCodes = rankingPriceCollectionService.collectAllHeldStockCodes();
+        Map<String, BigDecimal> currentPrices = rankingPriceCollectionService.batchFetchCurrentPrices(requiredStockCodes);
         log.info("💰 현재가 수집 완료: {}개", currentPrices.size());
 
         // 2. 총자산 기준 랭킹 생성
@@ -163,8 +155,8 @@ public class RankingService {
         }
 
         // 1. 모든 보유 종목의 현재가 배치 수집
-        Set<String> requiredStockCodes = collectAllHeldStockCodes();
-        Map<String, BigDecimal> currentPrices = batchFetchCurrentPrices(requiredStockCodes);
+        Set<String> requiredStockCodes = rankingPriceCollectionService.collectAllHeldStockCodes();
+        Map<String, BigDecimal> currentPrices = rankingPriceCollectionService.batchFetchCurrentPrices(requiredStockCodes);
         log.info("💰 현재가 수집 완료: {}개", currentPrices.size());
 
         // 2. 총자산 기준 랭킹 생성
@@ -190,8 +182,8 @@ public class RankingService {
         Account myAccount = findMyAccount(memberId, contestId);
 
         // 2. 현재가 수집 및 총자산 계산
-        Set<String> requiredStockCodes = collectAllHeldStockCodes();
-        Map<String, BigDecimal> currentPrices = batchFetchCurrentPrices(requiredStockCodes);
+        Set<String> requiredStockCodes = rankingPriceCollectionService.collectAllHeldStockCodes();
+        Map<String, BigDecimal> currentPrices = rankingPriceCollectionService.batchFetchCurrentPrices(requiredStockCodes);
         
         // AccountStock Map 조회
         List<AccountStock> allAccountStocks = accountStockRepository.findAllByAccount(myAccount);
@@ -310,89 +302,6 @@ public class RankingService {
                     .orElseThrow(() -> new IllegalArgumentException("대회 계좌를 찾을 수 없습니다."));
         }
     }
-
-    // ==================== 배치 현재가 수집 ====================
-
-    /**
-     * 모든 계좌의 보유 종목 코드 수집 (중복 제거)
-     * JPQL로 DISTINCT 조회하여 DB 레벨에서 중복 제거
-     */
-    private Set<String> collectAllHeldStockCodes() {
-        List<String> stockCodes = accountStockRepository.findDistinctStockCodes();
-        return new HashSet<>(stockCodes);
-    }
-
-    /**
-     * 배치로 종목 현재가 수집
-     * 1. Redis 캐시 우선 조회
-     * 2. 캐시 미스 시 KIS API 호출 (Rate Limiting 적용)
-     * 
-     * @param stockCodes 조회할 종목 코드 Set
-     * @return Map<종목코드, 현재가>
-     */
-    private Map<String, BigDecimal> batchFetchCurrentPrices(Set<String> stockCodes) {
-        Map<String, BigDecimal> prices = new HashMap<>();
-        List<String> cacheMissStocks = new ArrayList<>();
-
-        // 1단계: Redis 캐시에서 조회
-        for (String stockCode : stockCodes) {
-            Optional<BigDecimal> cachedPrice = redisMarketDataRepository.getLastPrice(stockCode);
-            if (cachedPrice.isPresent()) {
-                prices.put(stockCode, cachedPrice.get());
-            } else {
-                cacheMissStocks.add(stockCode);
-            }
-        }
-
-        log.info("캐시 히트: {}/{} (미스: {}개)", 
-                prices.size(), stockCodes.size(), cacheMissStocks.size());
-
-        // 2단계: 캐시 미스 종목만 KIS API 호출 (Rate Limiting)
-        if (!cacheMissStocks.isEmpty()) {
-            fetchPricesWithRateLimit(cacheMissStocks, prices);
-        }
-
-        return prices;
-    }
-
-    /**
-     * Rate Limiting을 적용하여 KIS API에서 현재가 조회
-     * - 초당 25개로 제한
-     * - 실패 시 로그만 기록하고 계속 진행 (해당 종목은 0원 처리)
-     */
-    private void fetchPricesWithRateLimit(List<String> stockCodes, Map<String, BigDecimal> prices) {
-        int successCount = 0;
-        int failCount = 0;
-
-        for (String stockCode : stockCodes) {
-            try {
-                // Rate Limiter 적용 (초당 25개 제한)
-                kisApiRateLimiter.acquire();
-
-                // StockDetailService의 getCurrentPrice 호출 (비동기 → 동기 변환)
-                BigDecimal price = stockDetailService.getCurrentPrice(stockCode)
-                        .timeout(Duration.ofSeconds(3))
-                        .block();
-
-                if (price != null && price.compareTo(BigDecimal.ZERO) > 0) {
-                    prices.put(stockCode, price);
-                    successCount++;
-                } else {
-                    log.warn("종목 {} 현재가 조회 실패 (null 또는 0원)", stockCode);
-                    prices.put(stockCode, BigDecimal.ZERO);
-                    failCount++;
-                }
-
-            } catch (Exception e) {
-                log.error("종목 {} 현재가 조회 중 예외 발생: {}", stockCode, e.getMessage());
-                prices.put(stockCode, BigDecimal.ZERO);
-                failCount++;
-            }
-        }
-
-        log.info("🔄 KIS API 호출 완료 - 성공: {}, 실패: {}", successCount, failCount);
-    }
-
     // ==================== 헬퍼 클래스 ====================
 
     /**
