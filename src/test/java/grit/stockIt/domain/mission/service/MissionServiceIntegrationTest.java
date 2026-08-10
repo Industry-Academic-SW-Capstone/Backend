@@ -36,6 +36,7 @@ import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 
 /**
  * MissionService 리팩토링 전 특성화(characterization) 테스트.
@@ -143,6 +144,26 @@ class MissionServiceIntegrationTest extends IntegrationTestSupport {
 
     private BigDecimal defaultAccountCash() {
         return accountRepository.findById(defaultAccountId).orElseThrow().getCash();
+    }
+
+    /** AFTER_COMMIT + @Async 리스너는 별도 스레드에서 실행되므로 기대값 도달까지 폴링한다(최대 5초). */
+    private void awaitProgress(long missionId, int expected) {
+        long deadline = System.currentTimeMillis() + 5000;
+        while (System.currentTimeMillis() < deadline) {
+            try {
+                if (progress(missionId).getCurrentValue() == expected) {
+                    return;
+                }
+            } catch (RuntimeException ignored) {
+                // 진행도 행이 아직 커밋되지 않았을 수 있음 — 재시도
+            }
+            try {
+                Thread.sleep(50);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                break;
+            }
+        }
     }
 
     private List<String> titleNames() {
@@ -454,12 +475,14 @@ class MissionServiceIntegrationTest extends IntegrationTestSupport {
     // --- 시나리오 10 ---
 
     @Test
-    @DisplayName("10. 동기 리스너 경유: 트랜잭션 안에서 발행한 TradeCompletionEvent가 커밋 후 진행도에 반영된다")
-    void 동기리스너_경유_이벤트발행_커밋후_반영() {
-        // MissionEventListener.handleTradeCompletionEvent는 @EventListener(동기)라
-        // publishEvent 시점에 발행자 트랜잭션에 참여하여 즉시 실행된다
+    @DisplayName("10. 비동기 리스너 경유: 커밋된 TradeCompletionEvent가 커밋 후 진행도에 반영된다")
+    void 비동기리스너_경유_이벤트발행_커밋후_반영() {
+        // handleTradeCompletionEvent는 @Async + @TransactionalEventListener(AFTER_COMMIT)라
+        // 발행자 트랜잭션 커밋 후 별도 스레드에서 실행된다 → 반영을 폴링으로 대기한다
         txTemplate.executeWithoutResult(status ->
                 eventPublisher.publishEvent(buyEvent(defaultAccountId, 2, "10000")));
+
+        awaitProgress(201L, 1);
 
         assertThat(progress(201L).getCurrentValue()).isEqualTo(1);
         assertThat(progress(904L).getCurrentValue()).isEqualTo(1);
@@ -468,10 +491,10 @@ class MissionServiceIntegrationTest extends IntegrationTestSupport {
     }
 
     @Test
-    @DisplayName("10-1. 동기 리스너 경유: 발행자 트랜잭션이 롤백되면 진행도도 함께 롤백된다")
-    void 동기리스너_경유_발행자_롤백시_진행도_미반영() {
-        // Risk 1(롤백 시맨틱스) 특성화: 동기 리스너는 발행자 tx에 REQUIRED로 참여하므로
-        // 발행자가 롤백하면 리스너가 만든 진행도 변경도 함께 사라져야 한다
+    @DisplayName("10-1. 비동기 리스너 경유: 발행자 트랜잭션이 롤백되면 미션 진행도가 반영되지 않는다")
+    void 비동기리스너_경유_발행자_롤백시_진행도_미반영() {
+        // AFTER_COMMIT 리스너는 발행자 트랜잭션이 롤백되면 아예 트리거되지 않는다.
+        // → 미션 로직이 실행되지 않아 진행도/현금이 그대로 유지된다(롤백된 거래에 보상 미지급).
         int before = progress(201L).getCurrentValue();
 
         txTemplate.executeWithoutResult(status -> {
@@ -482,5 +505,19 @@ class MissionServiceIntegrationTest extends IntegrationTestSupport {
         assertThat(progress(201L).getCurrentValue()).isEqualTo(before);
         assertThat(progress(102L).getStatus()).isEqualTo(MissionStatus.IN_PROGRESS);
         assertThat(defaultAccountCash()).isEqualByComparingTo(INITIAL_CASH);
+    }
+
+    @Test
+    @DisplayName("10-2. 미션 로직이 예외를 던져도 발행자(체결) 트랜잭션은 정상 커밋된다")
+    void 미션예외_발행자트랜잭션_정상커밋() {
+        // 존재하지 않는 memberId → updateMissionProgress가 예외를 던지지만, AFTER_COMMIT + @Async라
+        // 그 예외가 별도 스레드에서 발생해 발행자 트랜잭션 커밋에 영향을 주지 않아야 한다.
+        Long ghostMemberId = 999_999_999L;
+        TradeCompletionEvent poison = new TradeCompletionEvent(
+                ghostMemberId, defaultAccountId, STOCK_CODE, OrderMethod.BUY, 1, new BigDecimal("10000"));
+
+        assertThatCode(() ->
+                txTemplate.executeWithoutResult(status -> eventPublisher.publishEvent(poison))
+        ).doesNotThrowAnyException();
     }
 }
