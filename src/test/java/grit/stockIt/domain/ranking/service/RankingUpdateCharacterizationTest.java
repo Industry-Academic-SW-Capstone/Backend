@@ -235,7 +235,7 @@ class RankingUpdateCharacterizationTest extends IntegrationTestSupport {
         Member contestMember = createMember();
         Contest contest = createContest(true);
         Account mainAccount = createMainAccount(member, contest, new BigDecimal("1000000"));
-        Account contestAccount = createContestAccount(contestMember, contest, new BigDecimal("2000000"));
+        createContestAccount(contestMember, contest, new BigDecimal("2000000"));
         doReturn(List.of(mainAccount)).when(accountRepository).findMainAccountsOrderByBalance();
         doReturn(List.of(contest)).when(contestRepository).findActiveContests(any());
 
@@ -245,7 +245,6 @@ class RankingUpdateCharacterizationTest extends IntegrationTestSupport {
         // @CacheEvict만 발화하고 캐시를 재적재하지 않는다 (현재 동작 동결).
         Cache rankings = cacheManager.getCache("rankings");
         assertThat(rankings.get("main:balance")).isNull();
-        assertThat(contestAccount).isNotNull();
     }
 
     // ===== U2: 게이트 미개방 → 조기리턴, priceCollector/eventPublisher never, evict는 발화 =====

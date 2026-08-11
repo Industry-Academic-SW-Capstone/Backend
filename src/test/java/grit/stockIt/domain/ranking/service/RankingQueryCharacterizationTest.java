@@ -1,7 +1,6 @@
 package grit.stockIt.domain.ranking.service;
 
 import grit.stockIt.domain.account.entity.Account;
-import grit.stockIt.domain.account.entity.AccountStock;
 import grit.stockIt.domain.account.repository.AccountRepository;
 import grit.stockIt.domain.account.repository.AccountStockRepository;
 import grit.stockIt.domain.contest.entity.Contest;
@@ -15,8 +14,6 @@ import grit.stockIt.domain.mission.service.MissionQueryService;
 import grit.stockIt.domain.ranking.dto.MyRankResponse;
 import grit.stockIt.domain.ranking.dto.RankingItemResponse;
 import grit.stockIt.domain.ranking.dto.RankingResponse;
-import grit.stockIt.domain.stock.entity.Stock;
-import grit.stockIt.domain.stock.repository.StockRepository;
 import grit.stockIt.domain.stock.service.StockDetailService;
 import grit.stockIt.global.support.IntegrationTestSupport;
 import org.junit.jupiter.api.BeforeEach;
@@ -85,9 +82,6 @@ class RankingQueryCharacterizationTest extends IntegrationTestSupport {
 
     @SpyBean
     private RedisMarketDataRepository redisMarketDataRepository;
-
-    @Autowired
-    private StockRepository stockRepository;
 
     @MockBean
     private StockDetailService stockDetailService;
@@ -160,18 +154,6 @@ class RankingQueryCharacterizationTest extends IntegrationTestSupport {
         return accountRepository.save(account);
     }
 
-    private Stock createStock() {
-        Stock stock = Stock.builder()
-                .code("Q" + uniqueSuffix())
-                .name("쿼리특성화종목 " + uniqueSuffix())
-                .marketType("KOSPI")
-                .build();
-        return stockRepository.save(stock);
-    }
-
-    private AccountStock createHolding(Account account, Stock stock, int quantity, BigDecimal avgPrice) {
-        return accountStockRepository.save(AccountStock.create(account, stock, quantity, avgPrice));
-    }
 
     /** 응답 랭킹 리스트에서 memberId에 해당하는 항목만 추출한다 (DB 전역 누적 데이터로부터 격리). */
     private Optional<RankingItemResponse> findItem(List<RankingItemResponse> rankings, Long memberId) {
@@ -187,7 +169,7 @@ class RankingQueryCharacterizationTest extends IntegrationTestSupport {
         Member memberB = createMember();
         Member memberC = createMember();
         Contest contest = createContest();
-        Account accountA = createMainAccount(memberA, contest, new BigDecimal("5000000"));
+        createMainAccount(memberA, contest, new BigDecimal("5000000"));
         Account accountB = createMainAccount(memberB, contest, new BigDecimal("3000000"));
         // 비-default(대회) 계좌: 총자산이 압도적으로 커도 Main 랭킹에 절대 포함되면 안 됨
         createContestAccount(memberC, contest, new BigDecimal("9999999999"));
@@ -208,7 +190,6 @@ class RankingQueryCharacterizationTest extends IntegrationTestSupport {
         assertThat(itemA.get().getTotalAssets()).isEqualByComparingTo("5000000");
         assertThat(itemB.get().getTotalAssets()).isEqualByComparingTo("3000000");
         assertThat(itemA.get().getRank()).isLessThan(itemB.get().getRank()); // 총자산 내림차순
-        assertThat(accountA).isNotNull();
     }
 
     // ===== Q2: Main 랭킹 2차호출 @Cacheable 히트 =====
@@ -253,8 +234,8 @@ class RankingQueryCharacterizationTest extends IntegrationTestSupport {
         Member memberHigh = createMember();
         Member memberLow = createMember();
         Contest contest = createContest(); // seedMoney 10,000,000
-        Account accountHigh = createContestAccount(memberHigh, contest, new BigDecimal("15000000")); // +50%
-        Account accountLow = createContestAccount(memberLow, contest, new BigDecimal("8000000")); // -20%
+        createContestAccount(memberHigh, contest, new BigDecimal("15000000")); // +50%
+        createContestAccount(memberLow, contest, new BigDecimal("8000000")); // -20%
 
         RankingResponse response = rankingService.getContestRankings(contest.getContestId(), "returnRate");
 
@@ -268,8 +249,6 @@ class RankingQueryCharacterizationTest extends IntegrationTestSupport {
         assertThat(itemHigh.getReturnRate()).isEqualByComparingTo("50.00");     // 필드는 수익률
         assertThat(itemLow.getTotalAssets()).isEqualByComparingTo("8000000");
         assertThat(itemLow.getReturnRate()).isEqualByComparingTo("-20.00");
-        assertThat(accountHigh).isNotNull();
-        assertThat(accountLow).isNotNull();
     }
 
     // ===== Q5: 캐시 키 분리 - sortBy별 독립 캐시 엔트리 =====
