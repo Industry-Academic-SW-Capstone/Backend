@@ -5,19 +5,24 @@
 
 ## 1. 의도된 동작 변경 목록 (AC)
 
-> 원칙: 리팩토링 전후 관찰 가능한 동작(API 응답·DB 상태·Caffeine 캐시·발행 이벤트·예외)은 동일하다.
-> 명백한 버그는 사용자 판정 후에만 별도 커밋으로 수정한다.
+> 리팩토링 단계(1~9커밋)는 관찰 동작 보존(무변경). 아래는 리팩토링 완료 후 **사용자 승인(그룹1 데드코드 + 그룹2 실질 결함)** 으로 별도 커밋 처리한 버그 수정 목록이다. 각 수정은 해당 특성화 기대값을 새 동작으로 갱신했고, architect CLEAR×3/APPROVE + QA passed(뮤테이션 red-team 통과)로 검증했다.
 
-| # | 지점 | 사용자 승인 근거 | 커밋 해시 |
-|---|------|-----------------|----------|
-| — | (없음) | 승인된 버그 수정 0건 — 프로덕션 관찰 동작 변경 없음 | — |
+| # | 지점 | 수정 내용 | 커밋 |
+|---|------|----------|------|
+| g | `getContestRankings` | 데드 `sortBy` 정규화 라인 제거(관찰 동작 무변) | 1a601ae |
+| j | `calculateReturnRate(Account,Contest)` | 데드 메서드 + `includeReturn` 분기 제거(관찰 동작 무변, `returnRate` null 유지) | 889d454 |
+| a+h | `calculateTotalAssets` | 가격 미가용(KIS 실패/빈맵) 시 **취득원가(AccountStock.averagePrice) 폴백** → 0원 순위 왜곡 방지 | 92dbfc5 |
+| b+k | `getMyRank` | 랭킹 엔트리에서 파생(`findMyEntry`) → myTotalAssets/myReturnRate가 랭킹과 **스냅샷 일치** + 이중 fetch 제거(Q16 seam 2/3→1/2) | 109f1a9 |
+| i | `updateAllRankings` | `@CacheEvict(beforeInvocation=true)` + self-injection으로 evict 후 main·대회 캐시 **실제 워밍**(폐기 연산 제거). U6 예외삼킴 보존 위해 조회 메서드 `REQUIRES_NEW` 격리 | bc5cd42 |
+
+> 미수정(동결 유지): **c**(필드 오버로딩=스멜이나 동작 정상), **d**(catch 삼킴=스케줄러 resilience, 이미 ERROR 로깅), **e**(티어 null 은폐=경미), **f**(competition ranking=표준 동작 가능). 각각 특성화로 현재 동작 고정.
 
 ### 참고: 순수 구조 변경(관찰 동작 아님)
 
 | 지점 | 내용 | 성격 |
 |------|------|------|
 | `RankingService` 711→530줄 | God Class를 순수 계산기 + 가격수집기 + 슬림 오케스트레이터로 분해 | 책임 분리(SRP), public API·캐시·트랜잭션 시맨틱스 보존 |
-| `RankingCalculationService` (129줄, 의존 0) | `calculateTotalAssets`/`calculateReturnRate`/`calculateReturnRateFromAssets` 이동 + `assignCompetitionRanks` 순수함수 | 이동 3메서드 본문 develop과 정규화 대조 IDENTICAL. `assignCompetitionRanks`는 두 convert(`convertToRankingItemResponsesWithAssets`/`...ForReturnRate`)에 **라인 동일하게 인라인 중복**돼 있던 동률순위 상태머신(`rank`/`sameRankCount`, `compareTo()==0`)을 dedup 추출 — 동일 rank 시퀀스 산출(유닛 6 + 뮤테이션 변조 red로 등가 증명) |
+| `RankingCalculationService` (의존 0) | `calculateTotalAssets`/`calculateReturnRateFromAssets` 이동 + `assignCompetitionRanks` 순수함수 (※ `calculateReturnRate(Account,Contest)`는 B에서 이동됐다가 버그 j에서 데드코드로 제거) | 이동 메서드 본문 develop과 정규화 대조 IDENTICAL. `assignCompetitionRanks`는 두 convert에 **라인 동일하게 인라인 중복**돼 있던 동률순위 상태머신(`rank`/`sameRankCount`, `compareTo()==0`)을 dedup 추출 — 동일 rank 시퀀스 산출 |
 | `RankingPriceCollectionService` (118줄) | `collectAllHeldStockCodes`/`batchFetchCurrentPrices`/`fetchPricesWithRateLimit` + `RateLimiter(25/s)` 이동 | 본문 IDENTICAL. 싱글턴 1 인스턴스로 전역 25/s 시맨틱스 보존 |
 | `TestSchedulingConfig` (테스트 전용) | `setScheduler(null)` → **no-op TaskScheduler**(§3 참조) | 테스트 인프라 하드닝. 프로덕션 무관 |
 | 특성화 하네스 | @DirtiesContext·실 @EventListener 캡터·실 PropertySource 게이트 | 테스트 신뢰성, 프로덕션 무관 |
@@ -25,22 +30,21 @@
 
 ## 2. 버그 의심 지점 — 사용자 판정 요청
 
-> 아래 11건(a~k)은 전부 **현재 동작 그대로 특성화 테스트로 고정**(수정 안 함). 수정 승인 시 해당 특성화를 기대값 갱신과 함께 별도 커밋으로 처리한다.
-> 리팩토링 후 계산·수집 로직이 이동했으나 **본문은 원본과 정규화 대조 IDENTICAL**이라 동작은 develop과 동일하다. 뮤테이션 red-team(M1/M2/M3)으로 안전망이 실제 이 동작들을 잡음을 증명했다.
+> 아래 표는 리팩토링 종료 시점의 의심 지점 카탈로그다. 사용자 승인으로 **7건(g/j/a/h/b/k/i)은 §1대로 수정**, **4건(c/d/e/f)은 동결 유지**. 수정 건은 특성화 기대값을 새 동작으로 갱신했고 뮤테이션 red-team으로 비토톨로지 증명(a→6 RED, i→3 RED, b+k→각각 RED).
 
-| # | 지점(현 소유 클래스) | 현재 동작 | 왜 의심스러운가 | 고정한 시나리오 |
-|---|------|----------|----------------|--------------|
-| a | `RankingPriceCollectionService.fetchPricesWithRateLimit` | KIS `getCurrentPrice`가 null/0/타임아웃/예외면 해당 종목을 **0원**으로 처리 | 총자산이 잔액만으로 계산되어 순위 왜곡. 인프라 오류(timeout/5xx)를 조용히 0원으로 은폐 | BugFreeze a1~a4(null/0/exception/timeout) |
-| b | `RankingService.getMyRank` | `myTotalAssets`(즉석 재계산)와 내부 랭킹의 `totalAssets`가 **다른 가격 스냅샷** 사용 | 자기호출 캐시 우회로 매번 재계산 → 같은 응답 내 두 총자산이 불일치 가능 | BugFreeze b(시점가변 스텁 P1→P2, 단일 종목) |
-| c | `RankingService.getContestRankingsWithPrices`(returnRate 경로) | `AccountWithAssets.totalAssets` 필드에 **수익률을 오버로딩** 저장 + `convert...ForReturnRate`에서 actualTotalAssets **재계산(중복)** | 필드 의미 이중화로 취약, 동일 총자산을 두 번 계산 | BugFreeze c |
-| d | `RankingService.updateAllRankings` | 배치 중 모든 예외를 `catch(Exception)`으로 삼키고 throw 안 함 | 스케줄러가 조용히 실패(부분 갱신·무갱신을 숨김) | Update U6 |
-| e | `RankingService.getTierForMember` | `MissionQueryService.getTierInfo` 예외 시 `tier=null` 반환(예외 전파 안 함) | 티어 조회 실패를 은폐 | BugFreeze e |
-| f | `RankingCalculationService.assignCompetitionRanks`(원래 convert 인라인) | 동률 순위(`rank`/`sameRankCount`, `compareTo()==0`): 2동률군 `[a,a,b,b,c]→[1,1,3,3,5]` | competition ranking이 의도인지 확인 필요(‘정상일 수도’) | Query Q11/Q12, BugFreeze f, 순수 유닛 |
-| g | `RankingService.getContestRankings` | `sortBy` 파라미터를 `"balance"→"totalAssets"`로 **변이**(재할당) | 파라미터 변이 자체가 스멜. **[QA 정정]** 실제 응답 `sortBy`는 `getContestRankingsWithPrices`의 `isReturnRate` 삼항으로 **독립 계산**되므로, 이 정규화 라인은 관찰 동작에 영향 없는 **행위상 데드코드** | BugFreeze g |
-| h | `RankingService.getMainRankingsWithPrices`/`getContestRankingsWithPrices` | `currentPrices.isEmpty()`면 잔액만 사용하는 **레거시 폴백** 분기 | **[QA 정정]** 현재 코드에서 이 폴백은 비폴백 분기와 **행위상 동치**(`calculateTotalAssets`가 누락 가격을 이미 ZERO 기본처리) → 사실상 데드 분기 | BugFreeze h |
-| i | `RankingService.updateAllRankings`(대회 루프) | `getContestRankingsWithPrices` 반환값을 **폐기**(private 메서드라 캐시 워밍·이벤트 없음) | 로그 외 부수효과 없는 낭비 연산(대회 랭킹 계산 결과가 캐시에 반영 안 됨) | BugFreeze i |
-| j | `RankingService.calculateReturnRate`(→ `RankingCalculationService`) | 두 호출부가 `includeReturn=false`만 전달 → **실질 데드코드**(프로덕션 경로 미도달) | 도달 불가 로직. 응답 `returnRate`가 항상 null임으로 간접 동결 | BugFreeze j + 순수 유닛(직접 커버) |
-| k | `RankingService.getMyRank` | `myReturnRate`(스냅샷1)와 대회 랭킹 `returnRate`(재계산 스냅샷2)가 **다른 가격 스냅샷** | b의 수익률 확장 — 같은 응답 내 수익률 불일치 가능 | BugFreeze k(시점가변 스텁) |
+| # | 지점 | 상태 | 내용 |
+|---|------|------|------|
+| a | `RankingCalculationService.calculateTotalAssets` | **수정됨** 92dbfc5 | KIS 실패/미가용 시 0원→취득원가 폴백. 특성화 a1~a3 기대값 1.05M로 갱신 |
+| b | `RankingService.getMyRank` | **수정됨** 109f1a9 | 랭킹 엔트리 파생으로 스냅샷 일치. b 특성화 불일치→일치 반전 |
+| c | `getContestRankingsWithPrices`(returnRate) | 동결 | `totalAssets` 필드에 수익률 오버로딩 + actualTotalAssets 재계산 중복(스멜, 동작 정상) |
+| d | `updateAllRankings` | 동결 | `catch(Exception)` 삼킴 = 스케줄러 resilience, 이미 ERROR 로깅(Update U6). 후속 실패-메트릭 티켓 권고 |
+| e | `getTierForMember` | 동결 | 티어 조회 예외→`tier=null` 은폐(경미) |
+| f | `assignCompetitionRanks` | 동결 | 동률 `[a,a,b,b,c]→[1,1,3,3,5]` = 표준 competition ranking(의도 가능) |
+| g | `getContestRankings` | **수정됨** 1a601ae | 데드 `sortBy` 정규화 라인 제거(동작 무변) |
+| h | `calculateTotalAssets` | **수정됨** 92dbfc5 | `isEmpty` 폴백 제거 + 취득원가 평가. 특성화 h 기대값 2.3M로 갱신 |
+| i | `updateAllRankings` | **수정됨** bc5cd42 | evict 후 self-호출로 캐시 실제 워밍. Update U1/U5/Cache C2 갱신 |
+| j | `calculateReturnRate(Account,Contest)` | **수정됨** 889d454 | 데드 메서드 + `includeReturn` 제거(동작 무변, `returnRate` null 유지) |
+| k | `getMyRank` | **수정됨** 109f1a9 | `myReturnRate` 랭킹 일치(b 확장) |
 
 ## 3. 테스트 인프라 변경 노트 — `TestSchedulingConfig` (프로덕션 동작 아님)
 
