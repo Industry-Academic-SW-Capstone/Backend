@@ -73,8 +73,8 @@ class RankingCalculationServiceTest {
         }
 
         @Test
-        @DisplayName("현재가 Map에 없는 종목은 getOrDefault(ZERO)로 0원 처리한다")
-        void missingPriceDefaultsToZero() {
+        @DisplayName("현재가 Map에 없는 종목은 취득원가(averagePrice)로 폴백한다 (버그 a+h 수정)")
+        void missingPriceFallsBackToAveragePrice() {
             Account acc = account(new BigDecimal("100000"));
             Stock st = stock("005930");
             AccountStock holding = AccountStock.create(acc, st, 10, new BigDecimal("50000"));
@@ -83,7 +83,24 @@ class RankingCalculationServiceTest {
 
             BigDecimal result = service.calculateTotalAssets(acc, Map.of(), accountStocksMap);
 
-            assertThat(result).isEqualByComparingTo("100000");
+            // 100000 + 10*50000(취득원가) = 600000
+            assertThat(result).isEqualByComparingTo("600000");
+        }
+
+        @Test
+        @DisplayName("현재가가 0 이하로 수신되면 취득원가(averagePrice)로 폴백한다 (버그 a+h 수정)")
+        void zeroOrNegativePriceFallsBackToAveragePrice() {
+            Account acc = account(new BigDecimal("100000"));
+            Stock st = stock("005930");
+            AccountStock holding = AccountStock.create(acc, st, 10, new BigDecimal("50000"));
+
+            Map<Account, List<AccountStock>> accountStocksMap = Map.of(acc, List.of(holding));
+            Map<String, BigDecimal> prices = Map.of("005930", BigDecimal.ZERO);
+
+            BigDecimal result = service.calculateTotalAssets(acc, prices, accountStocksMap);
+
+            // 100000 + 10*50000(취득원가) = 600000
+            assertThat(result).isEqualByComparingTo("600000");
         }
 
         @Test

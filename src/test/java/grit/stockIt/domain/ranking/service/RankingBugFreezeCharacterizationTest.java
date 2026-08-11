@@ -189,11 +189,11 @@ class RankingBugFreezeCharacterizationTest extends IntegrationTestSupport {
                         Map.of("spring.task.scheduling.enabled", "true")));
     }
 
-    // ===== a: KIS getCurrentPrice null/0/timeout/예외 → 0원 처리, 총자산=잔액만(왜곡) =====
+    // ===== a(수정됨): KIS getCurrentPrice null/0/timeout/예외 → 해당 종목은 취득원가(averagePrice)로 폴백 =====
 
     @Test
-    @DisplayName("a(버그 동결): getCurrentPrice가 empty(null)를 반환하면 해당 종목은 0원 처리된다")
-    void a1_currentPrice_emptyMono_treatedAsZero() {
+    @DisplayName("a(수정됨): getCurrentPrice가 empty(null)를 반환하면 해당 종목은 취득원가로 평가된다")
+    void a1_currentPrice_emptyMono_fallsBackToAveragePrice() {
         Member member = createMember();
         Contest contest = createContest();
         Account account = createContestAccount(member, contest, new BigDecimal("1000000"));
@@ -204,13 +204,13 @@ class RankingBugFreezeCharacterizationTest extends IntegrationTestSupport {
         RankingResponse response = rankingService.getContestRankings(contest.getContestId(), "totalAssets");
 
         RankingItemResponse item = findItem(response.getRankings(), member.getMemberId()).orElseThrow();
-        // 종목이 0원 처리되어 총자산 = 현금 잔액만 (보유수량 10주분 평가액 미반영, 왜곡)
-        assertThat(item.getTotalAssets()).isEqualByComparingTo("1000000");
+        // 현재가 미가용 → 취득원가(averagePrice=5000)로 폴백: 1,000,000 + 10*5,000 = 1,050,000
+        assertThat(item.getTotalAssets()).isEqualByComparingTo("1050000");
     }
 
     @Test
-    @DisplayName("a(버그 동결): getCurrentPrice가 0원을 반환하면 해당 종목은 0원 처리된다")
-    void a2_currentPrice_zero_treatedAsZero() {
+    @DisplayName("a(수정됨): getCurrentPrice가 0원을 반환하면 해당 종목은 취득원가로 평가된다")
+    void a2_currentPrice_zero_fallsBackToAveragePrice() {
         Member member = createMember();
         Contest contest = createContest();
         Account account = createContestAccount(member, contest, new BigDecimal("1000000"));
@@ -221,12 +221,12 @@ class RankingBugFreezeCharacterizationTest extends IntegrationTestSupport {
         RankingResponse response = rankingService.getContestRankings(contest.getContestId(), "totalAssets");
 
         RankingItemResponse item = findItem(response.getRankings(), member.getMemberId()).orElseThrow();
-        assertThat(item.getTotalAssets()).isEqualByComparingTo("1000000");
+        assertThat(item.getTotalAssets()).isEqualByComparingTo("1050000");
     }
 
     @Test
-    @DisplayName("a(버그 동결): getCurrentPrice가 예외를 던지면 해당 종목은 0원 처리되고 조회는 실패하지 않는다")
-    void a3_currentPrice_exception_treatedAsZero_noThrow() {
+    @DisplayName("a(수정됨): getCurrentPrice가 예외를 던지면 해당 종목은 취득원가로 평가되고 조회는 실패하지 않는다")
+    void a3_currentPrice_exception_fallsBackToAveragePrice_noThrow() {
         Member member = createMember();
         Contest contest = createContest();
         Account account = createContestAccount(member, contest, new BigDecimal("1000000"));
@@ -238,12 +238,12 @@ class RankingBugFreezeCharacterizationTest extends IntegrationTestSupport {
         RankingResponse response = rankingService.getContestRankings(contest.getContestId(), "totalAssets");
 
         RankingItemResponse item = findItem(response.getRankings(), member.getMemberId()).orElseThrow();
-        assertThat(item.getTotalAssets()).isEqualByComparingTo("1000000");
+        assertThat(item.getTotalAssets()).isEqualByComparingTo("1050000");
     }
 
     @Test
-    @DisplayName("a(버그 동결): getCurrentPrice가 3초 타임아웃을 초과하면 해당 종목은 0원 처리되고 조회는 실패하지 않는다")
-    void a4_currentPrice_timeout_treatedAsZero_noThrow() {
+    @DisplayName("a(수정됨): getCurrentPrice가 3초 타임아웃을 초과하면 해당 종목은 취득원가로 평가되고 조회는 실패하지 않는다")
+    void a4_currentPrice_timeout_fallsBackToAveragePrice_noThrow() {
         Member member = createMember();
         Contest contest = createContest();
         Account account = createContestAccount(member, contest, new BigDecimal("1000000"));
@@ -367,26 +367,25 @@ class RankingBugFreezeCharacterizationTest extends IntegrationTestSupport {
         assertThat(response.getSortBy()).isEqualTo("totalAssets");
     }
 
-    // ===== h: currentPrices.isEmpty() → 잔액만 폴백(레거시 분기), totalAssets=cash =====
+    // ===== h(수정됨): currentPrices.isEmpty()인 경우에도 항상 calculateTotalAssets 호출 → 취득원가 폴백 적용 =====
 
     @Test
-    @DisplayName("h(버그 동결): 수집된 현재가 Map이 비어있으면 실제 보유 종목이 있어도 총자산=현금 잔액만으로 폴백한다")
-    void h_emptyCurrentPricesMap_fallsBackToCashOnly() {
+    @DisplayName("h(수정됨): 수집된 현재가 Map이 비어있어도 보유 종목은 취득원가로 평가된다(잔액만 폴백 제거)")
+    void h_emptyCurrentPricesMap_fallsBackToAveragePrice() {
         Member member = createMember();
         Contest contest = createContest();
         Account account = createContestAccount(member, contest, new BigDecimal("2000000"));
         Stock stock = createStock();
-        createHolding(account, stock, 100, new BigDecimal("3000")); // 실제로는 큰 평가액을 갖는 보유종목
+        createHolding(account, stock, 100, new BigDecimal("3000"));
 
         // collectAllHeldStockCodes()의 결과를 강제로 빈 리스트로 만들어 currentPrices Map을 비운다
-        // (레거시 폴백 분기: currentPrices.isEmpty() ? account.getCash() : calculateTotalAssets(...))
         doReturn(List.of()).when(accountStockRepository).findDistinctStockCodes();
 
         RankingResponse response = rankingService.getContestRankings(contest.getContestId(), "totalAssets");
 
         RankingItemResponse item = findItem(response.getRankings(), member.getMemberId()).orElseThrow();
-        // 보유종목 평가액(100주 * 가격)이 완전히 무시되고 현금만 반영됨
-        assertThat(item.getTotalAssets()).isEqualByComparingTo("2000000");
+        // 빈 맵이어도 calculateTotalAssets가 항상 호출되어 취득원가로 폴백: 2,000,000 + 100*3,000 = 2,300,000
+        assertThat(item.getTotalAssets()).isEqualByComparingTo("2300000");
     }
 
     // ===== i: updateAllRankings 대회루프가 getContestRankingsWithPrices 반환값 폐기(캐시 워밍 안됨) =====
