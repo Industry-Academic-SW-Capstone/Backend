@@ -353,7 +353,7 @@ class RankingBugFreezeCharacterizationTest extends IntegrationTestSupport {
         assertThat(ranks).containsExactly(1, 1, 3, 3, 5);
     }
 
-    // ===== g: getContestRankings sortBy 변이("balance"→"totalAssets") 응답 sortBy="totalAssets" =====
+    // ===== g(수정됨): 정규화 데드라인 제거됨 — 응답 sortBy는 isReturnRate 삼항으로 독립 계산, 관찰 동작은 무변 =====
 
     @Test
     @DisplayName("g(버그 동결): sortBy=\"balance\"로 요청해도 응답 sortBy는 \"totalAssets\"로 변이되어 반환된다")

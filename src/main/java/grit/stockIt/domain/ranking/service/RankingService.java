@@ -148,10 +148,7 @@ public class RankingService {
     public RankingResponse getContestRankings(Long contestId, String sortBy) {
         log.info("대회 [{}] 랭킹 조회 (sortBy: {}) - 총자산 기준 DB 로드", contestId, sortBy);
 
-        // sortBy 정규화: balance → totalAssets (하위 호환성)
-        if ("balance".equalsIgnoreCase(sortBy)) {
-            sortBy = "totalAssets";
-        }
+        // (정규화 데드라인 제거됨: 응답 sortBy는 getContestRankingsWithPrices의 isReturnRate 삼항으로 독립 계산됨 — 버그 g)
 
         // 1. 모든 보유 종목의 현재가 배치 수집
         Set<String> requiredStockCodes = rankingPriceCollectionService.collectAllHeldStockCodes();
