@@ -17,10 +17,11 @@
 | 지점 | 내용 | 성격 |
 |------|------|------|
 | `RankingService` 711→530줄 | God Class를 순수 계산기 + 가격수집기 + 슬림 오케스트레이터로 분해 | 책임 분리(SRP), public API·캐시·트랜잭션 시맨틱스 보존 |
-| `RankingCalculationService` (129줄, 의존 0) | `calculateTotalAssets`/`calculateReturnRate`/`calculateReturnRateFromAssets` 이동 + `assignCompetitionRanks` 순수함수 | 이동 3메서드 본문 develop과 정규화 대조 IDENTICAL. `assignCompetitionRanks`는 두 convert에 인라인 중복된 동률순위 로직을 dedup 추출(동일 산출) |
+| `RankingCalculationService` (129줄, 의존 0) | `calculateTotalAssets`/`calculateReturnRate`/`calculateReturnRateFromAssets` 이동 + `assignCompetitionRanks` 순수함수 | 이동 3메서드 본문 develop과 정규화 대조 IDENTICAL. `assignCompetitionRanks`는 두 convert(`convertToRankingItemResponsesWithAssets`/`...ForReturnRate`)에 **라인 동일하게 인라인 중복**돼 있던 동률순위 상태머신(`rank`/`sameRankCount`, `compareTo()==0`)을 dedup 추출 — 동일 rank 시퀀스 산출(유닛 6 + 뮤테이션 변조 red로 등가 증명) |
 | `RankingPriceCollectionService` (118줄) | `collectAllHeldStockCodes`/`batchFetchCurrentPrices`/`fetchPricesWithRateLimit` + `RateLimiter(25/s)` 이동 | 본문 IDENTICAL. 싱글턴 1 인스턴스로 전역 25/s 시맨틱스 보존 |
 | `TestSchedulingConfig` (테스트 전용) | `setScheduler(null)` → **no-op TaskScheduler**(§3 참조) | 테스트 인프라 하드닝. 프로덕션 무관 |
 | 특성화 하네스 | @DirtiesContext·실 @EventListener 캡터·실 PropertySource 게이트 | 테스트 신뢰성, 프로덕션 무관 |
+| (범위 밖) `PerformanceTestService` | 동일 패키지의 성능비교 전용 클래스로 중복 `calculateReturnRate`/convert 로직 보유(JaCoCo 0%, javadoc상 "테스트 완료 후 삭제 예정") | **기존 P3**(리팩토링이 신규 도입 아님). throwaway·미도달이라 이번 범위 밖 — 차기 정리 후보 |
 
 ## 2. 버그 의심 지점 — 사용자 판정 요청
 
