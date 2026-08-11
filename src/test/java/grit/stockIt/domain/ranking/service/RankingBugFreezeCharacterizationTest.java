@@ -387,11 +387,11 @@ class RankingBugFreezeCharacterizationTest extends IntegrationTestSupport {
         assertThat(item.getTotalAssets()).isEqualByComparingTo("2300000");
     }
 
-    // ===== i: updateAllRankings 대회루프가 getContestRankingsWithPrices 반환값 폐기(캐시 워밍 안됨) =====
+    // ===== i(수정됨): updateAllRankings 대회루프가 self-injection 프록시로 getContestRankings를 호출해 캐시를 워밍한다 =====
 
     @Test
-    @DisplayName("i(버그 동결): 배치의 대회 랭킹 계산은 호출되지만 반환값이 폐기되어 캐시가 워밍되지 않는다")
-    void i_batchContestLoop_discardsReturnValue_doesNotWarmCache() {
+    @DisplayName("i(버그 수정 확인): 배치의 대회 랭킹 계산이 self-호출로 실제 캐시를 워밍한다")
+    void i_batchContestLoop_selfInvokesProxyAndWarmsCache() {
         Member member = createMember();
         Contest contest = createContest();
         createContestAccount(member, contest, new BigDecimal("1000000"));
@@ -401,11 +401,11 @@ class RankingBugFreezeCharacterizationTest extends IntegrationTestSupport {
 
         rankingService.updateAllRankings();
 
-        // getContestRankingsWithPrices는 private *WithPrices() 경로이므로 @Cacheable이 적용되지 않아
-        // 배치가 실제로 대회 랭킹을 계산해도(부수효과: 로그) 캐시에는 절대 적재되지 않는다.
+        // updateAllRankings는 self-injection(ApplicationContext.getBean)으로 획득한 프록시를 통해
+        // public @Cacheable getContestRankings()를 호출하므로 실제로 캐시가 재적재(워밍)된다 (버그 i 수정).
         Cache rankings = cacheManager.getCache("rankings");
-        assertThat(rankings.get("contest:" + contest.getContestId() + ":totalAssets")).isNull();
-        assertThat(rankings.get("contest:" + contest.getContestId() + ":returnRate")).isNull();
+        assertThat(rankings.get("contest:" + contest.getContestId() + ":totalAssets")).isNotNull();
+        assertThat(rankings.get("contest:" + contest.getContestId() + ":returnRate")).isNotNull();
     }
 
     // ===== j: calculateReturnRate(Account,Contest) 데드코드 - 프로덕션 경로 미도달 =====

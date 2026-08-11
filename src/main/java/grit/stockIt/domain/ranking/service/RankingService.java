@@ -15,11 +15,13 @@ import grit.stockIt.domain.ranking.dto.RankingResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.context.ApplicationContext;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.core.env.Environment;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
@@ -47,6 +49,7 @@ public class RankingService {
     private final Environment environment;
     private final RankingCalculationService rankingCalculationService;
     private final RankingPriceCollectionService rankingPriceCollectionService;
+    private final ApplicationContext applicationContext;
     // ==================== 스케줄러 ====================
 
     /**
@@ -56,7 +59,7 @@ public class RankingService {
      * - 캐시 초기화 후 재생성
      */
     @Scheduled(fixedRate = 60000) // 60초 = 1분
-    @CacheEvict(value = "rankings", allEntries = true)
+    @CacheEvict(value = "rankings", allEntries = true, beforeInvocation = true)
     @Transactional
     public void updateAllRankings() {
         // 테스트 환경에서는 스케줄러 비활성화
@@ -68,15 +71,12 @@ public class RankingService {
         log.info("🔄 [스케줄러] 랭킹 갱신 시작: {}", LocalDateTime.now());
 
         try {
-            // 0. 모든 보유 종목의 현재가 배치 수집
-            Set<String> requiredStockCodes = rankingPriceCollectionService.collectAllHeldStockCodes();
-            log.info("📦 전체 보유 종목 수: {}개", requiredStockCodes.size());
+            // self-injection: @Cacheable 프록시를 경유해 실제로 캐시를 워밍한다
+            // (private 메서드 직접 호출은 프록시를 타지 않아 캐시가 채워지지 않음 — 버그 i)
+            RankingService self = applicationContext.getBean(RankingService.class);
 
-            Map<String, BigDecimal> currentPrices = rankingPriceCollectionService.batchFetchCurrentPrices(requiredStockCodes);
-            log.info("💰 현재가 수집 완료: {}개 (캐시 히트 포함)", currentPrices.size());
-
-            // 1. Main 계좌 랭킹 갱신 (총자산 기준)
-            RankingResponse mainRanking = getMainRankingsWithPrices(currentPrices);
+            // 1. Main 계좌 랭킹 갱신 (총자산 기준) — 'main:balance' 캐시 워밍
+            RankingResponse mainRanking = self.getMainRankings();
             log.info("Main 계좌 랭킹 갱신 완료");
 
             // --- [추가] Main 랭킹 Top 10 유저에게 '랭커' 칭호 지급 로직 ---
@@ -91,15 +91,15 @@ public class RankingService {
                     eventPublisher.publishEvent(new RankerAchievedEvent(top10MemberIds));
                 }
             }
-            // 2. 진행 중인 대회 랭킹 갱신
+            // 2. 진행 중인 대회 랭킹 갱신 — 각 대회의 'contest:id:sortBy' 캐시 워밍
             List<Contest> activeContests = contestRepository.findActiveContests(LocalDateTime.now());
             log.info("진행 중인 대회 수: {}", activeContests.size());
 
             for (Contest contest : activeContests) {
                 // 총자산순 랭킹
-                getContestRankingsWithPrices(contest.getContestId(), "totalAssets", currentPrices);
+                self.getContestRankings(contest.getContestId(), "totalAssets");
                 // 수익률순 랭킹
-                getContestRankingsWithPrices(contest.getContestId(), "returnRate", currentPrices);
+                self.getContestRankings(contest.getContestId(), "returnRate");
                 log.info("대회 [{}] 랭킹 갱신 완료", contest.getContestName());
             }
 
@@ -120,6 +120,11 @@ public class RankingService {
      * @return RankingResponse (contestId = null, sortBy = "balance")
      */
     @Cacheable(value = "rankings", key = "'main:balance'")
+    // 배치가 self-injection 프록시로 이 메서드를 호출할 때 부모(updateAllRankings)와
+    // 물리 트랜잭션을 공유하면, 내부 예외가 부모 트랜잭션을 rollback-only로 표시해
+    // updateAllRankings의 catch(Exception)로 삼켜져도 커밋 시점에 UnexpectedRollbackException이
+    // 새어나간다. REQUIRES_NEW로 격리해 기존 예외-삼킴 동작(U6)을 보존한다.
+    @Transactional(readOnly = true, propagation = Propagation.REQUIRES_NEW)
     public RankingResponse getMainRankings() {
         log.info("Main 계좌 랭킹 조회 (총자산 기준 - DB에서 로드)");
 
@@ -145,6 +150,8 @@ public class RankingService {
      * @return RankingResponse
      */
     @Cacheable(value = "rankings", key = "'contest:' + #contestId + ':' + #sortBy")
+    // 사유는 getMainRankings 상단 주석 참조 (REQUIRES_NEW로 배치 트랜잭션과 격리)
+    @Transactional(readOnly = true, propagation = Propagation.REQUIRES_NEW)
     public RankingResponse getContestRankings(Long contestId, String sortBy) {
         log.info("대회 [{}] 랭킹 조회 (sortBy: {}) - 총자산 기준 DB 로드", contestId, sortBy);
 

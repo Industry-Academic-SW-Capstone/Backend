@@ -168,11 +168,11 @@ class RankingCacheCharacterizationTest extends IntegrationTestSupport {
         assertThat(rankings.getName()).isEqualTo("rankings");
     }
 
-    // ===== C2: 캐시 히트 → updateAllRankings @CacheEvict → 캐시 미스 재계산 (라이프사이클) =====
+    // ===== C2: 캐시 히트 → updateAllRankings @CacheEvict(beforeInvocation) → self-워밍 재적재 (라이프사이클) =====
 
     @Test
-    @DisplayName("C2: getMainRankings 캐시 히트 후 updateAllRankings로 evict되면 다음 호출은 캐시 미스로 재계산한다")
-    void c2_cacheHitThenEvictThenMissRecomputes_verifiedByCollectorSeam() {
+    @DisplayName("C2: getMainRankings 캐시 히트 후 updateAllRankings가 evict-후-self워밍으로 캐시를 재적재한다")
+    void c2_cacheHitThenEvictThenSelfWarms_verifiedByCollectorSeam() {
         Member member = createMember();
         Contest contest = createContest();
         Account mainAccount = createMainAccount(member, contest, new BigDecimal("1000000"));
@@ -189,17 +189,18 @@ class RankingCacheCharacterizationTest extends IntegrationTestSupport {
         assertThat(second).isNotNull();
         verify(accountStockRepository, times(1)).findDistinctStockCodes();
 
-        // 3. 배치 실행(@CacheEvict allEntries) → 배치 자체도 collector-seam을 1회 호출 → 누적 2회
+        // 3. 배치 실행 → @CacheEvict(beforeInvocation=true)로 본문 전에 evict → self.getMainRankings()가
+        //    캐시 미스로 재계산하며 재워밍(collector-seam 누적 2회) → 'main:balance'가 다시 채워짐(버그 i 수정)
         openSchedulingGate();
         rankingService.updateAllRankings();
         verify(accountStockRepository, times(2)).findDistinctStockCodes();
         Cache rankings = cacheManager.getCache("rankings");
-        assertThat(rankings.get("main:balance")).isNull();
+        assertThat(rankings.get("main:balance")).isNotNull();
 
-        // 4. evict 이후 재호출 → 캐시 미스 재계산 → collector-seam 누적 3회
+        // 4. 배치가 이미 재워밍했으므로 이후 재호출은 캐시 히트 → collector-seam 추가 호출 없음 (여전히 2회)
         RankingResponse third = rankingService.getMainRankings();
         assertThat(third.getRankings()).isNotEmpty();
-        verify(accountStockRepository, times(3)).findDistinctStockCodes();
+        verify(accountStockRepository, times(2)).findDistinctStockCodes();
         assertThat(rankings.get("main:balance")).isNotNull();
     }
 

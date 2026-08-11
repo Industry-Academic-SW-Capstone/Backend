@@ -228,7 +228,7 @@ class RankingUpdateCharacterizationTest extends IntegrationTestSupport {
     // ===== U1: 게이트 개방 → main + active contest 랭킹 생성, no throw =====
 
     @Test
-    @DisplayName("U1: 게이트 개방 시 main+진행중 대회 랭킹이 예외 없이 생성된다")
+    @DisplayName("U1: 게이트 개방 시 main+진행중 대회 랭킹이 예외 없이 생성되고 캐시가 워밍된다")
     void u1_gateOpen_batchRunsMainAndActiveContest_noThrow() {
         openSchedulingGate();
         Member member = createMember();
@@ -241,10 +241,12 @@ class RankingUpdateCharacterizationTest extends IntegrationTestSupport {
 
         assertThatCode(() -> rankingService.updateAllRankings()).doesNotThrowAnyException();
 
-        // 배치는 캐시가능(@Cacheable) public 메서드가 아니라 private *WithPrices()를 직접 호출하므로
-        // @CacheEvict만 발화하고 캐시를 재적재하지 않는다 (현재 동작 동결).
+        // 배치는 self-injection된 프록시를 통해 캐시가능(@Cacheable) public 메서드
+        // (getMainRankings/getContestRankings)를 호출하므로 실제로 캐시가 재적재(워밍)된다 (버그 i 수정).
         Cache rankings = cacheManager.getCache("rankings");
-        assertThat(rankings.get("main:balance")).isNull();
+        assertThat(rankings.get("main:balance")).isNotNull();
+        assertThat(rankings.get("contest:" + contest.getContestId() + ":totalAssets")).isNotNull();
+        assertThat(rankings.get("contest:" + contest.getContestId() + ":returnRate")).isNotNull();
     }
 
     // ===== U2: 게이트 미개방 → 조기리턴, priceCollector/eventPublisher never, evict는 발화 =====
@@ -273,7 +275,8 @@ class RankingUpdateCharacterizationTest extends IntegrationTestSupport {
         verify(redisMarketDataRepository, never()).getLastPrice(anyString());
         assertThat(rankerAchievedEventCaptor.captured()).isEmpty();
 
-        // @CacheEvict(allEntries=true)는 AOP상 메서드 정상 반환(조기 return 포함) 후 발화 → 캐시 무효화됨
+        // @CacheEvict(allEntries=true, beforeInvocation=true)는 본문 실행 전에 발화하므로
+        // 조기 return 경로라도 캐시는 무효화되며, 조기 return이라 self-워밍도 일어나지 않아 비어 있다.
         assertThat(rankings.get("main:balance")).isNull();
     }
 
@@ -321,11 +324,11 @@ class RankingUpdateCharacterizationTest extends IntegrationTestSupport {
         assertThat(rankerAchievedEventCaptor.captured()).isEmpty();
     }
 
-    // ===== U5: @CacheEvict allEntries → 사전 채운 rankings 캐시 전부 무효화 =====
+    // ===== U5: @CacheEvict(beforeInvocation=true) → evict 후 self-워밍으로 main만 재적재, 미대상 대회는 비어있음 =====
 
     @Test
-    @DisplayName("U5: 배치 실행 시 사전에 채운 main/contest 캐시 엔트리가 모두 무효화된다")
-    void u5_cacheEvictAllEntries_invalidatesPrewarmedEntries() {
+    @DisplayName("U5: 배치 실행 시 사전에 채운 캐시가 evict된 뒤 self-호출로 main 캐시만 재워밍되고, 활성 대회가 없으면 contest 캐시는 비어있다")
+    void u5_cacheEvictThenSelfWarmsMainOnly_whenNoActiveContests() {
         Member member = createMember();
         Contest contest = createContest(true);
         Account mainAccount = createMainAccount(member, contest, new BigDecimal("1000000"));
@@ -339,10 +342,13 @@ class RankingUpdateCharacterizationTest extends IntegrationTestSupport {
         assertThat(rankings.get("contest:" + contest.getContestId() + ":totalAssets")).isNotNull();
 
         openSchedulingGate();
+        // 활성 대회 없음 → 배치가 대회 캐시를 재워밍할 대상이 없어 evict된 채로 남는다.
         doReturn(List.of()).when(contestRepository).findActiveContests(any());
         rankingService.updateAllRankings();
 
-        assertThat(rankings.get("main:balance")).isNull();
+        // main은 beforeInvocation evict 이후 self.getMainRankings() 호출로 다시 채워진다 (버그 i 수정 증명).
+        assertThat(rankings.get("main:balance")).isNotNull();
+        // 대회는 activeContests가 비어 있어 재워밍 대상이 아니므로 evict된 상태 그대로 비어있다.
         assertThat(rankings.get("contest:" + contest.getContestId() + ":totalAssets")).isNull();
     }
 
