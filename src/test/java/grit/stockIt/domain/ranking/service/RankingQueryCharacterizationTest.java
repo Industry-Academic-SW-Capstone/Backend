@@ -453,8 +453,8 @@ class RankingQueryCharacterizationTest extends IntegrationTestSupport {
     // ===== Q16: 자기호출 우회 고정 - collector-seam 누적 times(2)/times(3) =====
 
     @Test
-    @DisplayName("Q16(자기호출 우회 고정): getMyRank(main)은 캐시 워밍 여부와 무관하게 collector-seam이 누적 2회 호출된다")
-    void q16_getMyRank_main_selfInvocationBypassesProxy_collectorSeamCalledTwice() {
+    @DisplayName("Q16(수정됨, 자기호출 우회 고정): getMyRank(main)은 캐시 워밍 여부와 무관하게 collector-seam이 1회만 호출된다")
+    void q16_getMyRank_main_selfInvocationBypassesProxy_collectorSeamCalledOnce() {
         Member member = createMember();
         Contest contest = createContest();
         createMainAccount(member, contest, new BigDecimal("1000000"));
@@ -465,14 +465,15 @@ class RankingQueryCharacterizationTest extends IntegrationTestSupport {
 
         rankingService.getMyRank(member.getMemberId(), null);
 
-        // 자체 collectAllHeldStockCodes() 1회 + getMyRank 내부에서 호출하는 getMainRankings()의
-        // @Cacheable 프록시 우회(자기호출)로 인한 재계산 1회 = 누적 2회
-        verify(accountStockRepository, times(2)).findDistinctStockCodes();
+        // 버그 b 수정: getMyRank는 더 이상 자체 collectAllHeldStockCodes()/batchFetchCurrentPrices()를
+        // 수행하지 않고 내부에서 호출하는 getMainRankings()의 @Cacheable 프록시 우회(자기호출) 재계산
+        // 1회만 발생한다(이전 누적 2회 → 1회로 감소)
+        verify(accountStockRepository, times(1)).findDistinctStockCodes();
     }
 
     @Test
-    @DisplayName("Q16(자기호출 우회 고정): getMyRank(contest)는 캐시 워밍 여부와 무관하게 collector-seam이 누적 3회 호출된다")
-    void q16_getMyRank_contest_selfInvocationBypassesProxy_collectorSeamCalledThrice() {
+    @DisplayName("Q16(수정됨, 자기호출 우회 고정): getMyRank(contest)는 캐시 워밍 여부와 무관하게 collector-seam이 누적 2회 호출된다")
+    void q16_getMyRank_contest_selfInvocationBypassesProxy_collectorSeamCalledTwice() {
         Member member = createMember();
         Contest contest = createContest();
         createContestAccount(member, contest, new BigDecimal("1000000"));
@@ -484,8 +485,9 @@ class RankingQueryCharacterizationTest extends IntegrationTestSupport {
 
         rankingService.getMyRank(member.getMemberId(), contest.getContestId());
 
-        // 자체 1회 + getContestRankings(totalAssets) 자기호출 재계산 1회
-        // + getContestRankings(returnRate) 자기호출 재계산 1회 = 누적 3회
-        verify(accountStockRepository, times(3)).findDistinctStockCodes();
+        // 버그 b+k 수정: getMyRank는 더 이상 자체 재계산을 수행하지 않고, 내부에서 호출하는
+        // getContestRankings(totalAssets) 자기호출 재계산 1회 + getContestRankings(returnRate)
+        // 자기호출 재계산 1회 = 누적 2회 (이전 누적 3회 → 2회로 감소)
+        verify(accountStockRepository, times(2)).findDistinctStockCodes();
     }
 }

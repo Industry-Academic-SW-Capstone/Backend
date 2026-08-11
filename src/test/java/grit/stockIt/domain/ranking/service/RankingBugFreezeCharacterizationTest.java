@@ -47,6 +47,8 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.reset;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
@@ -256,11 +258,11 @@ class RankingBugFreezeCharacterizationTest extends IntegrationTestSupport {
                 .doesNotThrowAnyException();
     }
 
-    // ===== b: getMyRank myTotalAssets(즉석 재계산) vs 캐시된 랭킹 totalAssets 불일치 =====
+    // ===== b(수정됨): getMyRank myTotalAssets가 랭킹 totalAssets와 일치(중복 재계산 제거) =====
 
     @Test
-    @DisplayName("b(버그 동결): getMyRank의 myTotalAssets(자체 스냅샷)와 캐시된 Main 랭킹 totalAssets(재계산 스냅샷)가 시점가변 가격으로 불일치할 수 있다")
-    void b_myTotalAssets_vs_cachedRankingTotalAssets_snapshotMismatch() {
+    @DisplayName("b(수정됨): getMyRank의 myTotalAssets는 별도 재계산 없이 Main 랭킹 엔트리에서 파생되어 일치하고, 가격 조회는 1회만 발생한다")
+    void b_myTotalAssets_matchesRankingTotalAssets_singleFetch() {
         Member member = createMember();
         Contest contest = createContest();
         Account account = createMainAccount(member, contest, new BigDecimal("1000000"));
@@ -269,24 +271,21 @@ class RankingBugFreezeCharacterizationTest extends IntegrationTestSupport {
         // Redis 미스 강제 (실제로도 이 종목코드는 저장된 적이 없어 자연 미스이지만 명시적으로 고정)
         doReturn(Optional.empty()).when(redisMarketDataRepository).getLastPrice(stock.getCode());
 
-        BigDecimal p1 = new BigDecimal("10000"); // getMyRank 자체 batchFetch 시점 가격
-        BigDecimal p2 = new BigDecimal("20000"); // getMyRank 내부 getMainRankings() 재계산 시점 가격
-        when(stockDetailService.getCurrentPrice(stock.getCode()))
-                .thenReturn(Mono.just(p1))
-                .thenReturn(Mono.just(p2));
+        BigDecimal price = new BigDecimal("10000");
+        when(stockDetailService.getCurrentPrice(stock.getCode())).thenReturn(Mono.just(price));
 
         MyRankResponse response = rankingService.getMyRank(member.getMemberId(), null);
 
-        BigDecimal expectedMyTotalAssets = account.getCash().add(p1.multiply(BigDecimal.valueOf(10)));
-        BigDecimal expectedCachedTotalAssets = account.getCash().add(p2.multiply(BigDecimal.valueOf(10)));
+        BigDecimal expectedTotalAssets = account.getCash().add(price.multiply(BigDecimal.valueOf(10)));
+        assertThat(response.getMyTotalAssets()).isEqualByComparingTo(expectedTotalAssets);
 
-        assertThat(response.getMyTotalAssets()).isEqualByComparingTo(expectedMyTotalAssets);
-        assertThat(response.getMyTotalAssets()).isNotEqualByComparingTo(expectedCachedTotalAssets);
+        // 버그 b 수정: getMyRank는 더 이상 자체 batchFetch/calculateTotalAssets를 수행하지 않고
+        // 내부에서 호출하는 getMainRankings() 응답의 내 엔트리에서 파생하므로 종목당 가격 조회는 1회만 발생한다
+        verify(stockDetailService, times(1)).getCurrentPrice(stock.getCode());
 
-        RankingResponse cachedMainRankings = rankingService.getMainRankings();
-        RankingItemResponse cachedItem = findItem(cachedMainRankings.getRankings(), member.getMemberId()).orElseThrow();
-        assertThat(cachedItem.getTotalAssets()).isEqualByComparingTo(expectedCachedTotalAssets);
-        assertThat(cachedItem.getTotalAssets()).isNotEqualByComparingTo(response.getMyTotalAssets());
+        RankingResponse mainRankings = rankingService.getMainRankings();
+        RankingItemResponse rankingItem = findItem(mainRankings.getRankings(), member.getMemberId()).orElseThrow();
+        assertThat(response.getMyTotalAssets()).isEqualByComparingTo(rankingItem.getTotalAssets());
     }
 
     // ===== c: returnRate 경로 AccountWithAssets.totalAssets 필드 오버로딩 → 정렬은 수익률, 필드는 총자산 =====
@@ -432,11 +431,11 @@ class RankingBugFreezeCharacterizationTest extends IntegrationTestSupport {
         assertThat(totalAssetsItem.getReturnRate()).isNull();
     }
 
-    // ===== k: getMyRank myReturnRate(스냅샷1) vs contest 랭킹 returnRate(재계산 스냅샷3) 불일치 =====
+    // ===== k(수정됨): getMyRank myReturnRate가 대회 returnRate 랭킹과 일치(중복 재계산 제거) =====
 
     @Test
-    @DisplayName("k(버그 동결): getMyRank의 myReturnRate(자체 스냅샷)와 캐시된 대회 returnRate 랭킹(재계산 스냅샷)이 시점가변 가격으로 불일치할 수 있다")
-    void k_myReturnRate_vs_contestReturnRateRanking_snapshotMismatch() {
+    @DisplayName("k(수정됨): getMyRank의 myReturnRate는 별도 재계산 없이 대회 returnRate 랭킹 엔트리에서 파생되어 일치하고, 가격 조회는 종목당 2회로 고정된다")
+    void k_myReturnRate_matchesContestReturnRateRanking_fixedTwoFetches() {
         Member member = createMember();
         Contest contest = createContest(); // seedMoney 10,000,000
         Account account = createContestAccount(member, contest, new BigDecimal("5000000"));
@@ -444,32 +443,24 @@ class RankingBugFreezeCharacterizationTest extends IntegrationTestSupport {
         createHolding(account, stock, 10, new BigDecimal("5000"));
         doReturn(Optional.empty()).when(redisMarketDataRepository).getLastPrice(stock.getCode());
 
-        BigDecimal p1 = new BigDecimal("10000"); // getMyRank 자체 batchFetch(myTotalAssets용)
-        BigDecimal p2 = new BigDecimal("20000"); // getContestRankings(totalAssets) 자기호출 재계산
-        BigDecimal p3 = new BigDecimal("30000"); // getContestRankings(returnRate) 자기호출 재계산
-        when(stockDetailService.getCurrentPrice(stock.getCode()))
-                .thenReturn(Mono.just(p1))
-                .thenReturn(Mono.just(p2))
-                .thenReturn(Mono.just(p3));
+        BigDecimal price = new BigDecimal("10000");
+        when(stockDetailService.getCurrentPrice(stock.getCode())).thenReturn(Mono.just(price));
 
         MyRankResponse response = rankingService.getMyRank(member.getMemberId(), contest.getContestId());
 
-        BigDecimal myTotalAssets = account.getCash().add(p1.multiply(BigDecimal.valueOf(10))); // 5,100,000
-        BigDecimal expectedMyReturnRate = myTotalAssets.subtract(BigDecimal.valueOf(10_000_000L))
+        BigDecimal expectedTotalAssets = account.getCash().add(price.multiply(BigDecimal.valueOf(10))); // 5,100,000
+        BigDecimal expectedReturnRate = expectedTotalAssets.subtract(BigDecimal.valueOf(10_000_000L))
                 .divide(BigDecimal.valueOf(10_000_000L), 4, java.math.RoundingMode.HALF_UP)
                 .multiply(BigDecimal.valueOf(100)).setScale(2, java.math.RoundingMode.HALF_UP);
 
-        BigDecimal rankingTotalAssets = account.getCash().add(p3.multiply(BigDecimal.valueOf(10))); // 5,300,000
-        BigDecimal expectedRankingReturnRate = rankingTotalAssets.subtract(BigDecimal.valueOf(10_000_000L))
-                .divide(BigDecimal.valueOf(10_000_000L), 4, java.math.RoundingMode.HALF_UP)
-                .multiply(BigDecimal.valueOf(100)).setScale(2, java.math.RoundingMode.HALF_UP);
+        assertThat(response.getMyReturnRate()).isEqualByComparingTo(expectedReturnRate);
 
-        assertThat(response.getMyReturnRate()).isEqualByComparingTo(expectedMyReturnRate);
-        assertThat(response.getMyReturnRate()).isNotEqualByComparingTo(expectedRankingReturnRate);
+        // 버그 b+k 수정: getMyRank(contest)는 getContestRankings(totalAssets)/getContestRankings(returnRate)
+        // 자기호출 2회에서만 가격을 조회하며(자체 재계산 없음), 종목당 조회는 2회로 고정된다(이전 3회에서 감소)
+        verify(stockDetailService, times(2)).getCurrentPrice(stock.getCode());
 
-        RankingResponse cachedReturnRateRankings = rankingService.getContestRankings(contest.getContestId(), "returnRate");
-        RankingItemResponse cachedItem = findItem(cachedReturnRateRankings.getRankings(), member.getMemberId()).orElseThrow();
-        assertThat(cachedItem.getReturnRate()).isEqualByComparingTo(expectedRankingReturnRate);
-        assertThat(cachedItem.getReturnRate()).isNotEqualByComparingTo(response.getMyReturnRate());
+        RankingResponse returnRateRankings = rankingService.getContestRankings(contest.getContestId(), "returnRate");
+        RankingItemResponse rankingItem = findItem(returnRateRankings.getRankings(), member.getMemberId()).orElseThrow();
+        assertThat(response.getMyReturnRate()).isEqualByComparingTo(rankingItem.getReturnRate());
     }
 }

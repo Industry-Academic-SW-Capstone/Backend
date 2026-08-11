@@ -177,22 +177,14 @@ public class RankingService {
         // 1. 내 계좌 찾기
         Account myAccount = findMyAccount(memberId, contestId);
 
-        // 2. 현재가 수집 및 총자산 계산
-        Set<String> requiredStockCodes = rankingPriceCollectionService.collectAllHeldStockCodes();
-        Map<String, BigDecimal> currentPrices = rankingPriceCollectionService.batchFetchCurrentPrices(requiredStockCodes);
-        
-        // AccountStock Map 조회
-        List<AccountStock> allAccountStocks = accountStockRepository.findAllByAccount(myAccount);
-        Map<Account, List<AccountStock>> accountStocksMap = Map.of(myAccount, allAccountStocks);
-        
-        BigDecimal myTotalAssets = rankingCalculationService.calculateTotalAssets(myAccount, currentPrices, accountStocksMap);
-
-        // 3. Main 계좌인 경우
+        // 2. Main 계좌인 경우 — 이미 호출하는 getMainRankings() 응답에서 내 엔트리를 파생시킨다
+        // (버그 b 수정: 별도 재계산 스냅샷을 만들지 않아 캐시된 랭킹과 값이 항상 일치한다)
         if (contestId == null) {
-            // 캐시된 Main 랭킹에서 내 순위 찾기
             RankingResponse mainRankings = getMainRankings();
-            Long balanceRank = findMyRankInList(mainRankings.getRankings(), memberId);
-            
+            RankingItemResponse myEntry = findMyEntry(mainRankings.getRankings(), memberId).orElse(null);
+            Long balanceRank = myEntry != null ? Long.valueOf(myEntry.getRank()) : null;
+            BigDecimal myTotalAssets = myEntry != null ? myEntry.getTotalAssets() : myAccount.getCash();
+
             // 티어 및 칭호 조회
             grit.stockIt.domain.member.entity.Member member = myAccount.getMember();
             String representativeTitle = member.getRepresentativeTitle() != null 
@@ -216,19 +208,21 @@ public class RankingService {
                     .build();
         }
 
-        // 4. 대회 계좌인 경우
-        Contest contest = contestRepository.findById(contestId)
+        // 3. 대회 계좌인 경우 — 이미 호출하는 getContestRankings() 응답에서 내 엔트리를 파생시킨다
+        // (버그 b+k 수정: totalAssets/returnRate 재계산 스냅샷을 만들지 않아 캐시된 랭킹과 값이 항상 일치한다)
+        contestRepository.findById(contestId)
                 .orElseThrow(() -> new IllegalArgumentException("대회를 찾을 수 없습니다. (ID: " + contestId + ")"));
 
-        // 4-1. 내 수익률 계산 (총자산 기준)
-        BigDecimal myReturnRate = rankingCalculationService.calculateReturnRateFromAssets(myTotalAssets, contest);
-
-        // 4-2. 캐시된 대회 랭킹에서 내 순위 찾기
         RankingResponse balanceRankings = getContestRankings(contestId, "totalAssets");
         RankingResponse returnRateRankings = getContestRankings(contestId, "returnRate");
-        
-        Long balanceRank = findMyRankInList(balanceRankings.getRankings(), memberId);
-        Long returnRateRank = findMyRankInList(returnRateRankings.getRankings(), memberId);
+
+        RankingItemResponse balanceEntry = findMyEntry(balanceRankings.getRankings(), memberId).orElse(null);
+        RankingItemResponse returnRateEntry = findMyEntry(returnRateRankings.getRankings(), memberId).orElse(null);
+
+        Long balanceRank = balanceEntry != null ? Long.valueOf(balanceEntry.getRank()) : null;
+        Long returnRateRank = returnRateEntry != null ? Long.valueOf(returnRateEntry.getRank()) : null;
+        BigDecimal myTotalAssets = balanceEntry != null ? balanceEntry.getTotalAssets() : myAccount.getCash();
+        BigDecimal myReturnRate = returnRateEntry != null ? returnRateEntry.getReturnRate() : null;
 
         // 티어 및 칭호 조회
         grit.stockIt.domain.member.entity.Member member = myAccount.getMember();
@@ -254,15 +248,12 @@ public class RankingService {
     }
 
     /**
-     * 랭킹 리스트에서 특정 회원의 순위 찾기
+     * 랭킹 리스트에서 특정 회원의 엔트리 찾기
      */
-    private Long findMyRankInList(List<RankingItemResponse> rankings, Long memberId) {
+    private Optional<RankingItemResponse> findMyEntry(List<RankingItemResponse> rankings, Long memberId) {
         return rankings.stream()
                 .filter(dto -> dto.getMemberId().equals(memberId))
-                .map(RankingItemResponse::getRank)
-                .findFirst()
-                .map(Integer::longValue)
-                .orElse(null);
+                .findFirst();
     }
 
     /**
