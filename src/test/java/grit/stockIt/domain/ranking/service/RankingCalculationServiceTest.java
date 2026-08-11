@@ -120,56 +120,6 @@ class RankingCalculationServiceTest {
     }
 
     @Nested
-    @DisplayName("calculateReturnRate")
-    class CalculateReturnRate {
-
-        @Test
-        @DisplayName("contest가 null이면 0을 반환한다")
-        void nullContest() {
-            Account acc = account(new BigDecimal("100000"));
-
-            BigDecimal result = service.calculateReturnRate(acc, null);
-
-            assertThat(result).isEqualByComparingTo(BigDecimal.ZERO);
-        }
-
-        @Test
-        @DisplayName("seedMoney가 null이면 0을 반환한다")
-        void nullSeedMoney() {
-            Account acc = account(new BigDecimal("100000"));
-            Contest c = contest(null);
-
-            BigDecimal result = service.calculateReturnRate(acc, c);
-
-            assertThat(result).isEqualByComparingTo(BigDecimal.ZERO);
-        }
-
-        @Test
-        @DisplayName("seedMoney가 0이면 0으로 나누기 방지를 위해 0을 반환한다")
-        void zeroSeedMoney() {
-            Account acc = account(new BigDecimal("100000"));
-            Contest c = contest(0L);
-
-            BigDecimal result = service.calculateReturnRate(acc, c);
-
-            assertThat(result).isEqualByComparingTo(BigDecimal.ZERO);
-        }
-
-        @Test
-        @DisplayName("(현재잔액-시드머니)/시드머니*100, HALF_UP scale 2")
-        void computesReturnRateWithHalfUpScale2() {
-            Account acc = account(new BigDecimal("110000"));
-            Contest c = contest(100000L);
-
-            BigDecimal result = service.calculateReturnRate(acc, c);
-
-            // (110000-100000)/100000*100 = 10.00
-            assertThat(result).isEqualByComparingTo("10.00");
-            assertThat(result.scale()).isEqualTo(2);
-        }
-    }
-
-    @Nested
     @DisplayName("calculateReturnRateFromAssets")
     class CalculateReturnRateFromAssets {
 

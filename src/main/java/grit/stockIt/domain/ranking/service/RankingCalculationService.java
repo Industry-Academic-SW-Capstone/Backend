@@ -21,34 +21,6 @@ import java.util.Map;
 public class RankingCalculationService {
 
     /**
-     * 수익률 계산 (레거시 - getMyRank에서만 사용)
-     * - 수익률 = (현재잔액 - 시드머니) / 시드머니 * 100
-     * - 소수점 2자리까지 표시
-     *
-     * @param account 계좌
-     * @param contest 대회
-     * @return 수익률 (%)
-     */
-    BigDecimal calculateReturnRate(Account account, Contest contest) {
-        if (contest == null || contest.getSeedMoney() == null) {
-            return BigDecimal.ZERO;
-        }
-
-        BigDecimal seedMoney = BigDecimal.valueOf(contest.getSeedMoney());
-        if (seedMoney.compareTo(BigDecimal.ZERO) == 0) {
-            return BigDecimal.ZERO; // 0으로 나누기 방지
-        }
-
-        // (현재잔액 - 시드머니) / 시드머니 * 100
-        BigDecimal profit = account.getCash().subtract(seedMoney);
-        BigDecimal returnRate = profit.divide(seedMoney, 4, RoundingMode.HALF_UP)
-                .multiply(BigDecimal.valueOf(100));
-
-        // 소수점 2자리까지 반올림
-        return returnRate.setScale(2, RoundingMode.HALF_UP);
-    }
-
-    /**
      * 총자산으로부터 수익률 계산
      */
     BigDecimal calculateReturnRateFromAssets(BigDecimal totalAssets, Contest contest) {
