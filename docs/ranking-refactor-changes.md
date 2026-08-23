@@ -21,9 +21,9 @@
 
 | 지점 | 내용 | 성격 |
 |------|------|------|
-| `RankingService` 711→530줄 | God Class를 순수 계산기 + 가격수집기 + 슬림 오케스트레이터로 분해 | 책임 분리(SRP), public API·캐시·트랜잭션 시맨틱스 보존 |
+| `RankingService` 711→503줄 | God Class를 순수 계산기 + 가격수집기 + 슬림 오케스트레이터로 분해 | 책임 분리(SRP), public API·캐시·트랜잭션 시맨틱스 보존 |
 | `RankingCalculationService` (의존 0) | `calculateTotalAssets`/`calculateReturnRateFromAssets` 이동 + `assignCompetitionRanks` 순수함수 (※ `calculateReturnRate(Account,Contest)`는 B에서 이동됐다가 버그 j에서 데드코드로 제거) | 이동 메서드 본문 develop과 정규화 대조 IDENTICAL. `assignCompetitionRanks`는 두 convert에 **라인 동일하게 인라인 중복**돼 있던 동률순위 상태머신(`rank`/`sameRankCount`, `compareTo()==0`)을 dedup 추출 — 동일 rank 시퀀스 산출 |
-| `RankingPriceCollectionService` (118줄) | `collectAllHeldStockCodes`/`batchFetchCurrentPrices`/`fetchPricesWithRateLimit` + `RateLimiter(25/s)` 이동 | 본문 IDENTICAL. 싱글턴 1 인스턴스로 전역 25/s 시맨틱스 보존 |
+| `RankingPriceCollectionService` (114줄) | `collectAllHeldStockCodes`/`batchFetchCurrentPrices`/`fetchPricesWithRateLimit` + `RateLimiter(25/s)` 이동 | 본문 IDENTICAL. 싱글턴 1 인스턴스로 전역 25/s 시맨틱스 보존 |
 | `TestSchedulingConfig` (테스트 전용) | `setScheduler(null)` → **no-op TaskScheduler**(§3 참조) | 테스트 인프라 하드닝. 프로덕션 무관 |
 | 특성화 하네스 | @DirtiesContext·실 @EventListener 캡터·실 PropertySource 게이트 | 테스트 신뢰성, 프로덕션 무관 |
 | (범위 밖) `PerformanceTestService` | 동일 패키지의 성능비교 전용 클래스로 중복 `calculateReturnRate`/convert 로직 보유(JaCoCo 0%, javadoc상 "테스트 완료 후 삭제 예정") | **기존 P3**(리팩토링이 신규 도입 아님). throwaway·미도달이라 이번 범위 밖 — 차기 정리 후보 |
@@ -58,11 +58,11 @@
 
 | 기준 | 증빙 |
 |------|------|
-| 2 추출 컴포넌트(계산기 의존0) + 오케스트레이터 잔류, DAG 순환 0 | RankingCalculationService(129, dep0)/RankingPriceCollectionService(118) + RankingService(530). architect 5레인 CLEAR |
+| 2 추출 컴포넌트(계산기 의존0) + 오케스트레이터 잔류, DAG 순환 0 | RankingCalculationService(107, dep0)/RankingPriceCollectionService(114) + RankingService(503). architect 5레인 CLEAR |
 | public 4 흐름 + 캐시(히트/evict) + 스케줄(배치/조기리턴) + 이벤트(Top10) + 동률순위 + 자기호출 우회 + 버그 a~k 특성화 | 특성화 4클래스 40 시나리오 전량 green |
 | 분해 전후 특성화 무수정 green | Phase B 3커밋(B-1/B-2/B-3) 전부 특성화 40 무수정 green(byte 동일) |
 | 이동 메서드 본문 IDENTICAL | 6메서드 develop 대비 diff -w=0(접근제한자만 private→package-private). assignCompetitionRanks는 dedup 신규(유닛+뮤테이션 등가 증명) |
-| ranking service 라인 커버리지 ≥70%(측정 전용) | 3클래스 집계 **95.98%**(310/323): RankingService 95.04%·RankingCalculationService 100%·RankingPriceCollectionService 97.3% |
-| clean build green(Checkstyle 0 + ArchUnit) + baseline·DTO diff 0 | `./gradlew clean build` BUILD SUCCESSFUL 255테스트 0실패(3 skip 무관), Checkstyle 0·ArchUnit 2/2·baseline diff 0, 전 도메인 통합 green(TestSchedulingConfig 하드닝 회귀 없음) |
+| ranking service 라인 커버리지 ≥70%(측정 전용) | 3클래스 집계 **97.02%**(293/302): RankingService 96.49%·RankingCalculationService 100%·RankingPriceCollectionService 97.30% (버그수정 반영 최종 실측) |
+| clean build green(Checkstyle 0 + ArchUnit) + baseline·DTO diff 0 | `./gradlew clean build` BUILD SUCCESSFUL 252테스트 0실패(3 skip 무관), Checkstyle 0·ArchUnit 2/2·baseline diff 0, 전 도메인 통합 green(TestSchedulingConfig 하드닝 회귀 없음) |
 | 안전망 진짜(토톨로지 아님) | 뮤테이션 red-team M1/M2/M3 전부 RED 전환, 대조 M0 정확히 inert |
 | 원본 `~/stockIt` 무오염 | develop 955836c, 워크트리만 변경 |

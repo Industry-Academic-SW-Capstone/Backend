@@ -397,14 +397,14 @@ class RankingQueryCharacterizationTest extends IntegrationTestSupport {
         assertThat(ranks).containsExactly(1, 1, 1, 4);
     }
 
-    // ===== Q13: findMyRankInList 미존재 memberId → null rank =====
+    // ===== Q13: findMyEntry 미존재 memberId → null rank =====
 
     @Test
-    @DisplayName("Q13: findMyRankInList는 랭킹 리스트에 없는 memberId에 대해 null 순위를 반환한다")
-    void q13_findMyRankInList_memberNotInRankingList_returnsNullRank() {
+    @DisplayName("Q13: findMyEntry는 랭킹 리스트에 없는 memberId에 대해 null 순위를 반환한다")
+    void q13_findMyEntry_memberNotInRankingList_returnsNullRank() {
         // getMyRank 내부의 getMainRankings() 호출은 같은 인스턴스 자기호출이라 @Cacheable 프록시를
         // 우회해 항상 실시간 재계산한다(Q16에서 동결한 동작). 따라서 "캐시가 실제로 있다"만으로는
-        // findMyRankInList의 미존재 분기를 재현할 수 없다 — findMyAccount(단건 조회)는 실제 계좌를
+        // findMyEntry의 미존재 분기를 재현할 수 없다 — findMyAccount(단건 조회)는 실제 계좌를
         // 찾지만 findMainAccountsOrderByBalance(목록 조회)는 그 계좌를 포함하지 않는 상황을
         // AccountRepository @SpyBean으로 직접 재현한다(목록 쿼리만 스텁, 단건 쿼리는 실제 그대로 둠).
         Member member = createMember();

@@ -355,7 +355,7 @@ class RankingBugFreezeCharacterizationTest extends IntegrationTestSupport {
     // ===== g(수정됨): 정규화 데드라인 제거됨 — 응답 sortBy는 isReturnRate 삼항으로 독립 계산, 관찰 동작은 무변 =====
 
     @Test
-    @DisplayName("g(버그 동결): sortBy=\"balance\"로 요청해도 응답 sortBy는 \"totalAssets\"로 변이되어 반환된다")
+    @DisplayName("g(수정됨): sortBy=\"balance\" 요청 시 응답 sortBy는 \"totalAssets\"다(데드 정규화 라인 제거 후에도 isReturnRate 삼항으로 독립 계산되어 불변)")
     void g_sortByMutation_balanceRequestedButTotalAssetsReturned() {
         Member member = createMember();
         Contest contest = createContest();
@@ -411,7 +411,7 @@ class RankingBugFreezeCharacterizationTest extends IntegrationTestSupport {
     // ===== j: calculateReturnRate(Account,Contest) 데드코드 - 프로덕션 경로 미도달 =====
 
     @Test
-    @DisplayName("j(버그 동결, 문서적 단언): Main/총자산순 대회 랭킹은 항상 includeReturn=false로 호출되어 returnRate가 null이다(레거시 calculateReturnRate 미도달)")
+    @DisplayName("j(수정됨): 총자산순/Main 랭킹의 returnRate는 항상 null이다")
     void j_legacyCalculateReturnRate_unreachableViaMainOrTotalAssetsSort_returnRateAlwaysNull() {
         Member mainMember = createMember();
         Contest contest = createContest();
@@ -425,8 +425,7 @@ class RankingBugFreezeCharacterizationTest extends IntegrationTestSupport {
         RankingItemResponse mainItem = findItem(mainResponse.getRankings(), mainMember.getMemberId()).orElseThrow();
         RankingItemResponse totalAssetsItem = findItem(totalAssetsResponse.getRankings(), contestMember.getMemberId()).orElseThrow();
 
-        // convertToRankingItemResponsesWithAssets(..., includeReturn=false)만 프로덕션에서 호출되므로
-        // calculateReturnRate(Account, Contest)는 도달하지 않고 returnRate는 항상 null이다.
+        // 총자산순 변환은 returnRate를 산출하지 않으므로 항상 null이다.
         assertThat(mainItem.getReturnRate()).isNull();
         assertThat(totalAssetsItem.getReturnRate()).isNull();
     }
