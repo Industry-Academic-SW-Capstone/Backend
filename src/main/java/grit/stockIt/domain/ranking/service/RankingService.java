@@ -72,18 +72,17 @@ public class RankingService {
 
         try {
             // self-injection: @Cacheable 프록시를 경유해 실제로 캐시를 워밍한다
-            // (private 메서드 직접 호출은 프록시를 타지 않아 캐시가 채워지지 않음 — 버그 i)
+            // (private 메서드 직접 호출은 프록시를 타지 않아 캐시가 채워지지 않음)
             RankingService self = applicationContext.getBean(RankingService.class);
 
-            // 1. Main 계좌 랭킹 갱신 (총자산 기준) — 'main:balance' 캐시 워밍
+            // 'main:balance' 캐시 워밍 + Top10 이벤트 소스
             RankingResponse mainRanking = self.getMainRankings();
             log.info("Main 계좌 랭킹 갱신 완료");
 
-            // --- [추가] Main 랭킹 Top 10 유저에게 '랭커' 칭호 지급 로직 ---
             if (mainRanking != null && mainRanking.getRankings() != null) {
                 List<Long> top10MemberIds = mainRanking.getRankings().stream()
-                        .filter(dto -> dto.getRank() <= 10) // 1위~10위 필터링
-                        .map(RankingItemResponse::getMemberId)       // MemberId 추출
+                        .filter(dto -> dto.getRank() <= 10)
+                        .map(RankingItemResponse::getMemberId)
                         .collect(Collectors.toList());
 
                 // 랭커 달성 이벤트 발행 (동기 리스너가 미션 달성 처리 — 예외는 아래 catch에 흡수)
@@ -91,14 +90,12 @@ public class RankingService {
                     eventPublisher.publishEvent(new RankerAchievedEvent(top10MemberIds));
                 }
             }
-            // 2. 진행 중인 대회 랭킹 갱신 — 각 대회의 'contest:id:sortBy' 캐시 워밍
+            // 각 대회의 'contest:id:sortBy' 캐시 워밍
             List<Contest> activeContests = contestRepository.findActiveContests(LocalDateTime.now());
             log.info("진행 중인 대회 수: {}", activeContests.size());
 
             for (Contest contest : activeContests) {
-                // 총자산순 랭킹
                 self.getContestRankings(contest.getContestId(), "totalAssets");
-                // 수익률순 랭킹
                 self.getContestRankings(contest.getContestId(), "returnRate");
                 log.info("대회 [{}] 랭킹 갱신 완료", contest.getContestName());
             }
@@ -128,12 +125,10 @@ public class RankingService {
     public RankingResponse getMainRankings() {
         log.info("Main 계좌 랭킹 조회 (총자산 기준 - DB에서 로드)");
 
-        // 1. 모든 보유 종목의 현재가 배치 수집
         Set<String> requiredStockCodes = rankingPriceCollectionService.collectAllHeldStockCodes();
         Map<String, BigDecimal> currentPrices = rankingPriceCollectionService.batchFetchCurrentPrices(requiredStockCodes);
         log.info("💰 현재가 수집 완료: {}개", currentPrices.size());
 
-        // 2. 총자산 기준 랭킹 생성
         return getMainRankingsWithPrices(currentPrices);
     }
 
@@ -155,14 +150,10 @@ public class RankingService {
     public RankingResponse getContestRankings(Long contestId, String sortBy) {
         log.info("대회 [{}] 랭킹 조회 (sortBy: {}) - 총자산 기준 DB 로드", contestId, sortBy);
 
-        // (정규화 데드라인 제거됨: 응답 sortBy는 getContestRankingsWithPrices의 isReturnRate 삼항으로 독립 계산됨 — 버그 g)
-
-        // 1. 모든 보유 종목의 현재가 배치 수집
         Set<String> requiredStockCodes = rankingPriceCollectionService.collectAllHeldStockCodes();
         Map<String, BigDecimal> currentPrices = rankingPriceCollectionService.batchFetchCurrentPrices(requiredStockCodes);
         log.info("💰 현재가 수집 완료: {}개", currentPrices.size());
 
-        // 2. 총자산 기준 랭킹 생성
         return getContestRankingsWithPrices(contestId, sortBy, currentPrices);
     }
 
@@ -181,18 +172,15 @@ public class RankingService {
     public MyRankResponse getMyRank(Long memberId, Long contestId) {
         log.info("🔍 내 랭킹 조회 (memberId: {}, contestId: {})", memberId, contestId);
 
-        // 1. 내 계좌 찾기
         Account myAccount = findMyAccount(memberId, contestId);
 
-        // 2. Main 계좌인 경우 — 이미 호출하는 getMainRankings() 응답에서 내 엔트리를 파생시킨다
-        // (버그 b 수정: 별도 재계산 스냅샷을 만들지 않아 캐시된 랭킹과 값이 항상 일치한다)
+        // Main 계좌: getMainRankings() 엔트리에서 파생 → 캐시된 랭킹과 값 일치(별도 재계산 없음)
         if (contestId == null) {
             RankingResponse mainRankings = getMainRankings();
             RankingItemResponse myEntry = findMyEntry(mainRankings.getRankings(), memberId).orElse(null);
             Long balanceRank = myEntry != null ? Long.valueOf(myEntry.getRank()) : null;
             BigDecimal myTotalAssets = myEntry != null ? myEntry.getTotalAssets() : myAccount.getCash();
 
-            // 티어 및 칭호 조회
             grit.stockIt.domain.member.entity.Member member = myAccount.getMember();
             String representativeTitle = member.getRepresentativeTitle() != null 
                     ? member.getRepresentativeTitle().getName() 
@@ -215,8 +203,7 @@ public class RankingService {
                     .build();
         }
 
-        // 3. 대회 계좌인 경우 — 이미 호출하는 getContestRankings() 응답에서 내 엔트리를 파생시킨다
-        // (버그 b+k 수정: totalAssets/returnRate 재계산 스냅샷을 만들지 않아 캐시된 랭킹과 값이 항상 일치한다)
+        // 대회 계좌: getContestRankings() 엔트리에서 파생 → 캐시된 랭킹과 값 일치(별도 재계산 없음)
         contestRepository.findById(contestId)
                 .orElseThrow(() -> new IllegalArgumentException("대회를 찾을 수 없습니다. (ID: " + contestId + ")"));
 
@@ -231,7 +218,6 @@ public class RankingService {
         BigDecimal myTotalAssets = balanceEntry != null ? balanceEntry.getTotalAssets() : myAccount.getCash();
         BigDecimal myReturnRate = returnRateEntry != null ? returnRateEntry.getReturnRate() : null;
 
-        // 티어 및 칭호 조회
         grit.stockIt.domain.member.entity.Member member = myAccount.getMember();
         String representativeTitle = member.getRepresentativeTitle() != null 
                 ? member.getRepresentativeTitle().getName() 
@@ -330,7 +316,6 @@ public class RankingService {
             // returnRate는 총자산순 변환에서는 항상 null (수익률순은 ForReturnRate 변환기가 별도 처리)
             BigDecimal returnRate = null;
 
-            // 칭호와 티어 정보 조회
             String representativeTitle = account.getMember().getRepresentativeTitle() != null 
                     ? account.getMember().getRepresentativeTitle().getName() 
                     : null;
@@ -378,11 +363,10 @@ public class RankingService {
             BigDecimal returnRateValue = awa.totalAssets;  // totalAssets에 수익률이 들어있음
             int rank = ranks.get(i);
 
-            // 실제 총자산 계산 (currentPrices가 비어도 항상 재계산 — 빈 맵도 취득원가 폴백 적용, 버그 h 수정)
+            // 빈 맵이어도 취득원가 폴백으로 항상 재계산
             BigDecimal actualTotalAssets =
                     rankingCalculationService.calculateTotalAssets(account, currentPrices, accountStocksMap);
 
-            // 칭호와 티어 정보 조회
             String representativeTitle = account.getMember().getRepresentativeTitle() != null 
                     ? account.getMember().getRepresentativeTitle().getName() 
                     : null;

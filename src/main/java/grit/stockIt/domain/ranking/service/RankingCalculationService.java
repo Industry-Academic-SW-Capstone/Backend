@@ -45,8 +45,8 @@ public class RankingCalculationService {
      * 계좌의 총자산 계산
      * 총자산 = 잔액 + Σ(보유수량 × 평가단가)
      * - 평가단가는 현재가를 우선 사용하되, 현재가가 미가용(null 또는 0 이하)이면
-     *   취득원가(AccountStock.averagePrice)로 폴백한다 (버그 a+h 수정: 주식은 0에 거래되지 않으므로
-     *   0 이하는 안전하게 "가격 없음"으로 취급 가능).
+     *   취득원가(AccountStock.averagePrice)로 폴백한다. 주식은 0에 거래되지 않으므로
+     *   0 이하는 안전하게 "가격 없음"으로 취급한다.
      *
      * @param account       계좌
      * @param currentPrices 종목코드별 현재가 Map

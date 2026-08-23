@@ -57,7 +57,6 @@ public class RankingPriceCollectionService {
         Map<String, BigDecimal> prices = new HashMap<>();
         List<String> cacheMissStocks = new ArrayList<>();
 
-        // 1단계: Redis 캐시에서 조회
         for (String stockCode : stockCodes) {
             Optional<BigDecimal> cachedPrice = redisMarketDataRepository.getLastPrice(stockCode);
             if (cachedPrice.isPresent()) {
@@ -70,7 +69,6 @@ public class RankingPriceCollectionService {
         log.info("캐시 히트: {}/{} (미스: {}개)", 
                 prices.size(), stockCodes.size(), cacheMissStocks.size());
 
-        // 2단계: 캐시 미스 종목만 KIS API 호출 (Rate Limiting)
         if (!cacheMissStocks.isEmpty()) {
             fetchPricesWithRateLimit(cacheMissStocks, prices);
         }
@@ -89,10 +87,8 @@ public class RankingPriceCollectionService {
 
         for (String stockCode : stockCodes) {
             try {
-                // Rate Limiter 적용 (초당 25개 제한)
                 kisApiRateLimiter.acquire();
 
-                // StockDetailService의 getCurrentPrice 호출 (비동기 → 동기 변환)
                 BigDecimal price = stockDetailService.getCurrentPrice(stockCode)
                         .timeout(Duration.ofSeconds(3))
                         .block();
