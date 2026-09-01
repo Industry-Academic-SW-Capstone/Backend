@@ -24,7 +24,6 @@
     <suppress checks="UnusedImports" files="src[\\/]main[\\/]java[\\/]grit[\\/]stockIt[\\/]domain[\\/]member[\\/]dto[\\/]TitleSelectRequest\.java$"/>
     <suppress checks="AvoidStarImport" files="src[\\/]main[\\/]java[\\/]grit[\\/]stockIt[\\/]domain[\\/]member[\\/]entity[\\/]FavoriteStock\.java$"/>
     <suppress checks="AvoidStarImport" files="src[\\/]main[\\/]java[\\/]grit[\\/]stockIt[\\/]domain[\\/]member[\\/]entity[\\/]Member\.java$"/>
-    <suppress checks="AvoidStarImport" files="src[\\/]main[\\/]java[\\/]grit[\\/]stockIt[\\/]domain[\\/]member[\\/]service[\\/]LocalMemberService\.java$"/>
     <suppress checks="AvoidStarImport|UnusedImports" files="src[\\/]main[\\/]java[\\/]grit[\\/]stockIt[\\/]domain[\\/]mission[\\/]controller[\\/]MissionController\.java$"/>
     <suppress checks="AvoidStarImport" files="src[\\/]main[\\/]java[\\/]grit[\\/]stockIt[\\/]domain[\\/]mission[\\/]entity[\\/]Mission\.java$"/>
     <suppress checks="AvoidStarImport" files="src[\\/]main[\\/]java[\\/]grit[\\/]stockIt[\\/]domain[\\/]mission[\\/]entity[\\/]MissionProgress\.java$"/>
