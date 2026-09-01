@@ -12,7 +12,7 @@ import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;  // 추가
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.userdetails.UserDetails;
@@ -24,7 +24,7 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 
-@Slf4j  // 추가
+@Slf4j
 @RestController
 @RequestMapping("/api/members")
 @RequiredArgsConstructor
@@ -189,7 +189,7 @@ public class MemberController {
      * [GET] 내 대표 칭호 조회
      * URL: GET /api/members/title
      */
-    @GetMapping("/title") // 2. 여기에 /title 추가
+    @GetMapping("/title")
     @Operation(summary = "내 대표 칭호 조회", description = "현재 장착 중인 대표 칭호 정보를 반환합니다.")
     public ResponseEntity<RepresentativeTitleResponse> getMyRepresentativeTitle(
             @AuthenticationPrincipal UserDetails userDetails) {
@@ -203,13 +203,13 @@ public class MemberController {
      * URL: PATCH /api/members/title
      * 설명: POST 대신 PATCH 사용 (정보의 '일부'인 칭호를 수정하므로)
      */
-    @PatchMapping("/title") // 3. PostMapping -> PatchMapping으로 변경, 경로 추가
+    @PatchMapping("/title")
     @Operation(summary = "대표 칭호 변경", description = "보유한 칭호 중 하나를 대표 칭호로 수정합니다.<br>titleId에 null을 보내면 해제됩니다.")
     @ApiResponses(value = {
             @ApiResponse(responseCode = "200", description = "변경 성공"),
             @ApiResponse(responseCode = "400", description = "보유하지 않은 칭호이거나 존재하지 않는 ID")
     })
-    public ResponseEntity<String> updateRepresentativeTitle( // 메서드 이름도 set -> update로 변경 권장
+    public ResponseEntity<String> updateRepresentativeTitle(
                                                              @AuthenticationPrincipal UserDetails userDetails,
                                                              @RequestBody TitleSelectRequest request) {
 
