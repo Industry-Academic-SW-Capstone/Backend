@@ -1,6 +1,7 @@
 package grit.stockIt.domain.member.controller;
 
 import grit.stockIt.domain.member.dto.*;
+import grit.stockIt.domain.member.service.LocalAuthService;
 import grit.stockIt.domain.member.service.LocalMemberService;
 import grit.stockIt.global.jwt.JwtToken;
 import io.swagger.v3.oas.annotations.Operation;
@@ -29,18 +30,19 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 public class MemberController {
 
     private final LocalMemberService memberService; 
+    private final LocalAuthService localAuthService;
     private final grit.stockIt.domain.account.service.AccountService accountService;
     @Operation(summary = "회원가입", description = "새로운 회원을 등록합니다.")
     @PostMapping("/signup")
     public ResponseEntity<MemberResponse> signup(@Valid @RequestBody MemberSignupRequest request) {
-        MemberResponse response = memberService.signup(request);
+        MemberResponse response = localAuthService.signup(request);
         return ResponseEntity.ok(response);
     }
 
     @Operation(summary = "로그인", description = "이메일과 비밀번호로 로그인합니다.")
     @PostMapping("/login")
     public ResponseEntity<JwtToken> login(@Valid @RequestBody MemberLoginRequest request) {
-        JwtToken token = memberService.login(request);
+        JwtToken token = localAuthService.login(request);
         return ResponseEntity.ok(token);
     }
 

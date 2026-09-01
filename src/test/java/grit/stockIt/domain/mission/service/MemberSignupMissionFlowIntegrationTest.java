@@ -11,7 +11,7 @@ import grit.stockIt.domain.auth.service.KakaoAuthService;
 import grit.stockIt.domain.member.dto.MemberSignupRequest;
 import grit.stockIt.domain.member.entity.Member;
 import grit.stockIt.domain.member.repository.MemberRepository;
-import grit.stockIt.domain.member.service.LocalMemberService;
+import grit.stockIt.domain.member.service.LocalAuthService;
 import grit.stockIt.domain.mission.entity.Mission;
 import grit.stockIt.domain.mission.entity.MissionProgress;
 import grit.stockIt.domain.mission.enums.MissionStatus;
@@ -40,7 +40,7 @@ import org.springframework.test.context.jdbc.Sql;
 class MemberSignupMissionFlowIntegrationTest extends IntegrationTestSupport {
 
     @Autowired
-    private LocalMemberService localMemberService;
+    private LocalAuthService localAuthService;
 
     @Autowired
     private KakaoAuthService kakaoAuthService;
@@ -78,7 +78,7 @@ class MemberSignupMissionFlowIntegrationTest extends IntegrationTestSupport {
         MemberSignupRequest request = new MemberSignupRequest(email, "password123!");
 
         // when
-        localMemberService.signup(request);
+        localAuthService.signup(request);
 
         // then: member 생성
         Optional<Member> found = memberRepository.findByEmail(email);
@@ -143,7 +143,7 @@ class MemberSignupMissionFlowIntegrationTest extends IntegrationTestSupport {
 
         // when & then: 예외가 signup 호출자까지 전파된다
         // 특성화: 현재 동작 — 미션 초기화 실패가 가입 전체를 실패시킴 (커맨드 방식 동기 결합)
-        assertThatThrownBy(() -> localMemberService.signup(request))
+        assertThatThrownBy(() -> localAuthService.signup(request))
                 .isInstanceOf(RuntimeException.class)
                 .hasMessage("미션 초기화 강제 실패");
 
