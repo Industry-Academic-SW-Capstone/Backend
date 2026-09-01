@@ -94,43 +94,6 @@ public class LocalMemberService {
         return memberRepository.findByEmail(email);
     }
 
-    @Transactional
-    public void updateRepresentativeTitle(String email, Long titleId) {
-        Member member = memberRepository.findByEmail(email)
-                .orElseThrow(() -> new IllegalArgumentException("회원을 찾을 수 없습니다."));
-
-        // 1. 해제 요청
-        if (titleId == null) {
-            member.updateRepresentativeTitle(null);
-            // memberRepository.save(member); // 확실하게 하려면 추가
-            return;
-        }
-
-        // 2. 칭호 조회
-        Title title = titleRepository.findById(titleId)
-                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 칭호입니다."));
-
-        // 3. 보유 여부 검증
-        boolean hasTitle = memberTitleRepository.existsByMemberAndTitle(member, title);
-        if (!hasTitle) {
-            throw new IllegalArgumentException("획득하지 않은 칭호는 장착할 수 없습니다.");
-        }
-
-        // 4. 업데이트 수행
-        member.updateRepresentativeTitle(title);
-
-        // [추가 권장] 명시적 저장으로 변경사항 즉시 반영 보장
-        memberRepository.save(member);
-    }
-
-    @Transactional(readOnly = true)
-    public RepresentativeTitleResponse getRepresentativeTitle(String email) {
-        Member member = memberRepository.findByEmail(email)
-                .orElseThrow(() -> new IllegalArgumentException("회원을 찾을 수 없습니다."));
-
-        return RepresentativeTitleResponse.from(member.getRepresentativeTitle());
-    }
-
     // 설문조사 완료 여부 조회
     @Transactional(readOnly = true)
     public boolean getSurveyCompleted(String email) {

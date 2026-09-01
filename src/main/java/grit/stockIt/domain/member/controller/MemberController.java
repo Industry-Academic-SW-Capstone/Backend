@@ -4,6 +4,7 @@ import grit.stockIt.domain.member.dto.*;
 import grit.stockIt.domain.member.service.LocalAuthService;
 import grit.stockIt.domain.member.service.LocalMemberService;
 import grit.stockIt.domain.member.service.MemberNotificationSettingsService;
+import grit.stockIt.domain.member.service.MemberTitleService;
 import grit.stockIt.global.jwt.JwtToken;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
@@ -33,6 +34,7 @@ public class MemberController {
     private final LocalMemberService memberService; 
     private final LocalAuthService localAuthService;
     private final MemberNotificationSettingsService memberNotificationSettingsService;
+    private final MemberTitleService memberTitleService;
     private final grit.stockIt.domain.account.service.AccountService accountService;
     @Operation(summary = "회원가입", description = "새로운 회원을 등록합니다.")
     @PostMapping("/signup")
@@ -192,7 +194,7 @@ public class MemberController {
     public ResponseEntity<RepresentativeTitleResponse> getMyRepresentativeTitle(
             @AuthenticationPrincipal UserDetails userDetails) {
 
-        RepresentativeTitleResponse response = memberService.getRepresentativeTitle(userDetails.getUsername());
+        RepresentativeTitleResponse response = memberTitleService.getRepresentativeTitle(userDetails.getUsername());
         return ResponseEntity.ok(response);
     }
 
@@ -211,7 +213,7 @@ public class MemberController {
                                                              @AuthenticationPrincipal UserDetails userDetails,
                                                              @RequestBody TitleSelectRequest request) {
 
-        memberService.updateRepresentativeTitle(userDetails.getUsername(), request.getTitleId());
+        memberTitleService.updateRepresentativeTitle(userDetails.getUsername(), request.getTitleId());
         return ResponseEntity.ok("대표 칭호가 변경되었습니다.");
     }
 
