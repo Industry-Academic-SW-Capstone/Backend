@@ -2,8 +2,8 @@ package grit.stockIt.domain.member.controller;
 
 import grit.stockIt.domain.member.dto.*;
 import grit.stockIt.domain.member.service.LocalAuthService;
-import grit.stockIt.domain.member.service.LocalMemberService;
 import grit.stockIt.domain.member.service.MemberNotificationSettingsService;
+import grit.stockIt.domain.member.service.MemberProfileService;
 import grit.stockIt.domain.member.service.MemberTitleService;
 import grit.stockIt.global.jwt.JwtToken;
 import io.swagger.v3.oas.annotations.Operation;
@@ -31,7 +31,7 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 @Tag(name = "Member", description = "회원 관리 API")
 public class MemberController {
 
-    private final LocalMemberService memberService; 
+    private final MemberProfileService memberProfileService;
     private final LocalAuthService localAuthService;
     private final MemberNotificationSettingsService memberNotificationSettingsService;
     private final MemberTitleService memberTitleService;
@@ -53,7 +53,7 @@ public class MemberController {
     @Operation(summary = "이메일 존재 여부 확인", description = "주어진 이메일이 회원으로 등록되어 있는지 확인합니다.")
     @GetMapping("/exists")
     public ResponseEntity<java.util.Map<String, Boolean>> existsByEmail(@RequestParam("email") String email) {
-        boolean exists = memberService.existsByEmail(email);
+        boolean exists = memberProfileService.existsByEmail(email);
         return ResponseEntity.ok(java.util.Collections.singletonMap("exists", exists));
     }
 
@@ -82,7 +82,7 @@ public class MemberController {
         }
 
         String email = auth.getName();
-        MemberResponse resp = memberService.getMemberByEmail(email);
+        MemberResponse resp = memberProfileService.getMemberByEmail(email);
         return ResponseEntity.ok(resp);
     }
 
@@ -96,7 +96,7 @@ public class MemberController {
         }
 
         String email = auth.getName();
-        MemberResponse updated = memberService.updateMember(email, request);
+        MemberResponse updated = memberProfileService.updateMember(email, request);
         return ResponseEntity.ok(updated);
     }
 
@@ -110,7 +110,7 @@ public class MemberController {
         }
 
         String email = auth.getName();
-        var memberOpt = memberService.findMemberEntityByEmail(email);
+        var memberOpt = memberProfileService.findMemberEntityByEmail(email);
         if (memberOpt.isEmpty()) {
             log.error("Authenticated principal not found in DB: email={}", email);
             return ResponseEntity.status(HttpStatus.NOT_FOUND).build();
@@ -222,7 +222,7 @@ public class MemberController {
     @Operation(summary = "설문조사 완료 여부 조회", description = "현재 로그인한 사용자의 설문조사 완료 여부를 반환합니다.")
     public ResponseEntity<java.util.Map<String, Boolean>> getSurveyCompleted(
             @AuthenticationPrincipal UserDetails userDetails) {
-        boolean completed = memberService.getSurveyCompleted(userDetails.getUsername());
+        boolean completed = memberProfileService.getSurveyCompleted(userDetails.getUsername());
         return ResponseEntity.ok(java.util.Collections.singletonMap("survey_completed", completed));
     }
 
@@ -231,7 +231,7 @@ public class MemberController {
     @Operation(summary = "설문조사 완료 처리", description = "설문조사를 완료한 것으로 표시합니다.")
     public ResponseEntity<String> completeSurvey(
             @AuthenticationPrincipal UserDetails userDetails) {
-        memberService.completeSurvey(userDetails.getUsername());
+        memberProfileService.completeSurvey(userDetails.getUsername());
         return ResponseEntity.ok("설문조사가 완료 처리되었습니다.");
     }
 }
