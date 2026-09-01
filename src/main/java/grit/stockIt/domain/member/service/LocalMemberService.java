@@ -1,10 +1,8 @@
 package grit.stockIt.domain.member.service;
 
-import grit.stockIt.domain.account.service.AccountService;
 import grit.stockIt.domain.member.dto.*;
 import grit.stockIt.domain.member.entity.AuthProvider;
 import grit.stockIt.domain.member.entity.Member;
-import grit.stockIt.domain.member.event.MemberRegisteredEvent;
 import grit.stockIt.domain.member.repository.MemberRepository;
 import grit.stockIt.domain.title.entity.Title;
 import grit.stockIt.domain.title.repository.MemberTitleRepository;
@@ -13,7 +11,6 @@ import grit.stockIt.global.jwt.JwtService;
 import grit.stockIt.global.jwt.JwtToken;
 import lombok.RequiredArgsConstructor;
 import java.util.Optional;
-import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -26,8 +23,7 @@ public class LocalMemberService {
     private final MemberRepository memberRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
-    private final AccountService accountService;
-    private final ApplicationEventPublisher eventPublisher;
+    private final MemberRegistrationService memberRegistrationService;
     private final TitleRepository titleRepository;
     private final MemberTitleRepository memberTitleRepository;
 
@@ -55,13 +51,7 @@ public class LocalMemberService {
             .provider(AuthProvider.LOCAL) // 로컬 사용자로 설정
             .build();
 
-        Member savedMember = memberRepository.save(member);
-
-        // 디폴트 계좌 생성 (회원당 1개 보장)
-        accountService.createDefaultAccountForMember(savedMember);
-
-        //  미션 시스템 초기화 (동기 이벤트 — 리스너 예외는 그대로 전파되어 가입 전체 롤백)
-        eventPublisher.publishEvent(new MemberRegisteredEvent(savedMember));
+        Member savedMember = memberRegistrationService.register(member);
 
         return MemberResponse.from(savedMember);
     }

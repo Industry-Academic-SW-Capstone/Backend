@@ -1,6 +1,5 @@
 package grit.stockIt.domain.auth.service;
 
-import grit.stockIt.domain.account.service.AccountService;
 import grit.stockIt.domain.auth.client.KakaoOAuthClient;
 import grit.stockIt.domain.auth.dto.KakaoLoginResponse;
 import grit.stockIt.domain.auth.dto.KakaoSignupResponse;
@@ -9,13 +8,12 @@ import grit.stockIt.domain.auth.dto.KakaoUserInfoResponse;
 import grit.stockIt.domain.auth.entity.KakaoToken;
 import grit.stockIt.domain.member.entity.AuthProvider;
 import grit.stockIt.domain.member.entity.Member;
-import grit.stockIt.domain.member.event.MemberRegisteredEvent;
 import grit.stockIt.domain.member.repository.MemberRepository;
+import grit.stockIt.domain.member.service.MemberRegistrationService;
 import grit.stockIt.global.jwt.JwtService;
 import grit.stockIt.global.jwt.JwtToken;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
@@ -34,8 +32,7 @@ public class KakaoAuthService {
     private final KakaoOAuthClient kakaoOAuthClient;
     private final MemberRepository memberRepository;
     private final JwtService jwtService;
-    private final AccountService accountService;
-    private final ApplicationEventPublisher eventPublisher;
+    private final MemberRegistrationService memberRegistrationService;
 
     /**
      * 카카오 로그인 (비동기 처리)
@@ -101,13 +98,7 @@ public class KakaoAuthService {
                     .provider(AuthProvider.KAKAO)
                     .build();
 
-            Member savedMember = memberRepository.save(member);
-
-            // 디폴트 계좌 생성 (회원당 1개 보장)
-            accountService.createDefaultAccountForMember(savedMember);
-
-            // 미션 초기화 (동기 이벤트 — 리스너 예외는 그대로 전파되어 가입 전체 롤백)
-            eventPublisher.publishEvent(new MemberRegisteredEvent(savedMember));
+            Member savedMember = memberRegistrationService.register(member);
 
             String jwt = jwtService.generateToken(savedMember.getEmail());
             return JwtToken.builder().accessToken(jwt).build();
