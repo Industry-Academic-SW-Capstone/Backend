@@ -3,6 +3,7 @@ package grit.stockIt.domain.member.controller;
 import grit.stockIt.domain.member.dto.*;
 import grit.stockIt.domain.member.service.LocalAuthService;
 import grit.stockIt.domain.member.service.LocalMemberService;
+import grit.stockIt.domain.member.service.MemberNotificationSettingsService;
 import grit.stockIt.global.jwt.JwtToken;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
@@ -31,6 +32,7 @@ public class MemberController {
 
     private final LocalMemberService memberService; 
     private final LocalAuthService localAuthService;
+    private final MemberNotificationSettingsService memberNotificationSettingsService;
     private final grit.stockIt.domain.account.service.AccountService accountService;
     @Operation(summary = "회원가입", description = "새로운 회원을 등록합니다.")
     @PostMapping("/signup")
@@ -127,7 +129,7 @@ public class MemberController {
         }
         
         String email = auth.getName();
-        memberService.updateFcmToken(email, request.getFcmToken());
+        memberNotificationSettingsService.updateFcmToken(email, request.getFcmToken());
         log.info("FCM 토큰 등록/업데이트: email={}", email);
         
         return ResponseEntity.ok("FCM 토큰이 등록되었습니다.");
@@ -143,7 +145,7 @@ public class MemberController {
         }
         
         String email = auth.getName();
-        memberService.removeFcmToken(email);
+        memberNotificationSettingsService.removeFcmToken(email);
         log.info("FCM 토큰 삭제: email={}", email);
         
         return ResponseEntity.ok("FCM 토큰이 삭제되었습니다.");
@@ -159,7 +161,7 @@ public class MemberController {
         }
         
         String email = auth.getName();
-        memberService.updateExecutionNotificationSettings(email, request.isExecutionNotificationEnabled());
+        memberNotificationSettingsService.updateExecutionNotificationSettings(email, request.isExecutionNotificationEnabled());
         log.info("알림 설정 변경: email={}, enabled={}", email, request.isExecutionNotificationEnabled());
         
         return ResponseEntity.ok("알림 설정이 변경되었습니다.");
