@@ -51,6 +51,11 @@ push → CI (모든 브랜치)                CD (main 브랜치만)
 | KIS | `KIS_API_APPKEY`, `KIS_API_APPSECRET` |
 | Kakao | `KAKAO_REST_API_KEY`, `KAKAO_CLIENT_SECRET`, `KAKAO_REDIRECT_URI` |
 | 기타 | `JWT_SECRET`, `FIREBASE_CREDENTIALS_BASE64`, `GEMINI_API_KEY`, `PYTHON_ANALYSIS_URL` |
+| 시큐리티 | `APP_CORS_ALLOWED_ORIGINS`, `APP_ADMIN_EMAILS` |
+
+> `APP_CORS_ALLOWED_ORIGINS`는 배포 필수입니다. 와일드카드 오리진을 더 이상 허용하지
+> 않으므로(자격증명 동반 요청과 함께 쓸 수 없음) 미설정 시 프론트 요청이 전부 막힙니다.
+> `APP_ADMIN_EMAILS`가 비면 관리자 API에 아무도 접근할 수 없습니다(fail-closed).
 
 > `CLAUDE_API_KEY`, `DART_API_KEY`는 로컬 개발 전용이라 운영 배포 시크릿에는 포함되지 않습니다
 > (CI 배포 단계에서 주입하지 않음). 위 목록은 실제 `ci-cd.yml`이 주입하는 시크릿과 일치합니다.
