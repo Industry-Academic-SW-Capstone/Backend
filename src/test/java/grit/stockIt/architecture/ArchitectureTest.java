@@ -39,15 +39,18 @@ class ArchitectureTest {
                     .because("컨트롤러는 리포지토리를 직접 참조하지 않고 서비스를 경유해야 한다"));
 
     @ArchTest
-    static final ArchRule SHARED_REGISTRATION_MUST_NOT_DECLARE_TRANSACTION =
+    static final ArchRule TRANSACTION_PARTICIPANTS_MUST_NOT_DECLARE_CLASS_TRANSACTION =
             noClasses().that().haveSimpleName("MemberRegistrationService")
+                    .or().haveSimpleName("MemberTitleService")
                     .should().beAnnotatedWith(Transactional.class)
-                    .because("공용 회원 등록 절차는 호출자 트랜잭션에 참여해야 하며, 자체 경계를 열면 호출자 롤백과 분리되어 부분 가입이 남는다");
+                    .orShould().beAnnotatedWith(jakarta.transaction.Transactional.class)
+                    .because("호출자 트랜잭션에 참여하는 협력자가 클래스 레벨 경계를 선언하면 호출자 롤백과 분리되어 부분 가입·부분 반영이 남는다");
 
     @ArchTest
     static final ArchRule PARTICIPATING_METHODS_MUST_NOT_DECLARE_TRANSACTION =
             noMethods().that().areDeclaredInClassesThat().haveSimpleName("MemberRegistrationService")
                     .or().haveName("equipRepresentativeTitle")
                     .should().beAnnotatedWith(Transactional.class)
-                    .because("호출자 트랜잭션에 참여하는 메서드가 전파 속성을 선언하면 트랜잭션이 분열되지만, 위임 대상에 save가 없어 어느 테스트도 이를 관측하지 못한다");
+                    .orShould().beAnnotatedWith(jakarta.transaction.Transactional.class)
+                    .because("호출자 트랜잭션에 참여하는 메서드가 전파 속성을 선언하면 트랜잭션이 분열되는데, 어느 테스트도 이를 관측하지 못한다");
 }
