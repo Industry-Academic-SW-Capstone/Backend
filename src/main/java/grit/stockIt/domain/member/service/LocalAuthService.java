@@ -41,7 +41,7 @@ public class LocalAuthService {
             .email(request.getEmail())
             .password(encodedPassword)
             .profileImage(null)
-            .provider(AuthProvider.LOCAL) // 로컬 사용자로 설정
+            .provider(AuthProvider.LOCAL)
             .build();
 
         Member savedMember = memberRegistrationService.register(member);

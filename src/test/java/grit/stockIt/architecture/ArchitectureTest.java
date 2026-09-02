@@ -44,6 +44,7 @@ class ArchitectureTest {
                     .or().haveSimpleName("MemberTitleService")
                     .should().beAnnotatedWith(Transactional.class)
                     .orShould().beAnnotatedWith(jakarta.transaction.Transactional.class)
+                    .orShould().beMetaAnnotatedWith(Transactional.class)
                     .because("호출자 트랜잭션에 참여하는 협력자가 클래스 레벨 경계를 선언하면 호출자 롤백과 분리되어 부분 가입·부분 반영이 남는다");
 
     @ArchTest
@@ -52,5 +53,6 @@ class ArchitectureTest {
                     .or().haveName("equipRepresentativeTitle")
                     .should().beAnnotatedWith(Transactional.class)
                     .orShould().beAnnotatedWith(jakarta.transaction.Transactional.class)
+                    .orShould().beMetaAnnotatedWith(Transactional.class)
                     .because("호출자 트랜잭션에 참여하는 메서드가 전파 속성을 선언하면 트랜잭션이 분열되는데, 어느 테스트도 이를 관측하지 못한다");
 }
