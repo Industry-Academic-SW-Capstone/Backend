@@ -75,7 +75,9 @@ public class SecurityConfig {
             "/api/stocks/*",
             "/api/stocks/*/chart",
             "/api/rankings/main",
-            "/api/rankings/contest/**"
+            // '*'는 한 세그먼트만 매칭한다. '**'로 열면 그 아래 개인 데이터까지 공개된다
+            // — 예: /contest/{id}/members/{id}/portfolio (대회 참가자 보유종목, PR #188).
+            "/api/rankings/contest/*"
     };
 
     /** 관리자 전용 경로. 운영 데이터를 바꾸거나 외부 API 토큰을 다루는 것들이다. */

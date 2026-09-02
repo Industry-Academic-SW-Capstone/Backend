@@ -103,6 +103,15 @@ class SecurityAuthorizationTest extends IntegrationTestSupport {
         }
 
         @Test
+        @DisplayName("대회 랭킹 하위의 개인 포트폴리오는 공개 규칙에 삼켜지지 않는다")
+        void contestMemberPortfolio_isNotSwallowedByPublicRankingRule() throws Exception {
+            // PR #188이 추가하는 경로. 아직 핸들러가 없어도 인가는 매핑보다 먼저 판정되므로
+            // 401이어야 한다 — 공개로 새면 대회 참가자의 보유종목이 그대로 노출된다.
+            mockMvc.perform(get("/api/rankings/contest/1/members/2/portfolio"))
+                    .andExpect(status().isUnauthorized());
+        }
+
+        @Test
         @DisplayName("미션·알림·계좌도 토큰이 없으면 401이다")
         void otherDomains_require401() throws Exception {
             mockMvc.perform(get("/api/missions/dashboard")).andExpect(status().isUnauthorized());
