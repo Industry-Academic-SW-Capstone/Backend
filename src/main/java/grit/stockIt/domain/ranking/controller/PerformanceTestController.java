@@ -8,6 +8,7 @@ import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.annotation.Profile;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -17,6 +18,7 @@ import org.springframework.web.bind.annotation.*;
  * - 테스트 완료 후 이 파일 전체 삭제 예정
  */
 @Slf4j
+@Profile("!prod")
 @RestController
 @RequestMapping("/api/rankings/performance-test")
 @RequiredArgsConstructor
