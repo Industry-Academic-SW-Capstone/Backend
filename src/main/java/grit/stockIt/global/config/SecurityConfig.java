@@ -99,6 +99,14 @@ public class SecurityConfig {
         this.userDetailsService = userDetailsService;
         this.objectMapper = objectMapper;
         this.allowedOrigins = allowedOrigins;
+
+        // 빈 값은 모든 오리진 차단이라 프론트가 통째로 죽는다. 배포 환경에서 환경변수가
+        // 비면 yml 기본값을 덮어써 버리므로, 조용히 굴러가지 말고 기동에서 멈춘다.
+        if (allowedOrigins.isEmpty()) {
+            throw new IllegalStateException(
+                    "app.cors.allowed-origins가 비어 있습니다. APP_CORS_ALLOWED_ORIGINS를 설정하세요 "
+                            + "(예: https://stockit.example.com — 스킴 포함, 끝에 슬래시 없이).");
+        }
     }
 
     @Bean
