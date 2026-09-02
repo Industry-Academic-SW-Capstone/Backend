@@ -113,7 +113,7 @@
 | 우회 | 런타임 효과 | 비고 |
 |---|---|---|
 | 메서드 리네임 후 `REQUIRES_NEW` | 있음 | 규칙이 이름에 고정돼 있다 |
-| 클래스 리네임 후 `REQUIRES_NEW` | 있음 | `MemberRegistrationService` 계열 한정 — 메서드 레벨 규칙은 이름 `equipRepresentativeTitle`을 레포 전체에서 잡으므로 그 leg는 리네임으로 뚫리지 않는다 |
+| 클래스 리네임 후 `REQUIRES_NEW` | 있음 | **클래스 레벨 선언이면 두 계열 모두 뚫린다** — 실측: 리네임한 클래스에 클래스 레벨 `REQUIRES_NEW`를 두고 `equipRepresentativeTitle`을 무애노테이션으로 두면 ArchUnit 4/4 green. 클래스 레벨 규칙은 두 이름에 고정돼 리네임으로 빠지고, 메서드 레벨 규칙은 메서드 선언만 본다. 다만 **메서드 레벨 선언**은 이름 `equipRepresentativeTitle`이 레포 전체로 고정돼 있어 그 이름을 유지하는 한 리네임만으로는 뚫리지 않는다(실측: 임의 이름 클래스의 동명 메서드에서 FAILED) |
 | ~~`@Transactional(REQUIRES_NEW)`로 메타애노테이트한 커스텀 애노테이션~~ | 있음 | **후속 차단** — 두 규칙에 `beMetaAnnotatedWith`를 **Spring·jakarta 두 철자 모두** 추가해 막았다. QA가 jakarta 철자로 뚫었던 벡터까지 재현 검증 |
 | `@Transactional(REQUIRES_NEW)`가 붙은 상위 클래스 상속 | **있음** | `@Inherited`라 Spring은 적용한다 |
 | **`TransactionTemplate`으로 프로그래밍 방식 분열(애노테이션 0개)** | **있음** | **가장 심각** — 애노테이션이 0개라 **어떤 애노테이션 규칙으로도 도달 불가**. ArchUnit 4/4 + 특성화 22/22 + mission 3/3 전부 통과 |
