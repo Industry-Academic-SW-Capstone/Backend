@@ -12,7 +12,6 @@ public class MemberNotificationSettingsService {
 
     private final MemberRepository memberRepository;
 
-    // FCM 토큰 등록/업데이트
     @Transactional
     public void updateFcmToken(String email, String fcmToken) {
         Member member = memberRepository.findByEmail(email)
@@ -22,7 +21,6 @@ public class MemberNotificationSettingsService {
         memberRepository.save(member);
     }
 
-    // FCM 토큰 삭제
     @Transactional
     public void removeFcmToken(String email) {
         Member member = memberRepository.findByEmail(email)
@@ -32,7 +30,6 @@ public class MemberNotificationSettingsService {
         memberRepository.save(member);
     }
 
-    // 체결 알림 설정 변경
     @Transactional
     public void updateExecutionNotificationSettings(String email, boolean enabled) {
         Member member = memberRepository.findByEmail(email)

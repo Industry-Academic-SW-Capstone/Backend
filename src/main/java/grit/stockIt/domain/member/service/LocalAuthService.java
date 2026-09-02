@@ -28,13 +28,10 @@ public class LocalAuthService {
      */
     @Transactional
     public MemberResponse signup(MemberSignupRequest request) {
-        // 이메일 중복 검증
         validateDuplicateEmail(request.getEmail());
 
-        // 비밀번호 암호화
         String encodedPassword = passwordEncoder.encode(request.getPassword());
 
-        // 회원 생성 (로컬 회원)
         String defaultName = request.getEmail() != null && request.getEmail().contains("@")
             ? request.getEmail().split("@")[0]
             : request.getEmail();
@@ -56,16 +53,13 @@ public class LocalAuthService {
      * 로그인 (이메일 + 비밀번호)
      */
     public JwtToken login(MemberLoginRequest request) {
-        // 회원 조회 (이메일)
         Member member = memberRepository.findByEmail(request.getEmail())
                 .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 이메일입니다."));
 
-        // 비밀번호 검증
         if (!passwordEncoder.matches(request.getPassword(), member.getPassword())) {
             throw new IllegalArgumentException("비밀번호가 일치하지 않습니다.");
         }
 
-        // JWT 토큰 생성 (식별자로 이메일 사용)
         String accessToken = jwtService.generateToken(member.getEmail());
         return JwtToken.builder()
                 .accessToken(accessToken)

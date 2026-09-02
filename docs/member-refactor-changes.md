@@ -19,7 +19,7 @@
 | `LocalMemberService` **삭제**(271줄) | public 14개(살아있는 13개)·협력자 7개의 God Class를 5개 서비스로 분해하고 `MemberController`를 직접 재배선 | 위임 간접층 0. 선행 사이클과 달리 원본이 사라지므로 오라클을 컨트롤러 레벨로 올림 |
 | `LocalAuthService` (83줄) | `signup`/`login`/private `validateDuplicateEmail` | `KakaoAuthService`와 대칭 명명 |
 | `MemberRegistrationService` (36줄) | `save → createDefaultAccountForMember → publishEvent` 3단계. Local·Kakao **공용** | 유일하게 외부 소비자와 불변식을 가진 컴포넌트. **트랜잭션 선언 0**(호출자 트랜잭션에 참여) |
-| `MemberProfileService` (101줄) | `updateMember`(단일 `@Transactional` 소유) + 조회 유틸 3 + 설문 2 = 9메서드 | 칭호만 `MemberTitleService`에 위임, `save`는 1회 |
+| `MemberProfileService` (101줄) | `updateMember`(단일 `@Transactional` 소유) + 조회 유틸 3 + 설문 2 = 6메서드 | 칭호만 `MemberTitleService`에 위임, `save`는 1회 |
 | `MemberNotificationSettingsService` (48줄) | FCM 등록/삭제 + 체결알림설정 | |
 | `MemberTitleService` (84줄) | 진입점 3(컨트롤러용 2 + 프로필 위임용 1) + private `findTitle`/`owns` | **클래스 레벨 `@Transactional` 없음**, `equipRepresentativeTitle`은 애노테이션·`save` 모두 0 |
 | `KakaoAuthService` | 가입 3단계를 공용 호출로 치환 | `try/catch(DataIntegrityViolationException)` 경계와 중복 이메일 가드는 **원위치 유지**(옮기면 로컬 경로가 500→400으로 변함) |
@@ -30,8 +30,8 @@
 
 ## 2. 버그 의심 지점 — 사용자 판정 요청
 
-> 라벨은 **`member-a` ~ `member-j`** 네임스페이스를 쓴다. `docs/mission-refactor-changes.md`가 이미 라벨 `a`~`i`를 mission 도메인 버그에 쓰고 있어 충돌을 피하기 위함이다.
-> 아래 10건은 전부 **현재 동작 그대로 고정**(수정 안 함). 수정 승인 시 해당 특성화를 기대값 갱신과 함께 별도 커밋으로 처리한다.
+> 라벨은 **`member-a` ~ `member-k`** 네임스페이스를 쓴다. `docs/mission-refactor-changes.md`가 이미 라벨 `a`~`i`를 mission 도메인 버그에 쓰고 있어 충돌을 피하기 위함이다.
+> 아래 11건은 전부 **현재 동작 그대로 고정**(수정 안 함). member-k는 QA 적대적 탐색에서 뒤늦게 발견돼 특성화가 없다. 수정 승인 시 해당 특성화를 기대값 갱신과 함께 별도 커밋으로 처리한다.
 
 ### 보호 강도 구분
 
@@ -53,25 +53,47 @@
 | **member-g** | `MemberTitleService.updateRepresentativeTitle` 해제 분기 | `save` 없이 early return, 더티 체킹 의존 | 비-null 분기는 명시 `save` — 비대칭(원본에 "확실하게 하려면 추가" 주석이 있었음) | **⚠ 리뷰로만 보호** — 관리 상태 엔티티 + `@Transactional`이라 커밋 시 flush되므로 `save` 유무를 DB·응답 어느 쪽으로도 관측할 수 없다. 두 구현을 구분하는 테스트가 원리적으로 불가능 |
 | **member-h** | `PUT /me`·`PATCH /title` | `@Valid` 누락 | 다른 4개 핸들러엔 있음. 검증 없이 바디를 수용해 DB 제약 위반이 **500**으로 표면화 | **테스트로 동결** (T1-06d가 500 관찰) |
 | **member-i** | 예외 변환 비대칭 | 같은 `DataIntegrityViolationException`이 로컬 가입은 **500**, 카카오 가입은 **400**("회원 저장 실패: …") | 경로에 따라 상태코드가 갈림. 근본 현상은 `docs/mission-refactor-changes.md`의 라벨 `g`(이메일 로컬파트 20자 초과 시 `Member.name varchar(20)` 위반)와 동일하며, 이 문서는 그 **변환 비대칭**을 다룬다 | **테스트로 동결** (T1-08 로컬 500 / T1-09 카카오 400 접두) |
+| **member-k** | `LocalAuthService.validateDuplicateEmail` → `existsByEmail` | 중복 이메일 가드가 **대소문자를 구분**한다(SQL 정확 일치). 대소문자만 다른 이메일로 가입하면 서로 다른 `member_id` 2건이 생성되고 양쪽 다 조회된다 | 사실상 같은 계정이 중복 생성됨. 로그인·조회가 이메일 기준이라 사용자 혼란·계정 분기 가능 | **미동결** — QA 적대적 탐색(P-04)에서 발견된 미기록 결함. 원본에서 그대로 이관된 선행 결함이며 이번 변경의 회귀가 아니다 |
 | **member-j** | `Member` 엔티티 | `@Setter`는 없으나 `setTwoFactorEnabled`·`setSurveyCompleted` 등 **수작업 setter 6종** | `conventions.md` 「엔티티 상태 변경은 의도가 드러나는 도메인 메서드로」의 정신 위반 | **범위 밖** — 리네임 시 `Member.builder()`를 쓰는 12개 테스트 클래스가 영향받아 이번 사이클에서 제외 |
 
-## 2.1 안전망 공백 — 트랜잭션 전파 계약 (실측으로 확인)
+## 2.1 트랜잭션 전파 계약 — 테스트 공백을 ArchUnit으로 해소
 
-> 이것은 버그가 아니라 **테스트가 덮지 못하는 계약**이다. 계획은 뮤테이션 m6가 반드시 red가 될 것으로 예측했으나 실측에서 **반증**됐다.
+> 계획은 뮤테이션 m6가 반드시 red가 될 것으로 예측했으나 **실측에서 반증**됐고, 검증 과정에서 동일 구조의 공백이 **하나 더** 발견됐다. 두 건 모두 구조 규칙으로 닫았다.
 
-| 항목 | 내용 |
-|------|------|
-| 계약 | `MemberRegistrationService.register`는 **자체 트랜잭션을 열지 않고** 호출자(`LocalAuthService.signup`, `KakaoAuthService.completeSignup`)의 트랜잭션에 참여해야 한다 |
-| 뮤테이션 m6 | `register`에 `@Transactional(propagation = REQUIRES_NEW)` 부여 → **mission 롤백 전파 테스트가 green으로 살아남음**(`--rerun-tasks` 재현 동일) |
-| 왜 못 잡는가 | 롤백 오라클은 미션 리스너가 **`register` 내부에서** 예외를 던지도록 스텁한다. `REQUIRES_NEW`여도 그 내부 트랜잭션이 rollback-only로 표시돼 함께 롤백되므로, 관측 가능한 DB 상태(member 부재·account 불변)가 `REQUIRED`와 **바이트 동일**하다 |
-| 프록시 아티팩트 아님 | 대조군으로 같은 메서드에 `Propagation.NEVER`를 적용하자 mission 3/3이 `IllegalTransactionStateException`으로 red. **프록시와 전파 메타데이터는 런타임에 정상 동작**하므로 m6 생존은 진짜 커버리지 공백이다 |
-| 추가 확인 | `register` **이후** 호출자 실패를 주입해 `REQUIRES_NEW`와 `REQUIRED`를 비교(m6′)했으나 실패 시그니처가 바이트 동일. 기존 두 스위트 어디에도 "호출자 실패 후 행 부재"를 단언하는 오라클이 없다 |
-| 현재 보호 수단 | **⚠ 리뷰로만 보호** — 계획 §3.6 트랜잭션 애노테이션 확정표(`register`는 클래스·메서드 양쪽에 선언 0)와 코드 리뷰가 유일한 방어선이다 |
-| 후속 권고 | 이 계약을 테스트로 고정하려면 "`register` 성공 직후 호출자가 실패하면 member·account 행이 남지 않는다"를 단언하는 신규 테스트가 필요하다. 이번 사이클은 특성화 스위트를 오라클로 동결한 상태라 신규 테스트 표면을 발명하지 않고 공백으로 기록한다 |
+### 계열 한계 — 단건이 아니었다
 
-반면 **예외 변환 경계는 테스트로 보호된다** — m7(카카오의 `catch(DataIntegrityViolationException)`를 공용 유닛으로 이동)은 `T1-08`이 `Status expected:<500> but was:<400>`으로 즉시 red가 됐다.
+| 뮤테이션 | 대상 | 결과 |
+|---|---|---|
+| **m6** | `MemberRegistrationService.register`에 `REQUIRES_NEW` | 생존 — mission 롤백 테스트 green |
+| **m8** | `MemberTitleService.equipRepresentativeTitle`에 `REQUIRES_NEW`(= 계획이 두려워한 분열 그 자체) | 생존 — `T1-06d` 포함 전 행 green |
 
-또한 **이벤트 발행 경계는 mission 통합테스트만이 보호한다** — m4(`publishEvent` 삭제)에서 mission 3/3이 red가 되는 동안 컨트롤러 특성화 22/22는 green을 유지했다. 분해 후에도 이 비대칭이 그대로 재확인됐다.
+공통 원인은 하나다: **위임 대상이 `save`를 갖지 않으면 전파 변이가 관측되지 않는다.** 새 트랜잭션을 열어도 커밋할 변경이 없어 DB 상태가 동일하기 때문이다.
+
+두 경우 모두 프록시 아티팩트가 아님을 대조군으로 입증했다 — 같은 메서드에 `Propagation.NEVER`를 적용하면 `IllegalTransactionStateException`으로 red가 된다(m6-control 6 red, m8-control 2 red). 프록시와 전파 메타데이터는 런타임에 정상 동작한다.
+
+### `T1-06d`의 실제 판별력 (수용 기준표 정정 근거)
+
+당초 이 문서는 "`T1-06d` 통과 = 트랜잭션 분열 없음"으로 적었으나 **실험으로 반증**됐다.
+
+- m8(분열 도입) → `T1-06d` **green**
+- m8-control(`NEVER`로 위임을 완전 파손) → `T1-06d` **여전히 green**
+
+즉 `T1-06d`는 **정상 동작과 완전 파손을 같은 색으로 보고**한다. 회원이 `representative_title_id=null`로 시작하고 요청이 항상 500으로 끝나므로, red가 되려면 중첩 트랜잭션이 칭호를 **커밋**해야 하는데 위임 대상에 `save`가 없어 그럴 수 없다. `T1-06d`는 **칭호 커밋 누출을 막는 관측점**일 뿐이며 분열 부재의 증명이 아니다.
+
+### 해소 — ArchUnit 구조 규칙으로 빌드 강제화
+
+테스트로 관측할 수 없는 계약이므로 **구조 규칙**으로 고정했다. 동결된 특성화 스위트는 건드리지 않고 `ArchitectureTest`에 규칙 2개를 추가했다.
+
+- `SHARED_REGISTRATION_MUST_NOT_DECLARE_TRANSACTION` — `MemberRegistrationService` 클래스에 `@Transactional` 금지
+- `PARTICIPATING_METHODS_MUST_NOT_DECLARE_TRANSACTION` — `MemberRegistrationService`의 메서드와 `equipRepresentativeTitle`에 `@Transactional` 금지
+
+**검증**: m6·m8을 각각 재현하자 둘 다 `PARTICIPATING_METHODS_MUST_NOT_DECLARE_TRANSACTION`이 **FAILED**로 잡았다. 계열 공백이 "리뷰로만 보호"에서 **"빌드 강제"**로 승격됐다. 새 규칙은 통과하므로 `archunit_store` 항목을 추가하지 않는다.
+
+### 반면 살아있는 보호
+
+**예외 변환 경계는 테스트로 보호된다** — m7(카카오의 `catch(DataIntegrityViolationException)`를 공용 유닛으로 이동)은 `T1-08`이 `Status expected:<500> but was:<400>`으로 즉시 red가 됐다.
+
+**이벤트 발행 경계는 mission 통합테스트만이 보호한다** — m4(`publishEvent` 삭제)에서 mission 3/3이 red가 되는 동안 컨트롤러 특성화 22/22는 green을 유지했다.
 
 ### 이전 사이클 대장과의 관계
 
@@ -93,7 +115,8 @@
 | 하이브리드 오라클(정상=컨트롤러 직접 호출 / 에러=`standaloneSetup` MockMvc) | A0 3조건 통과 — T1-02a가 400 + `text/plain` 순수 문자열로 컨트롤러 로컬 `@ExceptionHandler` 우선을 실증, T1-07c가 400으로 객체 principal 주입 확인, U-03이 500 JSON 재현 |
 | 특성화 매트릭스 | 22 메서드 / **31행** 전량 green (Tier1 21 · Tier2 7 · 미인증 3) + 기존 mission 3건 재사용 |
 | **커밋마다 특성화 무수정 green** | Phase B 7커밋 전 구간 `charac-base` 대비 **diff 무출력 + 0커밋**(G1a ∧ G1b), 커밋마다 22/22 + mission 3/3 green |
-| 트랜잭션 경계 보존 | **T1-06d** — 칭호 반영 후 flush 실패 시 500 + **DB 칭호 불변**. 위임 도입 후에도 통과 = 트랜잭션 분열 없음 |
+| 칭호 커밋 누출 방지 | **T1-06d** — 칭호 반영 후 flush 실패 시 500 + **DB 칭호 불변**. 단 이 행은 칭호가 독립 커밋되는 사태만 감지하며 **트랜잭션 분열 부재의 증명은 아니다**(§2.1) |
+| 트랜잭션 전파 계약 보존 | **ArchUnit 구조 규칙 2개** — `MemberRegistrationService`(클래스·메서드)와 `equipRepresentativeTitle`에 `@Transactional` 선언 금지. m6·m8 재현 시 둘 다 FAILED로 잡힘을 실측 확인 |
 | 예외 경계 보존 | **T1-08**(로컬 500 미변환) / **T1-09**(카카오 400 접두 변환) |
 | 안전망 진짜(토톨로지 아님) | 뮤테이션 7종 중 **6종 kill**(m1·m2·m3·m4·m5·m7 각각 목표 행 red 후 원복). **m6 생존** — 트랜잭션 전파 계약이 테스트로 덮이지 않음을 실측 확인(§2.1). 대조군 `Propagation.NEVER`가 red가 되어 프록시 정상 동작을 입증했으므로 생존은 진짜 공백이다 |
 | 5서비스 라인 커버리지 ≥70% | **100.00%** (99/99): 5개 서비스 전부 100% |

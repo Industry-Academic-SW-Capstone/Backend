@@ -37,22 +37,18 @@ public class MemberTitleService {
         Member member = memberRepository.findByEmail(email)
                 .orElseThrow(() -> new IllegalArgumentException("회원을 찾을 수 없습니다."));
 
-        // 1. 해제 요청
         if (titleId == null) {
             member.updateRepresentativeTitle(null);
             // 더티 체킹으로 반영되므로 저장 호출 없이 종료
             return;
         }
 
-        // 2. 칭호 조회
         Title title = findTitle(titleId);
 
-        // 3. 보유 여부 검증
         if (!owns(member, title)) {
             throw new IllegalArgumentException("획득하지 않은 칭호는 장착할 수 없습니다.");
         }
 
-        // 4. 업데이트 수행
         member.updateRepresentativeTitle(title);
 
         memberRepository.save(member);

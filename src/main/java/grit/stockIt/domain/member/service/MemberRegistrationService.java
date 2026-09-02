@@ -25,7 +25,6 @@ public class MemberRegistrationService {
     public Member register(Member member) {
         Member savedMember = memberRepository.save(member);
 
-        // 디폴트 계좌 생성 (회원당 1개 보장)
         accountService.createDefaultAccountForMember(savedMember);
 
         //  미션 시스템 초기화 (동기 이벤트 — 리스너 예외는 그대로 전파되어 가입 전체 롤백)

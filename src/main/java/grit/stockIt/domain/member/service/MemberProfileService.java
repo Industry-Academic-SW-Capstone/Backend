@@ -29,7 +29,6 @@ public class MemberProfileService {
         Member member = memberRepository.findByEmail(email)
                 .orElseThrow(() -> new IllegalArgumentException("회원을 찾을 수 없습니다."));
 
-        // update optional profile fields
         if (request.getName() != null || request.getProfileImage() != null) {
             member.updateProfile(request.getName(), request.getProfileImage());
         }
@@ -82,7 +81,6 @@ public class MemberProfileService {
         return memberRepository.findByEmail(email);
     }
 
-    // 설문조사 완료 여부 조회
     @Transactional(readOnly = true)
     public boolean getSurveyCompleted(String email) {
         Member member = memberRepository.findByEmail(email)
@@ -90,7 +88,6 @@ public class MemberProfileService {
         return member.isSurveyCompleted();
     }
 
-    // 설문조사 완료 처리
     @Transactional
     public void completeSurvey(String email) {
         Member member = memberRepository.findByEmail(email)
