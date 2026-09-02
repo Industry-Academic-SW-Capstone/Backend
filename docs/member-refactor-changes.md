@@ -113,11 +113,11 @@
 | 우회 | 런타임 효과 | 비고 |
 |---|---|---|
 | 메서드 리네임 후 `REQUIRES_NEW` | 있음 | 규칙이 이름에 고정돼 있다 |
-| 클래스 리네임 후 `REQUIRES_NEW` | 있음 | 〃 |
+| 클래스 리네임 후 `REQUIRES_NEW` | 있음 | `MemberRegistrationService` 계열 한정 — 메서드 레벨 규칙은 이름 `equipRepresentativeTitle`을 레포 전체에서 잡으므로 그 leg는 리네임으로 뚫리지 않는다 |
 | ~~`@Transactional(REQUIRES_NEW)`로 메타애노테이트한 커스텀 애노테이션~~ | 있음 | **후속 차단** — 두 규칙에 `beMetaAnnotatedWith`를 **Spring·jakarta 두 철자 모두** 추가해 막았다. QA가 jakarta 철자로 뚫었던 벡터까지 재현 검증 |
 | `@Transactional(REQUIRES_NEW)`가 붙은 상위 클래스 상속 | **있음** | `@Inherited`라 Spring은 적용한다 |
-| **`TransactionTemplate`으로 프로그래밍 방식 분열(애노테이션 0개)** | **있음** | **가장 심각** — ArchUnit 4/4 + 특성화 22/22 + mission 3/3 전부 통과 |
-| 인터페이스에 선언 | **있음** | 당초 "CGLIB가 무시하므로 약함"으로 적었으나 QA 실측(G5-C6)이 반증 — `NEVER` 대조군에서 mission 3/3이 `IllegalTransactionStateException`으로 red. 런타임 효과는 완전하다 |
+| **`TransactionTemplate`으로 프로그래밍 방식 분열(애노테이션 0개)** | **있음** | **가장 심각** — 애노테이션이 0개라 **어떤 애노테이션 규칙으로도 도달 불가**. ArchUnit 4/4 + 특성화 22/22 + mission 3/3 전부 통과 |
+| 인터페이스에 선언 | **있음** | 당초 "CGLIB가 무시하므로 약함"으로 적었으나 QA 실측(G5-C6)이 반증 — `NEVER` 대조군(mission 스위트 한정)에서 3/3이 `IllegalTransactionStateException`으로 red. **측정된 사실은 "인터페이스 선언이 프록시에 해석된다"**이고, `REQUIRES_NEW` 분열은 같은 기전에 따른 추론이다 |
 
 따라서 정확한 표현은 **"계열 공백이 완전히 닫혔다"가 아니라 "가장 흔한 애노테이션 철자 벡터가 빌드에서 차단된다"**이다. 전파 계약 자체는 여전히 코드 리뷰가 최종 방어선이다. 가장 흔한 애노테이션 벡터에 한해 "리뷰로만 보호"에서 **"빌드 차단"**으로 승격됐다(잔존 우회 5종은 위 표 참조). 새 규칙은 `FreezingArchRule`이 아닌 일반 `ArchRule`이라 `archunit_store`에 항목을 쓰지 않는다.
 
