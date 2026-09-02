@@ -25,13 +25,13 @@
 | `KakaoAuthService` | 가입 3단계를 공용 호출로 치환 | `try/catch(DataIntegrityViolationException)` 경계와 중복 이메일 가드는 **원위치 유지**(옮기면 로컬 경로가 500→400으로 변함) |
 | `MemberController` | 주입 2 → 5, 엔드포인트 14개 시그니처·응답·401 분기 **불변** | API 주소·요청·응답 계약 불변 |
 | `MemberSignupMissionFlowIntegrationTest` | 주입 대상 교체 4행(import·필드·호출 2) | 단언·`@MockitoSpyBean`·`@Sql`·`uniqueEmail` 무수정 |
-| 주석 정리 | `MemberController`의 diff 흔적 주석 5곳(별도 커밋) + 신규 5서비스로 이관된 코드 반복 주석 19곳 | `docs/conventions.md` 「주석」 준수. 코드 토큰 변경 0. 제약·의도 주석 3건은 보존 |
+| 주석 정리 | `MemberController`의 diff 흔적 주석 5곳(별도 커밋) + 신규 5서비스로 이관된 코드 반복 주석 일괄 제거 | `docs/conventions.md` 「주석」 준수. 코드 토큰 변경 0. 제약·의도 주석 3건은 보존 |
 | `suppressions.xml` | `LocalMemberService`의 `AvoidStarImport` 항목 **삭제** | 신규 추가 0. 「품질 도구」 절의 "정리하면 항목을 제거합니다"와 일치 |
 
 ## 2. 버그 의심 지점 — 사용자 판정 요청
 
 > 라벨은 **`member-a` ~ `member-m`** 네임스페이스를 쓴다. member-l·member-m은 QA 적대적 탐색에서 발견돼 §2.2에 있다. `docs/mission-refactor-changes.md`가 이미 라벨 `a`~`i`를 mission 도메인 버그에 쓰고 있어 충돌을 피하기 위함이다.
-> 아래 11건과 §2.2의 2건, 총 **13건**은 전부 **현재 동작 그대로 고정**(수정 안 함). member-k·l·m은 QA 적대적 탐색에서 뒤늦게 발견돼 특성화가 없다. 수정 승인 시 해당 특성화를 기대값 갱신과 함께 별도 커밋으로 처리한다.
+> 아래 11건과 §2.2의 2건, 총 **13건**(§2.2의 무라벨 1건 제외)은 전부 **현재 동작 그대로 고정**(수정 안 함). member-k·l·m은 QA 적대적 탐색에서 뒤늦게 발견돼 특성화가 없다. 수정 승인 시 해당 특성화를 기대값 갱신과 함께 별도 커밋으로 처리한다.
 
 ### 보호 강도 구분
 
@@ -40,7 +40,7 @@
 - **테스트로 동결** — 특성화가 현재 동작을 단언하므로, 수정하면 즉시 red가 되어 의도치 않은 변경이 차단된다.
 - **리뷰로만 보호** — 관측 가능한 표면이 없어 테스트가 두 구현을 구분하지 못한다. 코드 리뷰만이 방어선이다.
 
-뮤테이션 red-team 7종 중 **6종이 목표 행을 red로 만들었고 1종(m6)이 살아남았다**. 살아남은 항목은 아래 §2.1에 별도로 기록한다.
+계획이 지정한 뮤테이션 **m1~m7 중 6종이 목표 행을 red로 만들었고 m6가 살아남았다**. 검증 과정에서 동일 계열의 **m8이 추가로 발견돼 생존은 2종**이다. 둘 다 §2.1에 기록한다.
 
 | # | 지점 | 현재 동작 | 왜 의심스러운가 | 보호 강도 |
 |---|------|----------|----------------|----------|
@@ -52,13 +52,13 @@
 | **member-f** | 칭호 2경로의 null 시맨틱스 | `updateMember`는 `representativeTitleId=null`이면 **무시**, `updateRepresentativeTitle`은 `titleId=null`이면 **해제** | 같은 필드의 null이 정반대 의미 | **테스트로 동결** (T1-05b vs T1-07b) |
 | **member-g** | `MemberTitleService.updateRepresentativeTitle` 해제 분기 | `save` 없이 early return, 더티 체킹 의존 | 비-null 분기는 명시 `save` — 비대칭(원본에 "확실하게 하려면 추가" 주석이 있었음) | **⚠ 리뷰로만 보호** — 관리 상태 엔티티 + `@Transactional`이라 커밋 시 flush되므로 `save` 유무를 DB·응답 어느 쪽으로도 관측할 수 없다. 두 구현을 구분하는 테스트가 원리적으로 불가능 |
 | **member-h** | `PUT /me`·`PATCH /title` | `@Valid` 누락 | 다른 4개 핸들러엔 있음. 검증 없이 바디를 수용해 DB 제약 위반이 **500**으로 표면화 | **테스트로 동결** (T1-06d가 500 관찰) |
-| **member-i** | 예외 변환 비대칭 | 같은 제약 위반이 로컬 가입에서는 `DataIntegrityViolationException`으로, 카카오 가입에서는 `IllegalArgumentException`("회원 저장 실패: …")으로 전파된다. **단 HTTP 표면에서는 양쪽 모두 500이다** | 비대칭은 **서비스 계층 예외 타입에만** 존재한다. 카카오는 `KakaoAuthController`를 지나는데 이 컨트롤러에 로컬 `@ExceptionHandler`가 없고 `GlobalExceptionHandler`에도 `IllegalArgumentException` 핸들러가 없어 `handleAll`로 떨어진다. 400은 `MemberController:183`의 로컬 핸들러를 지나는 경로에서만 나온다. 번역 메시지는 클라이언트에 도달하지 않는다. 근본 현상은 `docs/mission-refactor-changes.md`의 라벨 `g`와 동일 | **테스트로 동결(예외 타입 축만)** — T1-08 로컬 HTTP 500 / T1-09 카카오 서비스 계층 예외 타입. **상태 코드 축에는 관측 지점이 없다**(§3 참조) |
+| **member-i** | 예외 변환 비대칭 | 같은 제약 위반이 로컬 가입에서는 `DataIntegrityViolationException`으로, 카카오 가입에서는 `IllegalArgumentException`("회원 저장 실패: …")으로 전파된다. **단 HTTP 표면에서는 양쪽 모두 500이다** | 비대칭은 **서비스 계층 예외 타입에만** 존재한다. 카카오는 `KakaoAuthController`를 지나는데 이 컨트롤러에 로컬 `@ExceptionHandler`가 없고 `GlobalExceptionHandler`에도 `IllegalArgumentException` 핸들러가 없어 `handleAll`로 떨어진다. 가입 경로에서 400은 `MemberController:183`의 로컬 핸들러를 지날 때만 나온다(레포 전체로는 `RankingController:116`에도 동일 핸들러가 있다). 번역 메시지는 클라이언트에 도달하지 않는다. 근본 현상은 `docs/mission-refactor-changes.md`의 라벨 `g`와 동일 | **테스트로 동결(예외 타입 축만)** — T1-08 로컬 HTTP 500 / T1-09 카카오 서비스 계층 예외 타입. **상태 코드 축에는 관측 지점이 없다**(§4 「예외 경계 보존」 참조) |
 | **member-j** | `Member` 엔티티 | `@Setter`는 없으나 `setTwoFactorEnabled`·`setSurveyCompleted` 등 **수작업 setter 6종** | `conventions.md` 「엔티티 상태 변경은 의도가 드러나는 도메인 메서드로」의 정신 위반 | **범위 밖** — 리네임 시 `Member.builder()`를 쓰는 12개 테스트 클래스가 영향받아 이번 사이클에서 제외 |
 | **member-k** | `LocalAuthService.validateDuplicateEmail` → `existsByEmail` | 중복 이메일 가드가 **대소문자를 구분**한다(SQL 정확 일치). 대소문자만 다른 이메일로 가입하면 서로 다른 `member_id` 2건이 생성되고 양쪽 다 조회된다 | 사실상 같은 계정이 중복 생성됨. 로그인·조회가 이메일 기준이라 사용자 혼란·계정 분기 가능 | **미동결** — QA 적대적 탐색(P-04)에서 발견된 미기록 결함. 원본에서 그대로 이관된 선행 결함이며 이번 변경의 회귀가 아니다 |
 
-## 2.1 트랜잭션 전파 계약 — 테스트 공백을 ArchUnit으로 해소
+## 2.1 트랜잭션 전파 계약 — 테스트 공백과 ArchUnit의 부분 차단
 
-> 계획은 뮤테이션 m6가 반드시 red가 될 것으로 예측했으나 **실측에서 반증**됐고, 검증 과정에서 동일 구조의 공백이 **하나 더** 발견됐다. 두 건 모두 구조 규칙으로 닫았다.
+> 계획은 뮤테이션 m6가 반드시 red가 될 것으로 예측했으나 **실측에서 반증**됐고, 검증 과정에서 동일 구조의 공백이 **하나 더** 발견됐다. 두 건 모두 구조 규칙으로 **가장 흔한 애노테이션 벡터에 한해** 차단했다(우회 잔존 5종).
 
 ### 계열 한계 — 단건이 아니었다
 
@@ -72,7 +72,7 @@
 - **m6** — `register`는 `save`를 실제로 호출한다. 그런데 롤백 오라클은 미션 리스너가 **`register` 내부에서** 예외를 던지도록 스텁하므로, `REQUIRES_NEW`로 연 내부 트랜잭션도 rollback-only로 표시돼 함께 롤백된다. 결과적으로 관측 DB 상태가 `REQUIRED`와 바이트 동일하다.
 - **m8** — `T1-06d`의 관측 구조 자체가 분열을 판별하지 못한다. 회원이 `representative_title_id=null`로 시작하고 요청이 항상 500으로 끝나므로 이 행이 red가 되려면 중첩 트랜잭션이 칭호를 커밋해야 하는데, 그 조건이 성립해도 관측되지 않았다. **QA가 `equipRepresentativeTitle`에 `REQUIRES_NEW`와 명시적 `save`를 함께 넣어 실측했으나 특성화 22/22가 여전히 green**이었다(O3). 따라서 "위임 대상에 `save`가 없어서"라는 초기 설명은 불충분하다.
 
-**m6′ 후속 실험**: m6의 계약("`register`는 호출자와 독립적으로 커밋하면 안 된다")을 실제로 반증하려면 실패가 `register` **이후** 호출자에서 나야 한다. `REQUIRES_NEW` + 호출자 실패와 `REQUIRED` + 동일 실패를 비교했으나 **실패 시그니처가 바이트 동일**했다 — 두 오라클 스위트 어디에도 "호출자 실패 후 member·account 행 부재"를 단언하는 테스트가 없기 때문이다. 이 사이클은 특성화 스위트를 동결 오라클로 쓰므로 신규 테스트 표면을 발명하지 않고 공백으로 기록한 뒤 구조 규칙으로 닫았다.
+**m6′ 후속 실험**: m6의 계약("`register`는 호출자와 독립적으로 커밋하면 안 된다")을 실제로 반증하려면 실패가 `register` **이후** 호출자에서 나야 한다. `REQUIRES_NEW` + 호출자 실패와 `REQUIRED` + 동일 실패를 비교했으나 **실패 시그니처가 바이트 동일**했다 — 두 오라클 스위트 어디에도 "호출자 실패 후 member·account 행 부재"를 단언하는 테스트가 없기 때문이다. 이 사이클은 특성화 스위트를 동결 오라클로 쓰므로 신규 테스트 표면을 발명하지 않고 공백으로 기록한 뒤 구조 규칙으로 일부를 차단했다.
 
 두 경우 모두 프록시 아티팩트가 아님을 대조군으로 입증했다 — 같은 메서드에 `Propagation.NEVER`를 적용하면 `IllegalTransactionStateException`으로 red가 된다(m6-control 6 red, m8-control 2 red). 프록시와 전파 메타데이터는 런타임에 정상 동작한다.
 
@@ -85,7 +85,7 @@
 
 즉 `T1-06d`는 **정상 동작과 완전 파손을 같은 색으로 보고**한다. 회원이 `representative_title_id=null`로 시작하고 요청이 항상 500으로 끝나므로, red가 되려면 중첩 트랜잭션이 칭호를 **커밋**해야 하는데, `save`를 명시적으로 넣어 그 조건을 만들어도 여전히 green이었다(O3). `T1-06d`는 **칭호 커밋 누출을 막는 관측점**일 뿐이며 분열 부재의 증명이 아니다.
 
-### 해소 — ArchUnit 구조 규칙으로 빌드 강제화
+### 부분 차단 — ArchUnit 구조 규칙
 
 테스트로 관측할 수 없는 계약이므로 **구조 규칙**으로 고정했다. 동결된 특성화 스위트는 건드리지 않고 `ArchitectureTest`에 규칙 2개를 추가했다.
 
@@ -113,12 +113,12 @@
 |---|---|---|
 | 메서드 리네임 후 `REQUIRES_NEW` | 있음 | 규칙이 이름에 고정돼 있다 |
 | 클래스 리네임 후 `REQUIRES_NEW` | 있음 | 〃 |
-| ~~`@Transactional(REQUIRES_NEW)`로 메타애노테이트한 커스텀 애노테이션~~ | 있음 | **후속 차단** — `beMetaAnnotatedWith`를 두 규칙에 추가해 막았다 |
+| ~~`@Transactional(REQUIRES_NEW)`로 메타애노테이트한 커스텀 애노테이션~~ | 있음 | **후속 차단** — 두 규칙에 `beMetaAnnotatedWith`를 **Spring·jakarta 두 철자 모두** 추가해 막았다. QA가 jakarta 철자로 뚫었던 벡터까지 재현 검증 |
 | `@Transactional(REQUIRES_NEW)`가 붙은 상위 클래스 상속 | **있음** | `@Inherited`라 Spring은 적용한다 |
 | **`TransactionTemplate`으로 프로그래밍 방식 분열(애노테이션 0개)** | **있음** | **가장 심각** — ArchUnit 4/4 + 특성화 22/22 + mission 3/3 전부 통과 |
 | 인터페이스에 선언 | 약함 | Boot 기본 CGLIB 프록시가 인터페이스 선언을 무시 |
 
-따라서 정확한 표현은 **"계열 공백이 완전히 닫혔다"가 아니라 "가장 흔한 애노테이션 철자 벡터가 빌드에서 차단된다"**이다. 전파 계약 자체는 여전히 코드 리뷰가 최종 방어선이다. 가장 흔한 애노테이션 벡터에 한해 "리뷰로만 보호"에서 **"빌드 차단"**으로 승격됐다(우회 6종은 아래 참조). 새 규칙은 `FreezingArchRule`이 아닌 일반 `ArchRule`이라 `archunit_store`에 항목을 쓰지 않는다.
+따라서 정확한 표현은 **"계열 공백이 완전히 닫혔다"가 아니라 "가장 흔한 애노테이션 철자 벡터가 빌드에서 차단된다"**이다. 전파 계약 자체는 여전히 코드 리뷰가 최종 방어선이다. 가장 흔한 애노테이션 벡터에 한해 "리뷰로만 보호"에서 **"빌드 차단"**으로 승격됐다(잔존 우회 5종은 위 표 참조). 새 규칙은 `FreezingArchRule`이 아닌 일반 `ArchRule`이라 `archunit_store`에 항목을 쓰지 않는다.
 
 ### 반면 살아있는 보호
 
@@ -132,7 +132,7 @@
 
 | # | 지점 | 관측된 동작 | 왜 문제인가 | 보호 강도 |
 |---|------|------------|------------|----------|
-| **member-l** | `PUT /me` 이름 검증 | `{"name":""}`와 `{"name":"    "}`가 **200으로 수락되어 DB에 그대로 영속**된다 | 가입은 `@NotBlank`를 강제하므로 **가입으로는 만들 수 없는 상태를 수정으로 만들 수 있다**. member-h(`@Valid` 누락)의 미관측 방향 | **미동결** — `T1-06d`는 21자 → 500 방향만 동결한다 |
+| **member-l** | `PUT /me` 이름 검증 | `{"name":""}`와 `{"name":"    "}`가 **200으로 수락되어 DB에 그대로 영속**된다 | 가입 경로는 이름을 `@NotBlank`·`@Email` 검증을 거친 이메일 로컬파트에서 파생하므로 **가입으로는 만들 수 없는 상태를 수정으로 만들 수 있다**. member-h(`@Valid` 누락)의 미관측 방향이나, `MemberUpdateRequest`에 제약 애노테이션이 0개라 `@Valid`만 붙여서는 해소되지 않는다 | **미동결** — `T1-06d`는 21자 → 500 방향만 동결한다 |
 | **member-m** | `PATCH /title` 필드 생략 | 본문 `{}`를 보내면 명시적 `null`과 **동일하게 대표 칭호가 해제**된다 | "생략"과 "명시적 해제"가 구분되지 않는다. member-f의 null 시맨틱스 문제가 한 단계 더 확장된 형태 | **미동결** |
 | — | `MemberProfileService`의 바깥 null 가드 | `Member.updateProfile` 내부 가드와 **중복된 죽은 방어 코드**(동등 뮤테이션으로 확인) | 두 가드를 동시에 제거해야만 오라클이 반응한다. 혼합 null/non-null 프로필 갱신을 단언하는 특성화 행이 0개 | **원문 이동이라 이번 사이클 무수정** |
 
@@ -140,7 +140,7 @@
 
 ### 이전 사이클 대장과의 관계
 
-`docs/mission-refactor-changes.md`의 라벨 `g`(`LocalMemberService.signup` + `Member.name varchar(20)`)는 이 문서의 **member-i**와 같은 근본 현상을 가리킨다. mission 사이클은 "가입 자체가 실패할 수 있다"는 현상을, 이 문서는 "그 실패가 경로에 따라 500/400으로 갈린다"는 변환 비대칭을 기록한다. 해당 문서의 지점 표기(`LocalMemberService.signup`)는 이번 리팩토링으로 `LocalAuthService.signup` + `MemberRegistrationService.register`로 이동했다.
+`docs/mission-refactor-changes.md`의 라벨 `g`(`LocalMemberService.signup` + `Member.name varchar(20)`)는 이 문서의 **member-i**와 같은 근본 현상을 가리킨다. mission 사이클은 "가입 자체가 실패할 수 있다"는 현상을, 이 문서는 "그 실패가 경로에 따라 서로 다른 예외 타입으로 전파된다"는 비대칭을 기록한다. **HTTP 상태 코드는 양쪽 모두 500으로 동일하다**(§2 member-i). 해당 문서의 지점 표기(`LocalMemberService.signup`)는 이번 리팩토링으로 `LocalAuthService.signup` + `MemberRegistrationService.register`로 이동했다.
 
 ## 3. 계획 대비 편차 기록
 
@@ -159,9 +159,9 @@
 | 특성화 매트릭스 | 22 메서드 / **31행** 전량 green (Tier1 21 · Tier2 7 · 미인증 3) + 기존 mission 3건 재사용 |
 | **커밋마다 특성화 무수정 green** | Phase B 7커밋 전 구간 `charac-base` 대비 **diff 무출력 + 0커밋**(G1a ∧ G1b), 커밋마다 22/22 + mission 3/3 green |
 | 칭호 커밋 누출 방지 | **T1-06d** — 칭호 반영 후 flush 실패 시 500 + **DB 칭호 불변**. 단 이 행은 칭호가 독립 커밋되는 사태만 감지하며 **트랜잭션 분열 부재의 증명은 아니다**(§2.1) |
-| 트랜잭션 전파 계약 | **ArchUnit 구조 규칙 2개** — `MemberRegistrationService`·`MemberTitleService` 클래스 레벨과 `MemberRegistrationService`의 메서드·`equipRepresentativeTitle` 메서드 레벨에서 `org.springframework`·`jakarta` 두 애노테이션을 모두 금지. 직접 벡터 7종 차단 확인. **단 리네임·메타애노테이션·상속·`TransactionTemplate` 우회 6종은 막지 못한다**(§2.1) |
+| 트랜잭션 전파 계약 | **ArchUnit 구조 규칙 2개** — `MemberRegistrationService`·`MemberTitleService` 클래스 레벨과 `MemberRegistrationService`의 메서드·`equipRepresentativeTitle` 메서드 레벨에서 `org.springframework`·`jakarta` 두 애노테이션을 모두 금지. 직접 벡터 7종 차단 확인. **단 리네임 2종·상속·`TransactionTemplate`·인터페이스 선언 우회 5종은 막지 못한다**(메타애노테이션 1종은 후속 차단, §2.1) |
 | 예외 경계 보존 | **T1-08**(로컬 경로 HTTP 500, 변환 없음) / **T1-09**(카카오 경로 서비스 계층에서 `IllegalArgumentException` + "회원 저장 실패: " 접두). **HTTP 상태 코드는 양쪽 500으로 동일**하므로 이 두 행은 예외 타입 축만 동결한다 |
-| 안전망 진짜(토톨로지 아님) | 뮤테이션 7종 중 **6종 kill**(m1·m2·m3·m4·m5·m7). **m6·m8 2종 생존** — 대조군(`Propagation.NEVER`)이 각각 6 red·2 red가 되어 프록시 정상 동작을 입증했으므로 생존은 진짜 공백이다(§2.1). 단 이 주장은 검사한 뮤테이션 범위 안에서만 참이며, QA 적대적 탐색이 범위 밖 공백을 추가로 찾았다(§2.2) |
+| 안전망 진짜(토톨로지 아님) | 계획이 지정한 뮤테이션 **m1~m7 중 6종 kill**(m1·m2·m3·m4·m5·m7), **m6 생존**. 검증 중 추가 발견한 **m8도 생존** → 전파 계열 생존 2종 — 대조군(`Propagation.NEVER`)이 각각 6 red·2 red가 되어 프록시 정상 동작을 입증했으므로 생존은 진짜 공백이다(§2.1). 단 이 주장은 검사한 뮤테이션 범위 안에서만 참이며, QA 적대적 탐색이 범위 밖 공백을 추가로 찾았다(§2.2) |
 | 5서비스 라인 커버리지 ≥70% | **100.00%** (99/99): 5개 서비스 전부 100% |
 | clean build green | `./gradlew clean build` BUILD SUCCESSFUL, **276 테스트 0실패 0에러**(3 skip은 기존 StockRanking, 무관), Checkstyle `maxWarnings=0` 0 warning, ArchUnit 4/4 |
 | baseline·DTO 계약 | `suppressions.xml`·`archunit_store` **추가 라인 0**(삭제 1행만), DTO diff 0 |
