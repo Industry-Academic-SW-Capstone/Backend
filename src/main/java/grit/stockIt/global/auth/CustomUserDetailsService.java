@@ -4,38 +4,45 @@ import grit.stockIt.domain.member.entity.Member;
 import grit.stockIt.domain.member.repository.MemberRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.userdetails.User;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.stereotype.Service;
 
-import java.util.ArrayList;
+import java.util.List;
 
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class CustomUserDetailsService implements UserDetailsService {
 
+    private static final String ADMIN_ROLE = "ROLE_ADMIN";
+
     private final MemberRepository memberRepository;
+    private final AdminEmailAllowlist adminEmailAllowlist;
 
     @Override
     public UserDetails loadUserByUsername(String email) throws UsernameNotFoundException {
-        log.info("UserDetailsService: 이메일로 회원 조회 - {}", email);
-        
         Member member = memberRepository.findByEmail(email)
-                .orElseThrow(() -> {
-                    log.error("회원을 찾을 수 없음: {}", email);
-                    return new UsernameNotFoundException("회원을 찾을 수 없습니다: " + email);
-                });
-        
-        log.info("UserDetailsService: 회원 찾음 - ID: {}, 이메일: {}", member.getMemberId(), member.getEmail());
-        
-        // Spring Security User 객체로 변환
+                .orElseThrow(() -> new UsernameNotFoundException("회원을 찾을 수 없습니다: " + email));
+
         return User.builder()
                 .username(member.getEmail())
                 .password(member.getPassword() != null ? member.getPassword() : "")
-                .authorities(new ArrayList<>()) // 권한은 필요시 추가
+                .authorities(authoritiesOf(member.getEmail()))
                 .build();
+    }
+
+    /**
+     * 허용목록의 이메일에만 ROLE_ADMIN을 부여한다. 관리자 경로 판정은
+     * {@code SecurityConfig}의 {@code hasRole("ADMIN")}이 담당한다.
+     */
+    private List<GrantedAuthority> authoritiesOf(String email) {
+        return adminEmailAllowlist.isAdmin(email)
+                ? List.of(new SimpleGrantedAuthority(ADMIN_ROLE))
+                : List.of();
     }
 }
