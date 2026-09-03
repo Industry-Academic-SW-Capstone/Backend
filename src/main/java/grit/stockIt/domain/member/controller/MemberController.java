@@ -1,7 +1,10 @@
 package grit.stockIt.domain.member.controller;
 
 import grit.stockIt.domain.member.dto.*;
-import grit.stockIt.domain.member.service.LocalMemberService;
+import grit.stockIt.domain.member.service.LocalAuthService;
+import grit.stockIt.domain.member.service.MemberNotificationSettingsService;
+import grit.stockIt.domain.member.service.MemberProfileService;
+import grit.stockIt.domain.member.service.MemberTitleService;
 import grit.stockIt.global.jwt.JwtToken;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
@@ -9,7 +12,7 @@ import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;  // 추가
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.userdetails.UserDetails;
@@ -21,33 +24,36 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 
-@Slf4j  // 추가
+@Slf4j
 @RestController
 @RequestMapping("/api/members")
 @RequiredArgsConstructor
 @Tag(name = "Member", description = "회원 관리 API")
 public class MemberController {
 
-    private final LocalMemberService memberService; 
+    private final MemberProfileService memberProfileService;
+    private final LocalAuthService localAuthService;
+    private final MemberNotificationSettingsService memberNotificationSettingsService;
+    private final MemberTitleService memberTitleService;
     private final grit.stockIt.domain.account.service.AccountService accountService;
     @Operation(summary = "회원가입", description = "새로운 회원을 등록합니다.")
     @PostMapping("/signup")
     public ResponseEntity<MemberResponse> signup(@Valid @RequestBody MemberSignupRequest request) {
-        MemberResponse response = memberService.signup(request);
+        MemberResponse response = localAuthService.signup(request);
         return ResponseEntity.ok(response);
     }
 
     @Operation(summary = "로그인", description = "이메일과 비밀번호로 로그인합니다.")
     @PostMapping("/login")
     public ResponseEntity<JwtToken> login(@Valid @RequestBody MemberLoginRequest request) {
-        JwtToken token = memberService.login(request);
+        JwtToken token = localAuthService.login(request);
         return ResponseEntity.ok(token);
     }
 
     @Operation(summary = "이메일 존재 여부 확인", description = "주어진 이메일이 회원으로 등록되어 있는지 확인합니다.")
     @GetMapping("/exists")
     public ResponseEntity<java.util.Map<String, Boolean>> existsByEmail(@RequestParam("email") String email) {
-        boolean exists = memberService.existsByEmail(email);
+        boolean exists = memberProfileService.existsByEmail(email);
         return ResponseEntity.ok(java.util.Collections.singletonMap("exists", exists));
     }
 
@@ -76,7 +82,7 @@ public class MemberController {
         }
 
         String email = auth.getName();
-        MemberResponse resp = memberService.getMemberByEmail(email);
+        MemberResponse resp = memberProfileService.getMemberByEmail(email);
         return ResponseEntity.ok(resp);
     }
 
@@ -90,7 +96,7 @@ public class MemberController {
         }
 
         String email = auth.getName();
-        MemberResponse updated = memberService.updateMember(email, request);
+        MemberResponse updated = memberProfileService.updateMember(email, request);
         return ResponseEntity.ok(updated);
     }
 
@@ -104,7 +110,7 @@ public class MemberController {
         }
 
         String email = auth.getName();
-        var memberOpt = memberService.findMemberEntityByEmail(email);
+        var memberOpt = memberProfileService.findMemberEntityByEmail(email);
         if (memberOpt.isEmpty()) {
             log.error("Authenticated principal not found in DB: email={}", email);
             return ResponseEntity.status(HttpStatus.NOT_FOUND).build();
@@ -125,7 +131,7 @@ public class MemberController {
         }
         
         String email = auth.getName();
-        memberService.updateFcmToken(email, request.getFcmToken());
+        memberNotificationSettingsService.updateFcmToken(email, request.getFcmToken());
         log.info("FCM 토큰 등록/업데이트: email={}", email);
         
         return ResponseEntity.ok("FCM 토큰이 등록되었습니다.");
@@ -141,7 +147,7 @@ public class MemberController {
         }
         
         String email = auth.getName();
-        memberService.removeFcmToken(email);
+        memberNotificationSettingsService.removeFcmToken(email);
         log.info("FCM 토큰 삭제: email={}", email);
         
         return ResponseEntity.ok("FCM 토큰이 삭제되었습니다.");
@@ -157,7 +163,7 @@ public class MemberController {
         }
         
         String email = auth.getName();
-        memberService.updateExecutionNotificationSettings(email, request.isExecutionNotificationEnabled());
+        memberNotificationSettingsService.updateExecutionNotificationSettings(email, request.isExecutionNotificationEnabled());
         log.info("알림 설정 변경: email={}, enabled={}", email, request.isExecutionNotificationEnabled());
         
         return ResponseEntity.ok("알림 설정이 변경되었습니다.");
@@ -183,12 +189,12 @@ public class MemberController {
      * [GET] 내 대표 칭호 조회
      * URL: GET /api/members/title
      */
-    @GetMapping("/title") // 2. 여기에 /title 추가
+    @GetMapping("/title")
     @Operation(summary = "내 대표 칭호 조회", description = "현재 장착 중인 대표 칭호 정보를 반환합니다.")
     public ResponseEntity<RepresentativeTitleResponse> getMyRepresentativeTitle(
             @AuthenticationPrincipal UserDetails userDetails) {
 
-        RepresentativeTitleResponse response = memberService.getRepresentativeTitle(userDetails.getUsername());
+        RepresentativeTitleResponse response = memberTitleService.getRepresentativeTitle(userDetails.getUsername());
         return ResponseEntity.ok(response);
     }
 
@@ -197,17 +203,17 @@ public class MemberController {
      * URL: PATCH /api/members/title
      * 설명: POST 대신 PATCH 사용 (정보의 '일부'인 칭호를 수정하므로)
      */
-    @PatchMapping("/title") // 3. PostMapping -> PatchMapping으로 변경, 경로 추가
+    @PatchMapping("/title")
     @Operation(summary = "대표 칭호 변경", description = "보유한 칭호 중 하나를 대표 칭호로 수정합니다.<br>titleId에 null을 보내면 해제됩니다.")
     @ApiResponses(value = {
             @ApiResponse(responseCode = "200", description = "변경 성공"),
             @ApiResponse(responseCode = "400", description = "보유하지 않은 칭호이거나 존재하지 않는 ID")
     })
-    public ResponseEntity<String> updateRepresentativeTitle( // 메서드 이름도 set -> update로 변경 권장
+    public ResponseEntity<String> updateRepresentativeTitle(
                                                              @AuthenticationPrincipal UserDetails userDetails,
                                                              @RequestBody TitleSelectRequest request) {
 
-        memberService.updateRepresentativeTitle(userDetails.getUsername(), request.getTitleId());
+        memberTitleService.updateRepresentativeTitle(userDetails.getUsername(), request.getTitleId());
         return ResponseEntity.ok("대표 칭호가 변경되었습니다.");
     }
 
@@ -216,7 +222,7 @@ public class MemberController {
     @Operation(summary = "설문조사 완료 여부 조회", description = "현재 로그인한 사용자의 설문조사 완료 여부를 반환합니다.")
     public ResponseEntity<java.util.Map<String, Boolean>> getSurveyCompleted(
             @AuthenticationPrincipal UserDetails userDetails) {
-        boolean completed = memberService.getSurveyCompleted(userDetails.getUsername());
+        boolean completed = memberProfileService.getSurveyCompleted(userDetails.getUsername());
         return ResponseEntity.ok(java.util.Collections.singletonMap("survey_completed", completed));
     }
 
@@ -225,7 +231,7 @@ public class MemberController {
     @Operation(summary = "설문조사 완료 처리", description = "설문조사를 완료한 것으로 표시합니다.")
     public ResponseEntity<String> completeSurvey(
             @AuthenticationPrincipal UserDetails userDetails) {
-        memberService.completeSurvey(userDetails.getUsername());
+        memberProfileService.completeSurvey(userDetails.getUsername());
         return ResponseEntity.ok("설문조사가 완료 처리되었습니다.");
     }
 }
