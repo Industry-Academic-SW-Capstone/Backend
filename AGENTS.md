@@ -82,6 +82,8 @@ docker-compose --profile load-test run --rm k6 run /scripts/matching-engine-test
 - `KIS_API_APPKEY`, `KIS_API_APPSECRET`
 - `KAKAO_REST_API_KEY`, `KAKAO_REDIRECT_URI`
 - `JWT_SECRET`, `GEMINI_API_KEY`, `CLAUDE_API_KEY`, `DART_API_KEY`, `PYTHON_ANALYSIS_URL`
+- `APP_CORS_ALLOWED_ORIGINS` — CORS 허용 오리진(쉼표 구분). 로컬은 기본값으로 충분하지만 **배포 시 미설정이면 애플리케이션이 기동에 실패합니다(fail-fast)**
+- `APP_ADMIN_EMAILS` — 관리자 API(`/api/admin/**`, `/api/batch-jobs/**`) 허용 이메일(쉼표 구분). 비어 있으면 아무도 통과하지 못합니다(fail-closed)
 
 > 프로덕션 전용 시크릿(예: `KAKAO_CLIENT_SECRET`, `FIREBASE_CREDENTIALS_BASE64`)은 로컬 `.env`가 아니라 배포 시점에 GitHub Actions Secrets와 Docker Compose 환경변수로 주입됩니다. `docs/deployment.md` 참고.
 
