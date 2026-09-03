@@ -155,8 +155,9 @@ jobs:
           export FIREBASE_CREDENTIALS_BASE64=${{ secrets.FIREBASE_CREDENTIALS_BASE64 }}
           export PYTHON_ANALYSIS_URL=${{ secrets.PYTHON_ANALYSIS_URL }}
           export GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}
-          export APP_CORS_ALLOWED_ORIGINS=${{ secrets.APP_CORS_ALLOWED_ORIGINS }}
-          export APP_ADMIN_EMAILS=${{ secrets.APP_ADMIN_EMAILS }}
+          # 쉼표 구분 목록이라 공백이 섞이면 단어 분리로 export가 깨진다 — 반드시 따옴표.
+          export APP_CORS_ALLOWED_ORIGINS="${{ secrets.APP_CORS_ALLOWED_ORIGINS }}"
+          export APP_ADMIN_EMAILS="${{ secrets.APP_ADMIN_EMAILS }}"
 
           # Docker Compose 실행
           docker compose -f docker-compose.prod.yml down

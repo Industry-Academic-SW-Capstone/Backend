@@ -38,7 +38,9 @@ management:
     prometheus:
       enabled: true
     health:
-      show-details: always
+      # /actuator/**는 인증 없이 열려 있고 8080이 호스트에 퍼블리시된다. always면 DB·Redis
+      # 컴포넌트 상태와 디스크 여유 용량이 무인증으로 노출된다.
+      show-details: when-authorized
   metrics:
     export:
       prometheus:

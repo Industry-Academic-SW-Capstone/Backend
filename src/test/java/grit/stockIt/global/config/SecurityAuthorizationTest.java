@@ -60,6 +60,12 @@ class SecurityAuthorizationTest extends IntegrationTestSupport {
         }
 
         @Test
+        @DisplayName("종목 차트는 토큰 없이 접근할 수 있다")
+        void stockChart_isPublic() throws Exception {
+            assertPassesSecurityChain(mockMvc.perform(get("/api/stocks/005930/chart")).andReturn());
+        }
+
+        @Test
         @DisplayName("로그인·회원가입은 토큰 없이 접근할 수 있다")
         void authEndpoints_arePublic() throws Exception {
             assertPassesSecurityChain(mockMvc.perform(get("/api/members/exists").param("email", "a@b.c")).andReturn());
@@ -91,9 +97,18 @@ class SecurityAuthorizationTest extends IntegrationTestSupport {
         }
 
         @Test
-        @DisplayName("종목 추천은 /api/stocks/* 공개 규칙에 삼켜지지 않고 401이다")
-        void stockRecommend_isNotSwallowedByPublicStockRule() throws Exception {
+        @DisplayName("종목 추천은 종목코드 패턴에 걸리지 않아 401이다")
+        void stockRecommend_isNotMatchedByStockCodePattern() throws Exception {
             mockMvc.perform(get("/api/stocks/recommend")).andExpect(status().isUnauthorized());
+        }
+
+        @Test
+        @DisplayName("/api/stocks 아래 새 엔드포인트가 저절로 공개되지 않는다")
+        void newStockEndpoint_isNotPublicByDefault() throws Exception {
+            // 공개 규칙이 종목코드(숫자·대문자 6자)만 매칭하므로, 나중에 추가되는 소문자
+            // 리터럴 경로는 허용목록에 넣지 않는 한 보호된다.
+            mockMvc.perform(get("/api/stocks/anything")).andExpect(status().isUnauthorized());
+            mockMvc.perform(get("/api/stocks/005930/score")).andExpect(status().isUnauthorized());
         }
 
         @Test
