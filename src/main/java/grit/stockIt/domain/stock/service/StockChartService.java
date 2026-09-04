@@ -374,7 +374,7 @@ public class StockChartService {
                     if (trimmed.startsWith("<")) {
                         log.error("KIS 일별 분봉 응답이 HTML입니다. 인증/세션 이슈 가능. 날짜: {}, 종목: {}, hour={}, 응답: {}",
                                 targetDate, stockCode, requestHour, trimmed);
-                        return Mono.just(List.<KisMinuteChartDataDto>of());
+                        return Mono.error(new RuntimeException("KIS API 오류: HTML 응답 (인증/세션 이슈 가능)"));
                     }
 
                     final KisChartResponse response;

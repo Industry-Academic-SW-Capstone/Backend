@@ -30,7 +30,6 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 import java.io.IOException;
 import java.time.Duration;
-import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashSet;
@@ -40,6 +39,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.when;
 
 /**
@@ -172,12 +172,12 @@ class StockChartDefectFreezeTest extends IntegrationTestSupport {
 
     @ParameterizedTest(name = "서수 {0} (영업일 {1}번째 / 윈도 {2})")
     @CsvSource({
-            "0, 1, 153000, 15",
-            "10, 3, 113000, 11",
-            "19, 5, 093000, 9"
+            "0, 1, 153000",
+            "10, 3, 113000",
+            "19, 5, 093000"
     })
-    @DisplayName("DF-1 결함 a: 부분 HTML 응답은 삼켜지고 해당 윈도 기여분만 빠진 채 정상 완료한다")
-    void df1_partialHtmlResponseIsSwallowed(int htmlOrdinal, int businessDayNumber, String window, int missingHour) {
+    @DisplayName("DF-1 결함 a: 부분 HTML 응답은 예외로 전파되고 남은 요청은 발행되지 않는다")
+    void df1_partialHtmlResponsePropagatesError(int htmlOrdinal, int businessDayNumber, String window) {
         HTML_ORDINALS.add(htmlOrdinal);
         Logger serviceLogger = (Logger) LoggerFactory.getLogger(SERVICE_LOGGER_NAME);
         ListAppender<ILoggingEvent> appender = new ListAppender<>();
@@ -185,12 +185,10 @@ class StockChartDefectFreezeTest extends IntegrationTestSupport {
         serviceLogger.addAppender(appender);
 
         try {
-            List<StockChartResponse> chart = stockChartService.getStockChart(STOCK_CODE, "1week").block(WEEK_TIMEOUT);
-
-            assertThat(chart).hasSize(19);
-            assertThat(chart.stream().filter(row -> row.time().equals(LocalTime.of(missingHour, 0))).count())
-                    .isEqualTo(4L);
-            assertThat(dailyMinuteCallCount()).isEqualTo(20);
+            assertThatThrownBy(() -> stockChartService.getStockChart(STOCK_CODE, "1week").block(WEEK_TIMEOUT))
+                    .isInstanceOf(RuntimeException.class)
+                    .hasMessage("주식 분봉 데이터 조회 실패: " + STOCK_CODE);
+            assertThat(dailyMinuteCallCount()).isEqualTo(htmlOrdinal + 1L);
 
             List<KisCall> dailyMinuteCalls = dailyMinuteCalls();
             assertThat(dailyMinuteCalls.get(htmlOrdinal).hour()).isEqualTo(window);
@@ -208,17 +206,16 @@ class StockChartDefectFreezeTest extends IntegrationTestSupport {
     }
 
     @Test
-    @DisplayName("DF-2 결함 a 2차 영향: 전 윈도 HTML이면 빈 차트가 그대로 캐시된다")
-    void df2_allHtmlResponsesProduceCachedEmptyChart() {
+    @DisplayName("DF-2 결함 a 2차 영향: 전 윈도 HTML이면 예외가 전파되고 빈 차트가 캐시되지 않는다")
+    void df2_allHtmlResponsesProduceNoCachedEmptyChart() {
         for (int ordinal = 0; ordinal < 20; ordinal++) {
             HTML_ORDINALS.add(ordinal);
         }
 
-        List<StockChartResponse> chart = stockChartService.getStockChart(STOCK_CODE, "1week").block(WEEK_TIMEOUT);
-
-        assertThat(chart).isEmpty();
-        assertThat(redisTemplate.opsForValue().get(KEY_1WEEK)).isEqualTo("[]");
-        assertThat(redisTemplate.getExpire(KEY_1WEEK)).isBetween(295L, 300L);
+        assertThatThrownBy(() -> stockChartService.getStockChart(STOCK_CODE, "1week").block(WEEK_TIMEOUT))
+                .isInstanceOf(RuntimeException.class)
+                .hasMessage("주식 분봉 데이터 조회 실패: " + STOCK_CODE);
+        assertThat(redisTemplate.hasKey(KEY_1WEEK)).isFalse();
     }
 
     @Test
