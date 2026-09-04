@@ -327,7 +327,8 @@ class StockChartDefectFreezeTest extends IntegrationTestSupport {
     }
 
     /**
-     * 1년 구간은 6개월씩 두 번 요청된다. 요청 시작일이 9개월 이전이면 전반기 요청이다.
+     * 1년 구간은 6개월씩 두 번 요청된다. 두 요청의 시작일은 now-12m과 now-6m+1d이므로
+     * 그 중간인 now-9m을 기준으로 가르면 어느 쪽도 3개월 여유를 갖는다.
      */
     private static String oneYearEnvelope(String requestStartDate) {
         LocalDate start = LocalDate.parse(requestStartDate, DateTimeFormatter.BASIC_ISO_DATE);
