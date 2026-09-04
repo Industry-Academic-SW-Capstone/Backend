@@ -29,7 +29,7 @@
 
 서비스는 `calculateTimeRanges`를 **직접 호출하지 않는다**(CONF-01). 1day 호출 수의 단일 오라클은 `chartTimeline.intradayRequestTimes(now)`이며, 공집합 조기 반환은 `chartTimeline.isBeforeMarketOpen(now)`가 담당한다.
 
-## 2. 계획 대비 편차 기록 (AC-9 원장, 10건)
+## 2. 계획 대비 편차 기록 (AC-9 원장, 11건)
 
 | # | 편차 | 사유·영향 |
 |---|------|----------|
@@ -43,6 +43,7 @@
 | 8 | 특성화 기준 태그명이 계획의 `charac-base`가 아니라 **`stock-charac-base`** | `charac-base`는 **직전 member 리팩토링 사이클이 이미 사용 중**이며 `8be73ed`를 가리킨다. 계획대로 이름을 재사용하면 그 사이클의 AC-1 증거(`git diff develop..charac-base`, `git log charac-base..HEAD`)가 파괴된다. 태그를 도메인 접두사 붙여 분리했고, 이 문서와 C11 게이트 명령의 모든 리비전 인자는 `stock-charac-base`를 쓴다 |
 | 9 | **1year 서비스 레벨 내용 오라클이 계획대로 구현되지 않았다** — 계획 C2(a)와 8절 주 (b)는 1원소·3원소 1year 시나리오를 요구했으나 C2에서 누락됐다. 경계 리뷰 중 뮤테이션 테스트로 공백이 증명되어 `StockChartDefectFreezeTest` OY-1로 사후 추가했다 | 1year는 이번 사이클 **유일한 비축자 변환**(정렬 → `selectWeeklySampleIndexes` → 인덱스 역적용)인데, 불변 2파일은 호출 수 2회와 경로·tr_id만 고정하고 내용은 아무도 단정하지 않았다. 그 결과 다음 두 뮤테이션이 413건 스위트 전원 통과로 **생존**했다: **M1b** — `sortedList.get(index)`를 `allData.get(index)`로 바꿔 표본 인덱스를 정렬 **전** 병합 리스트에 적용(`Flux.merge` 도착 순서에 따라 응답이 갈리는 비결정 사고), **M8** — `sortedList.stream()`을 `sortedList.reversed().stream()`으로 바꿔 `selectWeeklySampleIndexes`의 문서화된 오름차순 입력 선행조건을 위반. OY-1은 두 절반 응답에 날짜를 교차 배치(전반기 `0120,0108,0106` / 후반기 `0122,0121,0113,0107`, 각각 KIS처럼 내림차순)하고 방출 시퀀스를 `(2025-01-06, 01-13, 01-20, 01-22)`로 **정확히** 단정한다. 표본이 실제로 판별력을 갖도록 `01-07`·`01-08`·`01-21`은 탈락하고 마지막 `01-22`는 강제 포함되는 날짜를 골랐다. 단정 하나가 두 뮤테이션을 모두 잡는다(M1b → `01-07`·`01-08`·`01-21`이 섞여 들어옴, M8 → 2건으로 축소)  이후 gen-2 리뷰에서 **M16**(`sortedList.get(index)`를 역순 리스트에 적용)이 픽스처 대칭 때문에 추가로 생존함이 드러나, 전반기에 `20250108`을 넣어 선택 인덱스 집합의 대칭을 깨고 닫았다(커밋 `1e253c0`). |
 | 10 | **저장 JSON 왕복 단정(어서션 9)이 AC-1 불변 파일 안에 영구 동결됐다** — 계획 9.1은 이 단정을 삭제 대상으로 표시했으나 `StockChartCacheCharacterizationTest`에 남은 채 `stock-charac-base`로 고정되어 이제 수정·삭제할 수 없다 | 무해하다(직렬화 왕복은 실제 캐시 경로의 성질이고 통과 중이다). 다만 이 단정은 `ObjectMapper`로 `List<StockChartResponse>`를 역직렬화하므로 **오라클이 `StockChartResponse`의 필드명에 결합된다** — 필드명 변경은 컨벤션상 API 계약 변경이며, 이 불변 파일이 그 변경을 컴파일·역직렬화 양쪽에서 붙잡는다. **병합 정책**: 타 세션 브랜치 `refactor/stock-chart-testability`와 병합할 때 불변 2파일은 **이 브랜치 판본을 무조건 채택(ours)** 한다 — 타 세션의 수정을 받아들이면 AC-1 증거(`git log stock-charac-base..HEAD -- <불변 2파일>` = 0 커밋)가 파괴되기 때문이다. 저쪽이 `StockChartResponse` 필드명을 바꿨다면 그것은 계약 변경이므로 병합 자체를 보류하고, 사이클 종료(태그 확정) 이후 별도 커밋에서 문서와 함께 처리한다 |
+| 11 | **C11 게이트 항목 5(동결 파일 정확히 2커밋) 이탈** — 실제 5커밋 | 계획은 동결 파일이 C8·C9 두 커밋만 갖는다고 전제했으나, 경계 리뷰 generation 1에서 1year 서비스 레벨 오라클 공백이 뮤테이션으로 증명되면서 OY-1 추가(`8a6a1f0`), 픽스처 대칭 제거(`1e253c0`), 자바독 정정(`4a4b4c1`) 3커밋이 더해졌다. 동결 파일은 AC-1 불변 목록 밖(편차 4)이라 AC-1의 오라클 불변 증명은 손상되지 않는다 — 불변 2파일은 여전히 `stock-charac-base` 이후 **0커밋**이다 |
 
 ### 참고: 다음 사이클 후보
 
@@ -72,7 +73,7 @@
 
 | 기준 | 판정 | 증빙 |
 |------|------|------|
-| **AC-1** 특성화 선행 + 이후 무수정 | 충족 | `git diff --stat develop..stock-charac-base -- src/main/` 빈 출력, `git log --oneline stock-charac-base..HEAD -- <불변 2파일>` 0 커밋. 동결 파일은 정확히 2커밋(`4cb54db`·`596f60a`)이며 파일 존재 |
+| **AC-1** 특성화 선행 + 이후 무수정 | 충족 | `git diff --stat develop..stock-charac-base -- src/main/` 빈 출력, `git log --oneline stock-charac-base..HEAD -- <불변 2파일>` 0 커밋. 동결 파일은 **5커밋**(`4cb54db`·`596f60a` = C8·C9, 그리고 경계 리뷰 remediation 3건 `8a6a1f0`·`1e253c0`·`4a4b4c1`)이며 파일 존재. 계획 C11 게이트 항목 5는 정확히 2커밋을 요구했으나 경계 리뷰가 OY-1 오라클 보강을 요구해 3커밋이 추가됐다(편차 11) |
 | **AC-2** 신규 4클래스 라인 커버리지 100% | 충족 | `clean build` 후 무필터 `test jacocoTestReport` 단일 실행의 `jacocoTestReport.xml`에서 4클래스 전부 LINE `missed=0` |
 | **AC-3** 서비스 레벨 얇은 특성화 | 충족 | `StockChartCacheCharacterizationTest` — 캐시 키 `stock:chart:{code}:{normalized}`, TTL 5종(60/300/1800/3600/43200초), 무효 기간 타입의 구독 없는 동기 throw + 메시지 완전 일치, throw 전 Redis GET 발생(깨진 JSON + WARN 로그로 직접 증명), 파싱 실패 시 `delete` 없이 API 폴백, 캐시 저장 실패 삼킴 |
 | **AC-4** PURE 9개 시그니처 무변경 이동 | 충족 | 파라미터 타입·순서, 반환 타입(박싱 `Integer`/`Long` 포함), 예외 타입·메시지 동일. `parseDate`의 `Invalid date format: ... (expected: yyyyMMdd)` + 원인 체이닝 유지. 접근 제어자(`private`→`public`)와 수신자 변경은 정의상 제외 |
