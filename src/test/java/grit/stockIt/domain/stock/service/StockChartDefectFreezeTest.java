@@ -30,6 +30,8 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 import java.io.IOException;
 import java.time.Duration;
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashSet;
@@ -40,6 +42,7 @@ import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.tuple;
 import static org.mockito.Mockito.when;
 
 /**
@@ -50,6 +53,10 @@ import static org.mockito.Mockito.when;
  *
  * DF-0는 대조군이다. HTML을 하나도 주입하지 않은 실행이 비어 있지 않은 20건 차트를
  * 돌려주지 못하면 나머지 결함 단정은 공허하게 통과한 것이므로 증거로 인정하지 않는다.
+ *
+ * OY-1은 결함 동결이 아니라 1year 경로의 내용 오라클이다. 불변 2파일(AC-1)은 호출 수·캐시만
+ * 고정하므로 이번 사이클 유일의 비축자 변환인 7일 표본 배선을 아무도 관측하지 않는다.
+ * 불변 파일에 넣을 수 없어 갱신 가능한 이 파일이 소유한다.
  */
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
@@ -67,7 +74,17 @@ class StockChartDefectFreezeTest extends IntegrationTestSupport {
     private static final String STOCK_CODE = "005930";
     private static final String KEY_1WEEK = "stock:chart:005930:1week";
     private static final String KEY_3MONTH = "stock:chart:005930:3month";
-    private static final List<String> TARGET_KEYS = List.of(KEY_1WEEK, KEY_3MONTH);
+    private static final String KEY_1YEAR = "stock:chart:005930:1year";
+    private static final List<String> TARGET_KEYS = List.of(KEY_1WEEK, KEY_3MONTH, KEY_1YEAR);
+
+    /**
+     * 1year 전반기·후반기 응답. 각 응답은 KIS 실제 응답처럼 내림차순이며, 두 절반에 날짜를
+     * 일부러 교차 배치했다. 이래야 병합 직후 리스트(allData)가 어떤 도착 순서에서도
+     * 정렬 결과와 달라져, 표본 인덱스를 정렬 전 리스트에 적용하는 배선 사고가 드러난다.
+     */
+    private static final List<String> ONE_YEAR_FIRST_HALF_DATES = List.of("20250120", "20250106");
+    private static final List<String> ONE_YEAR_SECOND_HALF_DATES =
+            List.of("20250122", "20250121", "20250113", "20250107");
 
     private static final String SERVICE_LOGGER_NAME = "grit.stockIt.domain.stock.service.StockChartService";
     private static final Duration SHORT_TIMEOUT = Duration.ofSeconds(30);
@@ -78,6 +95,7 @@ class StockChartDefectFreezeTest extends IntegrationTestSupport {
     private static final Set<Integer> HTML_ORDINALS = Collections.synchronizedSet(new LinkedHashSet<>());
 
     private static volatile boolean blankRtCd;
+    private static volatile boolean oneYearMode;
     private static volatile String dailyClosePrice = "11000";
     private static volatile String dailyChangeAmount = "1000";
 
@@ -106,6 +124,9 @@ class StockChartDefectFreezeTest extends IntegrationTestSupport {
                 CALLS.add(new KisCall(path, periodDivCode, date, hour));
 
                 if (DAILY_PATH.equals(path) && "D".equals(periodDivCode) && hour == null) {
+                    if (oneYearMode) {
+                        return jsonResponse(oneYearEnvelope(date));
+                    }
                     return jsonResponse(dailyEnvelope());
                 }
                 if (DAILY_MINUTE_PATH.equals(path) && periodDivCode == null && DAILY_MINUTE_WINDOWS.contains(hour)) {
@@ -156,6 +177,7 @@ class StockChartDefectFreezeTest extends IntegrationTestSupport {
         DAILY_MINUTE_ORDINAL.set(0);
         HTML_ORDINALS.clear();
         blankRtCd = false;
+        oneYearMode = false;
         dailyClosePrice = "11000";
         dailyChangeAmount = "1000";
     }
@@ -250,6 +272,22 @@ class StockChartDefectFreezeTest extends IntegrationTestSupport {
         assertThat(dailyMinuteCallCount()).isEqualTo(20);
     }
 
+    @Test
+    @DisplayName("OY-1 1year 내용 오라클: 전역 정렬된 리스트에서 7일 간격 표본이 오름차순으로 방출된다")
+    void oy1_oneYearChartEmitsWeeklySamplesFromGloballySortedList() {
+        oneYearMode = true;
+
+        List<StockChartResponse> chart = stockChartService.getStockChart(STOCK_CODE, "1year").block(SHORT_TIMEOUT);
+
+        assertThat(chart)
+                .extracting(StockChartResponse::date, StockChartResponse::closePrice)
+                .containsExactly(
+                        tuple(LocalDate.of(2025, 1, 6), 10006),
+                        tuple(LocalDate.of(2025, 1, 13), 10013),
+                        tuple(LocalDate.of(2025, 1, 20), 10020),
+                        tuple(LocalDate.of(2025, 1, 22), 10022));
+    }
+
     private static List<KisCall> dailyMinuteCalls() {
         synchronized (CALLS) {
             return CALLS.stream()
@@ -285,6 +323,30 @@ class StockChartDefectFreezeTest extends IntegrationTestSupport {
                    "stck_hgpr":"11100","stck_lwpr":"10800","acml_vol":"100",
                    "acml_tr_pbmn":"1100000","prdy_vrss":"%s","prdy_vrss_sign":"2","prdy_ctrt":""}]}
                 """.formatted(dailyClosePrice, dailyChangeAmount);
+    }
+
+    /**
+     * 1년 구간은 6개월씩 두 번 요청된다. 요청 시작일이 9개월 이전이면 전반기 요청이다.
+     */
+    private static String oneYearEnvelope(String requestStartDate) {
+        LocalDate start = LocalDate.parse(requestStartDate, DateTimeFormatter.BASIC_ISO_DATE);
+        List<String> dates = start.isBefore(LocalDate.now().minusMonths(9))
+                ? ONE_YEAR_FIRST_HALF_DATES
+                : ONE_YEAR_SECOND_HALF_DATES;
+
+        String rows = dates.stream()
+                .map(StockChartDefectFreezeTest::dailyRow)
+                .collect(Collectors.joining(","));
+        return "{\"rt_cd\":\"0\",\"msg_cd\":\"MCA00000\",\"msg1\":\"정상처리\",\"output2\":[" + rows + "]}";
+    }
+
+    private static String dailyRow(String date) {
+        int closePrice = 10000 + Integer.parseInt(date.substring(6));
+        return """
+                {"stck_bsop_date":"%s","stck_clpr":"%d","stck_oprc":"10900",
+                 "stck_hgpr":"11100","stck_lwpr":"10800","acml_vol":"100",
+                 "acml_tr_pbmn":"1100000","prdy_vrss":"1000","prdy_vrss_sign":"2","prdy_ctrt":""}
+                """.formatted(date, closePrice);
     }
 
     private static String minuteEnvelope(String date, String hour) {

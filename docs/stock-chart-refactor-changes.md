@@ -29,7 +29,7 @@
 
 서비스는 `calculateTimeRanges`를 **직접 호출하지 않는다**(CONF-01). 1day 호출 수의 단일 오라클은 `chartTimeline.intradayRequestTimes(now)`이며, 공집합 조기 반환은 `chartTimeline.isBeforeMarketOpen(now)`가 담당한다.
 
-## 2. 계획 대비 편차 기록 (AC-9 원장, 8건)
+## 2. 계획 대비 편차 기록 (AC-9 원장, 10건)
 
 | # | 편차 | 사유·영향 |
 |---|------|----------|
@@ -41,6 +41,8 @@
 | 6 | **영업일 수 `5`**(원본 L535 `getRecentBusinessDays(LocalDate.now(), 5)`)를 `ChartTimeline#weekBusinessDayCount()`로 이관 | 편차 2와 같은 동인(f22 일관 적용). 배선은 `chartTimeline.recentBusinessDays(LocalDate.now(), chartTimeline.weekBusinessDayCount())`. 덕분에 `recentBusinessDays(any, weekBusinessDayCount()).size() * dailyMinuteWindows().size() == 20`이 프로덕션 상수에서 유도되어 자기참조가 아니다 |
 | 7 | 결함 a 수정 후 **동일 사건당 ERROR 로그가 1건 → 5건으로 증폭** | 발화 지점: (i) `requestDailyMinuteChunk`의 HTML `log.error`, (ii) 같은 메서드의 `doOnError`, (iii) `fetchStockChartFromApi` 1week 분기의 `doOnError`, (iv) `StockDetailController#getStockChart`의 `doOnError`, (v) `GlobalExceptionHandler#handleAll`의 `log.error`. 로그 볼륨 기반 운영 알람 임계를 재조정해야 한다 |
 | 8 | 특성화 기준 태그명이 계획의 `charac-base`가 아니라 **`stock-charac-base`** | `charac-base`는 **직전 member 리팩토링 사이클이 이미 사용 중**이며 `8be73ed`를 가리킨다. 계획대로 이름을 재사용하면 그 사이클의 AC-1 증거(`git diff develop..charac-base`, `git log charac-base..HEAD`)가 파괴된다. 태그를 도메인 접두사 붙여 분리했고, 이 문서와 C11 게이트 명령의 모든 리비전 인자는 `stock-charac-base`를 쓴다 |
+| 9 | **1year 서비스 레벨 내용 오라클이 계획에 없었다** — 계획 C2(a)와 8절 주 (b) 어디에도 1year 표본 결과를 서비스 출력에서 검증하는 케이스가 없다. 경계 리뷰 중 뮤테이션 테스트로 공백이 증명되어 `StockChartDefectFreezeTest` OY-1로 사후 추가했다 | 1year는 이번 사이클 **유일한 비축자 변환**(정렬 → `selectWeeklySampleIndexes` → 인덱스 역적용)인데, 불변 2파일은 호출 수 2회와 경로·tr_id만 고정하고 내용은 아무도 단정하지 않았다. 그 결과 다음 두 뮤테이션이 413건 스위트 전원 통과로 **생존**했다: **M1b** — `sortedList.get(index)`를 `allData.get(index)`로 바꿔 표본 인덱스를 정렬 **전** 병합 리스트에 적용(`Flux.merge` 도착 순서에 따라 응답이 갈리는 비결정 사고), **M8** — `sortedList.stream()`을 `sortedList.reversed().stream()`으로 바꿔 `selectWeeklySampleIndexes`의 문서화된 오름차순 입력 선행조건을 위반. OY-1은 두 절반 응답에 날짜를 교차 배치(전반기 `0120,0106` / 후반기 `0122,0121,0113,0107`, 각각 KIS처럼 내림차순)하고 방출 시퀀스를 `(2025-01-06, 01-13, 01-20, 01-22)`로 **정확히** 단정한다. 표본이 실제로 판별력을 갖도록 `01-07`·`01-21`은 탈락하고 마지막 `01-22`는 강제 포함되는 날짜를 골랐다. 단정 하나가 두 뮤테이션을 모두 잡는다(M1b → `01-07`·`01-21`이 섞여 들어옴, M8 → 2건으로 축소) |
+| 10 | **저장 JSON 왕복 단정(어서션 9)이 AC-1 불변 파일 안에 영구 동결됐다** — 계획 9.1은 이 단정을 삭제 대상으로 표시했으나 `StockChartCacheCharacterizationTest`에 남은 채 `stock-charac-base`로 고정되어 이제 수정·삭제할 수 없다 | 무해하다(직렬화 왕복은 실제 캐시 경로의 성질이고 통과 중이다). 다만 이 단정은 `ObjectMapper`로 `List<StockChartResponse>`를 역직렬화하므로 **오라클이 `StockChartResponse`의 필드명에 결합된다** — 필드명 변경은 컨벤션상 API 계약 변경이며, 이 불변 파일이 그 변경을 컴파일·역직렬화 양쪽에서 붙잡는다. **병합 정책**: 타 세션 브랜치 `refactor/stock-chart-testability`와 병합할 때 불변 2파일은 **이 브랜치 판본을 무조건 채택(ours)** 한다 — 타 세션의 수정을 받아들이면 AC-1 증거(`git log stock-charac-base..HEAD -- <불변 2파일>` = 0 커밋)가 파괴되기 때문이다. 저쪽이 `StockChartResponse` 필드명을 바꿨다면 그것은 계약 변경이므로 병합 자체를 보류하고, 사이클 종료(태그 확정) 이후 별도 커밋에서 문서와 함께 처리한다 |
 
 ### 참고: 다음 사이클 후보
 
@@ -75,7 +77,7 @@
 | **AC-3** 서비스 레벨 얇은 특성화 | 충족 | `StockChartCacheCharacterizationTest` — 캐시 키 `stock:chart:{code}:{normalized}`, TTL 5종(60/300/1800/3600/43200초), 무효 기간 타입의 구독 없는 동기 throw + 메시지 완전 일치, throw 전 Redis GET 발생(깨진 JSON + WARN 로그로 직접 증명), 파싱 실패 시 `delete` 없이 API 폴백, 캐시 저장 실패 삼킴 |
 | **AC-4** PURE 9개 시그니처 무변경 이동 | 충족 | 파라미터 타입·순서, 반환 타입(박싱 `Integer`/`Long` 포함), 예외 타입·메시지 동일. `parseDate`의 `Invalid date format: ... (expected: yyyyMMdd)` + 원인 체이닝 유지. 접근 제어자(`private`→`public`)와 수신자 변경은 정의상 제외 |
 | **AC-5** `ChartTimeline` 호출 수 경계 고정 | 충족 | T1~T10: 08:59 → 0개, 09:00:00 → 1개, 15:30 이후 → 14개, `splitIntoHalves` → 정확히 2개(윤년 포함), 1week 20개(영업일 5 × 윈도 4) |
-| **AC-6** `ChartSampling` 경계 검증 | **부분 충족** | S1~S8·D0~D6로 9분 임계의 `+09:00:30` 수용, 날짜 변경 시 첫 봉 유지, 마지막 원소 항상 포함, 단일 원소 1회 방출, 빈 입력 → 빈 결과를 고정. **"마지막 원소 포함 시에도 `lastSelectedDate` 갱신" 조항만 출력으로 관측 불가능해 코드 리뷰가 소유한다**(편차 5) |
+| **AC-6** `ChartSampling` 경계 검증 | **부분 충족** | S1~S8·D0~D6로 9분 임계의 `+09:00:30` 수용, 날짜 변경 시 첫 봉 유지, 마지막 원소 항상 포함, 단일 원소 1회 방출, 빈 입력 → 빈 결과를 고정. **"마지막 원소 포함 시에도 `lastSelectedDate` 갱신" 조항만 출력으로 관측 불가능해 코드 리뷰가 소유한다**(편차 5). 또한 **계획 8절 주 (b)가 지정한 서비스 레벨 시나리오는 원안대로 구현되지 않았다** — 이 사이클의 서비스 레벨 1year 검증은 계획이 정한 형태가 아니라, 경계 리뷰에서 뮤테이션(M1b·M8) 생존이 확인된 뒤 사후 추가한 `StockChartDefectFreezeTest` OY-1(방출 날짜 시퀀스 완전 일치)이 담당한다(편차 9) |
 | **AC-7** `KisValueParser` 비대칭 보존 | 충족 | `parseDate`는 throw, `parseTime`은 null 반환(광의 catch), `parseIntValue`/`parseLongValue`는 `NumberFormatException`만 잡고 0/0L 반환 |
 | **AC-8** 잔여 중복 0 | 충족 | `StockChartService.java` 대상 정의 grep 0건 + 리터럴·심볼 grep 0건, 배선 카운트 grep 2/1/1/1 |
 | **AC-9** 결함 4건 전량 기재 | 충족 | 본 문서 §3 (a·b는 수정 전후 + 커밋 해시, c·d는 동결 사유) + §3.1 부분 차단 명시 |
