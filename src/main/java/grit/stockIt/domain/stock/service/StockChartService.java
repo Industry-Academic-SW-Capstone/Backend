@@ -21,7 +21,6 @@ import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
-import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
@@ -45,8 +44,7 @@ public class StockChartService {
     private final ObjectMapper objectMapper;
     private final StringRedisTemplate redisTemplate;
     private final ChartPeriodPolicy chartPeriodPolicy;
-
-    private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ofPattern("yyyyMMdd");
+    private final KisValueParser kisValueParser;
 
     /**
      * 주식 차트 데이터 조회 (Redis 캐싱 적용)
@@ -123,8 +121,8 @@ public class StockChartService {
                         LocalDateTime lastDateTime = null;
 
                         for (KisMinuteChartDataDto kisData : chartDataList) {
-                            LocalDate currentDate = parseDate(kisData.date());
-                            LocalTime currentTime = parseTime(kisData.time());
+                            LocalDate currentDate = kisValueParser.parseDate(kisData.date());
+                            LocalTime currentTime = kisValueParser.parseTime(kisData.time());
                             if (currentDate == null || currentTime == null) {
                                 continue;
                             }
@@ -157,7 +155,7 @@ public class StockChartService {
             return getChartDataFromKis(stockCode, "D", startDateLocal, endDateLocal) // 일봉
                     .map(chartDataList -> {
                         return chartDataList.stream()
-                                .sorted(Comparator.comparing(kisData -> parseDate(kisData.date()))) // 날짜 기준 오름차순 정렬 (과거 → 현재)
+                                .sorted(Comparator.comparing(kisData -> kisValueParser.parseDate(kisData.date()))) // 날짜 기준 오름차순 정렬 (과거 → 현재)
                                 .map(kisData -> mapToStockChartDto(stockCode, periodType, kisData))
                                 .toList();
                     })
@@ -191,7 +189,7 @@ public class StockChartService {
                         
                         // 날짜 기준 오름차순 정렬 (과거 → 현재)
                         List<KisChartDataDto> sortedList = allData.stream()
-                                .sorted(Comparator.comparing(kisData -> parseDate(kisData.date())))
+                                .sorted(Comparator.comparing(kisData -> kisValueParser.parseDate(kisData.date())))
                                 .toList();
                         
                         // 날짜 기준으로 7일 간격 필터링 (과거부터 현재까지)
@@ -200,7 +198,7 @@ public class StockChartService {
                         
                         for (int i = 0; i < sortedList.size(); i++) {
                             KisChartDataDto kisData = sortedList.get(i);
-                            LocalDate currentDate = parseDate(kisData.date());
+                            LocalDate currentDate = kisValueParser.parseDate(kisData.date());
                             
                             // 첫 번째 데이터이거나, 마지막 선택된 날짜로부터 7일 이상 경과한 경우
                             // 마지막 데이터 포인트는 항상 포함
@@ -229,7 +227,7 @@ public class StockChartService {
             return getChartDataFromKis(stockCode, "M", startDateLocal, endDateLocal) // 월봉
                     .map(chartDataList -> {
                         return chartDataList.stream()
-                                .sorted(Comparator.comparing(kisData -> parseDate(kisData.date()))) // 날짜 기준 오름차순 정렬 (과거 → 현재)
+                                .sorted(Comparator.comparing(kisData -> kisValueParser.parseDate(kisData.date()))) // 날짜 기준 오름차순 정렬 (과거 → 현재)
                                 .map(kisData -> mapToStockChartDto(stockCode, periodType, kisData))
                                 .toList();
                     })
@@ -250,8 +248,8 @@ public class StockChartService {
             LocalDate endDate
     ) {
         String accessToken = kisTokenManager.getAccessToken();
-        String startDateStr = startDate.format(DATE_FORMATTER);
-        String endDateStr = endDate.format(DATE_FORMATTER);
+        String startDateStr = kisValueParser.formatDate(startDate);
+        String endDateStr = kisValueParser.formatDate(endDate);
 
         return webClient.get()
                 .uri(uriBuilder -> uriBuilder
@@ -410,7 +408,7 @@ public class StockChartService {
             String requestHour
     ) {
         String accessToken = kisTokenManager.getAccessToken();
-        String dateStr = targetDate.format(DATE_FORMATTER);
+        String dateStr = kisValueParser.formatDate(targetDate);
 
         return webClient.get()
                 .uri(uriBuilder -> uriBuilder
@@ -469,7 +467,7 @@ public class StockChartService {
                     }
 
                     List<KisMinuteChartDataDto> parsed = parseMinuteOutputData(response.output2());
-                    String targetDateStr = targetDate.format(DATE_FORMATTER);
+                    String targetDateStr = kisValueParser.formatDate(targetDate);
 
                     List<KisMinuteChartDataDto> filtered = parsed.stream()
                             .filter(item -> targetDateStr.equals(item.date()))
@@ -585,35 +583,6 @@ public class StockChartService {
     }
 
     /**
-     * 날짜 문자열 파싱
-     */
-    private LocalDate parseDate(String dateStr) {
-        try {
-            return LocalDate.parse(dateStr, DATE_FORMATTER);
-        } catch (Exception e) {
-            throw new IllegalArgumentException("Invalid date format: " + dateStr + " (expected: yyyyMMdd)", e);
-        }
-    }
-
-    /**
-     * 시간 문자열 파싱 (HHMMSS 형식)
-     */
-    private LocalTime parseTime(String timeStr) {
-        if (timeStr == null || timeStr.trim().isEmpty() || timeStr.length() != 6) {
-            return null;
-        }
-        try {
-            int hour = Integer.parseInt(timeStr.substring(0, 2));
-            int minute = Integer.parseInt(timeStr.substring(2, 4));
-            int second = Integer.parseInt(timeStr.substring(4, 6));
-            return LocalTime.of(hour, minute, second);
-        } catch (Exception e) {
-            log.warn("시간 파싱 실패: {}", timeStr);
-            return null;
-        }
-    }
-
-    /**
      * KIS API 분봉 응답을 StockChartDto로 변환
      */
     private StockChartResponse mapMinuteToStockChartDto(String stockCode, String periodType, KisMinuteChartDataDto kisData) {
@@ -622,14 +591,14 @@ public class StockChartService {
         return new StockChartResponse(
                 stockCode,
                 periodType,
-                parseDate(kisData.date()),
-                parseTime(kisData.time()), // 시간 정보 포함 (HHMMSS 형식)
-                parseIntValue(kisData.openPrice()),
-                parseIntValue(kisData.highPrice()),
-                parseIntValue(kisData.lowPrice()),
-                parseIntValue(kisData.currentPrice()), // stck_prpr를 종가로 사용
-                parseLongValue(kisData.volume()), // cntg_vol (체결 거래량)
-                parseLongValue(kisData.amount()),
+                kisValueParser.parseDate(kisData.date()),
+                kisValueParser.parseTime(kisData.time()), // 시간 정보 포함 (HHMMSS 형식)
+                kisValueParser.parseIntValue(kisData.openPrice()),
+                kisValueParser.parseIntValue(kisData.highPrice()),
+                kisValueParser.parseIntValue(kisData.lowPrice()),
+                kisValueParser.parseIntValue(kisData.currentPrice()), // stck_prpr를 종가로 사용
+                kisValueParser.parseLongValue(kisData.volume()), // cntg_vol (체결 거래량)
+                kisValueParser.parseLongValue(kisData.amount()),
                 0, // 전일대비 (분봉에는 없음)
                 "0" // 전일대비율 (분봉에는 없음)
         );
@@ -642,8 +611,8 @@ public class StockChartService {
         // changeRate가 없으면 changeAmount와 closePrice로 계산
         String changeRate = kisData.changeRate();
         if (changeRate == null || changeRate.trim().isEmpty()) {
-            int closePrice = parseIntValue(kisData.closePrice());
-            int changeAmount = parseIntValue(kisData.changeAmount());
+            int closePrice = kisValueParser.parseIntValue(kisData.closePrice());
+            int changeAmount = kisValueParser.parseIntValue(kisData.changeAmount());
             if (closePrice != 0 && changeAmount != 0) {
                 double rate = (changeAmount / (double)(closePrice - changeAmount)) * 100;
                 changeRate = String.format("%.2f", rate);
@@ -655,15 +624,15 @@ public class StockChartService {
         return new StockChartResponse(
                 stockCode,
                 periodType,
-                parseDate(kisData.date()),
+                kisValueParser.parseDate(kisData.date()),
                 null, // 일/주/월/년봉은 시간 정보 없음
-                parseIntValue(kisData.openPrice()),
-                parseIntValue(kisData.highPrice()),
-                parseIntValue(kisData.lowPrice()),
-                parseIntValue(kisData.closePrice()),
-                parseLongValue(kisData.volume()),
-                parseLongValue(kisData.amount()),
-                parseIntValue(kisData.changeAmount()),
+                kisValueParser.parseIntValue(kisData.openPrice()),
+                kisValueParser.parseIntValue(kisData.highPrice()),
+                kisValueParser.parseIntValue(kisData.lowPrice()),
+                kisValueParser.parseIntValue(kisData.closePrice()),
+                kisValueParser.parseLongValue(kisData.volume()),
+                kisValueParser.parseLongValue(kisData.amount()),
+                kisValueParser.parseIntValue(kisData.changeAmount()),
                 changeRate
         );
     }
@@ -755,30 +724,5 @@ public class StockChartService {
         }
     }
 
-    /**
-     * String을 Integer로 안전하게 변환
-     */
-    private Integer parseIntValue(String value) {
-        if (value == null || value.trim().isEmpty()) return 0;
-        try {
-            return Integer.parseInt(value.trim());
-        } catch (NumberFormatException e) {
-            log.warn("Integer 파싱 실패: {}", value);
-            return 0;
-        }
-    }
-
-    /**
-     * String을 Long으로 안전하게 변환
-     */
-    private Long parseLongValue(String value) {
-        if (value == null || value.trim().isEmpty()) return 0L;
-        try {
-            return Long.parseLong(value.trim());
-        } catch (NumberFormatException e) {
-            log.warn("Long 파싱 실패: {}", value);
-            return 0L;
-        }
-    }
 }
 
