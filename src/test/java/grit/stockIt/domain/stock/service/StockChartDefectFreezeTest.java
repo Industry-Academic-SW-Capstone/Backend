@@ -219,15 +219,15 @@ class StockChartDefectFreezeTest extends IntegrationTestSupport {
     }
 
     @Test
-    @DisplayName("DF-4 결함 b: 종가와 전일대비가 같으면 등락률이 문자열 Infinity가 된다")
-    void df4_zeroDenominatorProducesInfinityChangeRate() {
+    @DisplayName("DF-4 결함 b: 종가와 전일대비가 같으면 등락률이 문자열 0으로 폴백된다")
+    void df4_zeroDenominatorFallsBackToZeroChangeRate() {
         dailyClosePrice = "100";
         dailyChangeAmount = "100";
 
         List<StockChartResponse> chart = stockChartService.getStockChart(STOCK_CODE, "3month").block(SHORT_TIMEOUT);
 
         assertThat(chart).hasSize(1);
-        assertThat(chart.get(0).changeRate()).isEqualTo("Infinity");
+        assertThat(chart.get(0).changeRate()).isEqualTo("0");
     }
 
     @Test

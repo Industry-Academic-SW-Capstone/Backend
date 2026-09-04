@@ -525,7 +525,7 @@ public class StockChartService {
         if (changeRate == null || changeRate.trim().isEmpty()) {
             int closePrice = kisValueParser.parseIntValue(kisData.closePrice());
             int changeAmount = kisValueParser.parseIntValue(kisData.changeAmount());
-            if (closePrice != 0 && changeAmount != 0) {
+            if (closePrice != 0 && changeAmount != 0 && closePrice != changeAmount) {
                 double rate = (changeAmount / (double)(closePrice - changeAmount)) * 100;
                 changeRate = String.format("%.2f", rate);
             } else {
