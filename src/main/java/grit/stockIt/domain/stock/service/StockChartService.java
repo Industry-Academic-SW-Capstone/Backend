@@ -44,18 +44,9 @@ public class StockChartService {
     private final KisApiProperties kisApiProperties;
     private final ObjectMapper objectMapper;
     private final StringRedisTemplate redisTemplate;
+    private final ChartPeriodPolicy chartPeriodPolicy;
 
     private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ofPattern("yyyyMMdd");
-    
-    // Redis 캐시 키 prefix
-    private static final String CACHE_KEY_PREFIX = "stock:chart:";
-    
-    // 기간별 캐시 TTL 설정
-    private static final Duration CACHE_TTL_1DAY = Duration.ofMinutes(1);      // 1분봉: 1분
-    private static final Duration CACHE_TTL_1WEEK = Duration.ofMinutes(5);     // 10분봉: 5분
-    private static final Duration CACHE_TTL_3MONTH = Duration.ofMinutes(30);  // 일봉: 30분
-    private static final Duration CACHE_TTL_1YEAR = Duration.ofHours(1);       // 주봉: 1시간
-    private static final Duration CACHE_TTL_5YEAR = Duration.ofHours(12);     // 월봉: 12시간
 
     /**
      * 주식 차트 데이터 조회 (Redis 캐싱 적용)
@@ -67,9 +58,9 @@ public class StockChartService {
             String stockCode,
             String periodType
     ) {
-        String normalizedType = periodType.toLowerCase();
+        String normalizedType = chartPeriodPolicy.normalize(periodType);
 
-        String cacheKey = CACHE_KEY_PREFIX + stockCode + ":" + normalizedType;
+        String cacheKey = chartPeriodPolicy.cacheKey(stockCode, normalizedType);
 
         String cachedData = redisTemplate.opsForValue().get(cacheKey);
         if (cachedData != null) {
@@ -89,7 +80,7 @@ public class StockChartService {
                 .doOnNext(chartData -> {
                     try {
                         String jsonData = objectMapper.writeValueAsString(chartData);
-                        Duration ttl = getCacheTtl(normalizedType);
+                        Duration ttl = chartPeriodPolicy.cacheTtl(normalizedType);
                         redisTemplate.opsForValue().set(cacheKey, jsonData, ttl);
                         log.info("차트 데이터 캐시 저장: key={} ({}, {}개, TTL={}s)",
                                 cacheKey, periodType, chartData.size(), ttl.toSeconds());
@@ -100,30 +91,16 @@ public class StockChartService {
     }
     
     /**
-     * 기간 타입에 따른 캐시 TTL 반환
-     */
-    private Duration getCacheTtl(String periodType) {
-        return switch (periodType) {
-            case "1day", "day" -> CACHE_TTL_1DAY;
-            case "1week", "week" -> CACHE_TTL_1WEEK;
-            case "3month" -> CACHE_TTL_3MONTH;
-            case "1year", "year" -> CACHE_TTL_1YEAR;
-            case "5year" -> CACHE_TTL_5YEAR;
-            default -> CACHE_TTL_3MONTH; // 기본값
-        };
-    }
-    
-    /**
      * KIS API에서 차트 데이터 조회 (캐싱 없이)
      */
     private Mono<List<StockChartResponse>> fetchStockChartFromApi(
             String stockCode,
             String periodType
     ) {
-        String normalizedType = periodType.toLowerCase();
+        String normalizedType = chartPeriodPolicy.normalize(periodType);
         
         // 1일 - 1분 간격 (390개)
-        if ("1day".equals(normalizedType) || "day".equals(normalizedType)) {
+        if (chartPeriodPolicy.isOneDay(normalizedType)) {
             return getMinuteChartDataFromKisMultiple(stockCode, 1) // 1분 간격
                     .map(chartDataList -> {
                         return chartDataList.stream()
@@ -138,7 +115,7 @@ public class StockChartService {
         }
         
         // 1주 - 10분 간격 (최근 5영업일, 10분 간격)
-        if ("1week".equals(normalizedType) || "week".equals(normalizedType)) {
+        if (chartPeriodPolicy.isOneWeek(normalizedType)) {
             final int minuteInterval = 10;
             return getMinuteChartDataForWeek(stockCode, minuteInterval)
                     .map(chartDataList -> {
@@ -174,7 +151,7 @@ public class StockChartService {
         }
 
         // 3달 - 1일 간격 (일봉)
-        if ("3month".equals(normalizedType)) {
+        if (chartPeriodPolicy.isThreeMonth(normalizedType)) {
             LocalDate endDateLocal = LocalDate.now();
             LocalDate startDateLocal = endDateLocal.minusMonths(3);
             return getChartDataFromKis(stockCode, "D", startDateLocal, endDateLocal) // 일봉
@@ -189,7 +166,7 @@ public class StockChartService {
         }
         
         // 1년 - 7일 간격 (일봉, 7일 간격으로 필터링)
-        if ("1year".equals(normalizedType) || "year".equals(normalizedType)) {
+        if (chartPeriodPolicy.isOneYear(normalizedType)) {
             LocalDate endDateLocal = LocalDate.now();
             LocalDate startDateLocal = endDateLocal.minusYears(1);
             
@@ -246,7 +223,7 @@ public class StockChartService {
         }
         
         // 5년 - 1달 간격 (월봉)
-        if ("5year".equals(normalizedType)) {
+        if (chartPeriodPolicy.isFiveYear(normalizedType)) {
             LocalDate endDateLocal = LocalDate.now();
             LocalDate startDateLocal = endDateLocal.minusYears(5);
             return getChartDataFromKis(stockCode, "M", startDateLocal, endDateLocal) // 월봉
@@ -260,7 +237,7 @@ public class StockChartService {
                     .onErrorResume(e -> Mono.error(new RuntimeException("주식 차트 데이터 조회 실패: " + stockCode, e)));
         }
 
-        throw new IllegalArgumentException("Invalid period type: " + periodType + ". Supported: 1day, 1week, 3month, 1year, 5year");
+        throw new IllegalArgumentException(chartPeriodPolicy.unsupportedPeriodMessage(periodType));
     }
 
     /**
