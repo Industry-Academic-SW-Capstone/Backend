@@ -82,7 +82,8 @@ class StockChartDefectFreezeTest extends IntegrationTestSupport {
      * 일부러 교차 배치했다. 이래야 병합 직후 리스트(allData)가 어떤 도착 순서에서도
      * 정렬 결과와 달라져, 표본 인덱스를 정렬 전 리스트에 적용하는 배선 사고가 드러난다.
      */
-    private static final List<String> ONE_YEAR_FIRST_HALF_DATES = List.of("20250120", "20250106");
+    private static final List<String> ONE_YEAR_FIRST_HALF_DATES =
+            List.of("20250120", "20250108", "20250106");
     private static final List<String> ONE_YEAR_SECOND_HALF_DATES =
             List.of("20250122", "20250121", "20250113", "20250107");
 
