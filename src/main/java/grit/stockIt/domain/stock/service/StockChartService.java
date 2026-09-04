@@ -17,12 +17,10 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import java.time.Duration;
-import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.Comparator;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -45,6 +43,7 @@ public class StockChartService {
     private final StringRedisTemplate redisTemplate;
     private final ChartPeriodPolicy chartPeriodPolicy;
     private final KisValueParser kisValueParser;
+    private final ChartTimeline chartTimeline;
 
     /**
      * 주식 차트 데이터 조회 (Redis 캐싱 적용)
@@ -172,10 +171,9 @@ public class StockChartService {
             List<Mono<List<KisChartDataDto>>> monos = new ArrayList<>();
             
             // 1년을 6개월씩 2번으로 나눠서 호출
-            LocalDate midDate = startDateLocal.plusMonths(6);
-            
-            monos.add(getChartDataFromKis(stockCode, "D", startDateLocal, midDate)); // 첫 6개월
-            monos.add(getChartDataFromKis(stockCode, "D", midDate.plusDays(1), endDateLocal)); // 나머지 6개월 (11월 포함)
+            for (ChartTimeline.DateRange half : chartTimeline.splitIntoHalves(startDateLocal, endDateLocal)) {
+                monos.add(getChartDataFromKis(stockCode, "D", half.start(), half.end()));
+            }
             
             // 모든 Mono를 병렬로 실행하고 합치기
             return Flux.merge(monos)
@@ -304,17 +302,14 @@ public class StockChartService {
      */
     private Mono<List<KisMinuteChartDataDto>> getMinuteChartDataFromKisMultiple(String stockCode, int minuteInterval) {
         LocalTime now = LocalTime.now();
-        LocalTime marketStart = LocalTime.of(9, 0); // 장 시작 시간
-        LocalTime marketEnd = LocalTime.of(15, 30); // 장 종료 시간
-        
+
         // 현재 시간이 장 시작 전이면 빈 리스트 반환
-        if (now.isBefore(marketStart)) {
+        if (chartTimeline.isBeforeMarketOpen(now)) {
             return Mono.just(new ArrayList<>());
         }
         
         // 조회할 시간 범위 계산 (30분 단위)
-        LocalTime endTime = now.isAfter(marketEnd) ? marketEnd : now;
-        List<String> timeRanges = calculateTimeRanges(marketStart, endTime);
+        List<String> timeRanges = chartTimeline.intradayRequestTimes(now);
         
         // 각 시간 범위마다 비동기로 호출
         List<Mono<List<KisMinuteChartDataDto>>> monos = timeRanges.stream()
@@ -337,58 +332,10 @@ public class StockChartService {
     }
 
     /**
-     * 시간 범위를 30분 단위로 나누기
-     */
-    private List<String> calculateTimeRanges(LocalTime start, LocalTime end) {
-        List<String> ranges = new ArrayList<>();
-        LocalTime current = start;
-        
-        while (current.isBefore(end) || current.equals(end)) {
-            // HHMMSS 형식으로 변환
-            String timeStr = String.format("%02d%02d%02d", current.getHour(), current.getMinute(), 0);
-            ranges.add(timeStr);
-            
-            // 30분 추가
-            current = current.plusMinutes(30);
-            
-            // 종료 시간을 넘으면 중단
-            if (current.isAfter(end)) {
-                break;
-            }
-        }
-        
-        String endTimeStr = String.format("%02d%02d%02d", end.getHour(), end.getMinute(), end.getSecond());
-        if (ranges.isEmpty() || !ranges.get(ranges.size() - 1).equals(endTimeStr)) {
-            ranges.add(endTimeStr);
-        }
-
-        return ranges;
-    }
-
-    /**
-     * 조회 종료일 기준 최근 영업일 목록(주말 제외)
-     */
-    private List<LocalDate> getRecentBusinessDays(LocalDate endDate, int count) {
-        List<LocalDate> result = new ArrayList<>();
-        LocalDate cursor = endDate;
-
-        while (result.size() < count) {
-            DayOfWeek dayOfWeek = cursor.getDayOfWeek();
-            if (dayOfWeek != DayOfWeek.SATURDAY && dayOfWeek != DayOfWeek.SUNDAY) {
-                result.add(cursor);
-            }
-            cursor = cursor.minusDays(1);
-        }
-
-        Collections.reverse(result);
-        return result;
-    }
-
-    /**
      * 주식 일별 분봉 데이터 조회 (KIS 주식일별분봉조회 API)
      */
     private Mono<List<KisMinuteChartDataDto>> getMinuteChartDataFromKisDaily(String stockCode, LocalDate targetDate) {
-        List<String> timeWindows = List.of("153000", "133000", "113000", "093000");
+        List<String> timeWindows = chartTimeline.dailyMinuteWindows();
 
         return Flux.fromIterable(timeWindows)
                 .concatMap(hour -> requestDailyMinuteChunk(stockCode, targetDate, hour))
@@ -507,7 +454,8 @@ public class StockChartService {
      * 분봉 API는 당일만 조회 가능하므로, 당일 분봉을 조회하고 10분 간격으로 필터링
      */
     private Mono<List<KisMinuteChartDataDto>> getMinuteChartDataForWeek(String stockCode, int minuteInterval) {
-        List<LocalDate> recentBusinessDays = getRecentBusinessDays(LocalDate.now(), 5);
+        List<LocalDate> recentBusinessDays =
+                chartTimeline.recentBusinessDays(LocalDate.now(), chartTimeline.weekBusinessDayCount());
 
         if (recentBusinessDays.isEmpty()) {
             return Mono.just(List.of());
