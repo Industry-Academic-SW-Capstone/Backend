@@ -22,10 +22,8 @@ import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
@@ -44,6 +42,7 @@ public class StockChartService {
     private final ChartPeriodPolicy chartPeriodPolicy;
     private final KisValueParser kisValueParser;
     private final ChartTimeline chartTimeline;
+    private final ChartSampling chartSampling;
 
     /**
      * 주식 차트 데이터 조회 (Redis 캐싱 적용)
@@ -128,9 +127,7 @@ public class StockChartService {
 
                             LocalDateTime currentDateTime = LocalDateTime.of(currentDate, currentTime);
 
-                            if (lastDateTime == null
-                                    || !currentDateTime.toLocalDate().equals(lastDateTime.toLocalDate())
-                                    || currentDateTime.isAfter(lastDateTime.plusMinutes(minuteInterval - 1L))) {
+                            if (chartSampling.shouldKeepMinuteBar(lastDateTime, currentDateTime, minuteInterval)) {
                                 result.add(mapMinuteToStockChartDto(stockCode, periodType, kisData));
                                 lastDateTime = currentDateTime;
                             }
@@ -191,22 +188,13 @@ public class StockChartService {
                                 .toList();
                         
                         // 날짜 기준으로 7일 간격 필터링 (과거부터 현재까지)
+                        List<LocalDate> sortedDates = sortedList.stream()
+                                .map(kisData -> kisValueParser.parseDate(kisData.date()))
+                                .toList();
+
                         List<StockChartResponse> result = new ArrayList<>();
-                        LocalDate lastSelectedDate = null;
-                        
-                        for (int i = 0; i < sortedList.size(); i++) {
-                            KisChartDataDto kisData = sortedList.get(i);
-                            LocalDate currentDate = kisValueParser.parseDate(kisData.date());
-                            
-                            // 첫 번째 데이터이거나, 마지막 선택된 날짜로부터 7일 이상 경과한 경우
-                            // 마지막 데이터 포인트는 항상 포함
-                            boolean isLastItem = (i == sortedList.size() - 1);
-                            if (lastSelectedDate == null || 
-                                currentDate.isAfter(lastSelectedDate.plusDays(6)) || 
-                                isLastItem) { // 7일 이상 차이 또는 마지막 데이터
-                                result.add(mapToStockChartDto(stockCode, periodType, kisData));
-                                lastSelectedDate = currentDate;
-                            }
+                        for (int index : chartSampling.selectWeeklySampleIndexes(sortedDates)) {
+                            result.add(mapToStockChartDto(stockCode, periodType, sortedList.get(index)));
                         }
                         
                         // 날짜 기준 오름차순 정렬 (과거 → 현재) - 안전성을 위해 최종 정렬
@@ -327,7 +315,7 @@ public class StockChartService {
                     }
                     
                     // 중복 제거 및 시간 순서로 정렬
-                    return deduplicateAndSort(allData);
+                    return chartSampling.deduplicateAndSort(allData);
                 });
     }
 
@@ -345,7 +333,7 @@ public class StockChartService {
                     for (List<KisMinuteChartDataDto> part : listOfLists) {
                         merged.addAll(part);
                     }
-                    return deduplicateAndSort(merged);
+                    return chartSampling.deduplicateAndSort(merged);
                 });
     }
 
@@ -426,30 +414,6 @@ public class StockChartService {
     }
 
     /**
-     * 중복 제거 및 시간 순서로 정렬
-     */
-    private List<KisMinuteChartDataDto> deduplicateAndSort(List<KisMinuteChartDataDto> data) {
-        // 날짜+시간을 키로 사용하여 중복 제거 (LinkedHashSet으로 순서 유지)
-        Set<String> seen = new LinkedHashSet<>();
-        List<KisMinuteChartDataDto> unique = new ArrayList<>();
-        
-        for (KisMinuteChartDataDto item : data) {
-            String key = item.date() + "_" + item.time();
-            if (!seen.contains(key)) {
-                seen.add(key);
-                unique.add(item);
-            }
-        }
-        
-        // 날짜+시간 순서로 정렬
-        return unique.stream()
-                .sorted(Comparator
-                        .comparing(KisMinuteChartDataDto::date)
-                        .thenComparing(KisMinuteChartDataDto::time))
-                .collect(Collectors.toList());
-    }
-
-    /**
      * 1주일 분봉 데이터 조회 (1주일 전부터 현재까지)
      * 분봉 API는 당일만 조회 가능하므로, 당일 분봉을 조회하고 10분 간격으로 필터링
      */
@@ -477,7 +441,7 @@ public class StockChartService {
                     return dailyFlux;
                 })
                 .collectList()
-                .map(this::deduplicateAndSort);
+                .map(chartSampling::deduplicateAndSort);
     }
 
     private Mono<List<KisMinuteChartDataDto>> getMinuteChartDataFromKis(String stockCode, String startTime, int minuteInterval) {
