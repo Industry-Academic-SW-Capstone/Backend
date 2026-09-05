@@ -23,6 +23,7 @@ import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.stream.Collectors;
 
@@ -527,7 +528,7 @@ public class StockChartService {
             int changeAmount = kisValueParser.parseIntValue(kisData.changeAmount());
             if (closePrice != 0 && changeAmount != 0 && closePrice != changeAmount) {
                 double rate = (changeAmount / (double)(closePrice - changeAmount)) * 100;
-                changeRate = String.format("%.2f", rate);
+                changeRate = String.format(Locale.ROOT, "%.2f", rate);
             } else {
                 changeRate = "0";
             }

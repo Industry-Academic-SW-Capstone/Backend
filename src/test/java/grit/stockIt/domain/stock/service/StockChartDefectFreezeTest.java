@@ -36,6 +36,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
@@ -53,6 +54,10 @@ import static org.mockito.Mockito.when;
  *
  * DF-0는 대조군이다. HTML을 하나도 주입하지 않은 실행이 비어 있지 않은 20건 차트를
  * 돌려주지 못하면 나머지 결함 단정은 공허하게 통과한 것이므로 증거로 인정하지 않는다.
+ *
+ * DF-6은 결함 e(등락률 포맷이 JVM 기본 로케일을 읽던 문제)의 수정을 지키는 판별 케이스다.
+ * 배포 대상이 ko-KR이라 대조군 DF-5는 수정 유무와 무관하게 통과한다. 기본 로케일을
+ * 콤마 소수점으로 바꿔야만 회귀가 드러나므로 이 케이스가 따로 필요하다.
  *
  * OY-1은 결함 동결이 아니라 1year 경로의 내용 오라클이다. 불변 2파일(AC-1)은 호출 수·캐시만
  * 고정하므로 이번 사이클 유일의 비축자 변환인 7일 표본 배선을 아무도 관측하지 않는다.
@@ -260,6 +265,21 @@ class StockChartDefectFreezeTest extends IntegrationTestSupport {
 
         assertThat(chart).hasSize(1);
         assertThat(chart.get(0).changeRate()).isEqualTo("10.00");
+    }
+
+    @Test
+    @DisplayName("DF-6 결함 e: 기본 로케일이 콤마 소수점이어도 등락률은 점 소수점 문자열이다")
+    void df6_commaDecimalDefaultLocaleStillProducesDotFormattedChangeRate() {
+        Locale previousDefault = Locale.getDefault();
+        Locale.setDefault(Locale.GERMANY);
+        try {
+            List<StockChartResponse> chart = stockChartService.getStockChart(STOCK_CODE, "3month").block(SHORT_TIMEOUT);
+
+            assertThat(chart).hasSize(1);
+            assertThat(chart.get(0).changeRate()).isEqualTo("10.00");
+        } finally {
+            Locale.setDefault(previousDefault);
+        }
     }
 
     @Test
