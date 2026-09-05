@@ -111,6 +111,28 @@ class StockChartCharacterizationTest extends IntegrationTestSupport {
                         """.formatted(rows)));
     }
 
+    /** output2 자리에 임의 JSON을 넣어 파싱 분기를 직접 겨냥한다. */
+    private static void enqueueRawOutput2(String output2Json) {
+        KIS.enqueue(new MockResponse()
+                .setHeader("Content-Type", "application/json")
+                .setBody("""
+                        {"rt_cd":"0","msg_cd":"MCA00000","msg1":"정상","output1":{},"output2":%s}
+                        """.formatted(output2Json)));
+    }
+
+    private static void enqueueBody(String body) {
+        KIS.enqueue(new MockResponse().setHeader("Content-Type", "application/json").setBody(body));
+    }
+
+    /** 한 건짜리 일봉 항목. 지정한 필드만 덮어쓴다. */
+    private static String dailyRow(String date, String extraFields) {
+        return """
+                {"stck_bsop_date":"%s","stck_clpr":"70000","stck_oprc":"69000",
+                 "stck_hgpr":"71000","stck_lwpr":"68000","acml_vol":"1000",
+                 "acml_tr_pbmn":"70000000"%s}
+                """.formatted(date, extraFields.isEmpty() ? "" : "," + extraFields);
+    }
+
     /** KIS 응답 픽스처용 yyyyMMdd 문자열. */
     private static String daysAgo(int days) {
         return dateDaysAgo(days).format(YYYYMMDD);
@@ -224,6 +246,193 @@ class StockChartCharacterizationTest extends IntegrationTestSupport {
             assertThat(KIS.takeRequest(2, TimeUnit.SECONDS))
                     .as("KIS 기간 제한 때문에 6개월씩 2회 호출한다")
                     .isNotNull();
+        }
+    }
+
+    @Nested
+    @DisplayName("KIS 응답 오류 처리")
+    class KisErrorHandling {
+
+        @Test
+        @DisplayName("rt_cd가 0이 아니면 조회 실패 예외로 감싼다")
+        void nonZeroReturnCode_wrapsInFailure() {
+            enqueueBody("""
+                    {"rt_cd":"1","msg_cd":"EGW00123","msg1":"기간이 잘못되었습니다","output1":{},"output2":[]}
+                    """);
+
+            assertThatThrownBy(() -> stockChartService.getStockChart(STOCK_CODE, "3month").block())
+                    .isInstanceOf(RuntimeException.class)
+                    .hasMessageContaining("주식 차트 데이터 조회 실패");
+        }
+
+        @Test
+        @DisplayName("응답이 JSON이 아니면 조회 실패 예외로 감싼다")
+        void malformedBody_wrapsInFailure() {
+            enqueueBody("<html>gateway error</html>");
+
+            assertThatThrownBy(() -> stockChartService.getStockChart(STOCK_CODE, "3month").block())
+                    .isInstanceOf(RuntimeException.class)
+                    .hasMessageContaining("주식 차트 데이터 조회 실패");
+        }
+
+        @Test
+        @DisplayName("성공 응답이지만 output2가 null이면 빈 리스트다 (예외 아님)")
+        void nullOutput2_returnsEmptyList() {
+            enqueueRawOutput2("null");
+
+            List<StockChartResponse> result = stockChartService.getStockChart(STOCK_CODE, "3month").block();
+
+            assertThat(result).isEmpty();
+        }
+
+        @Test
+        @DisplayName("실패한 조회는 캐시에 저장되지 않는다")
+        void failedFetch_isNotCached() {
+            enqueueBody("""
+                    {"rt_cd":"1","msg_cd":"E","msg1":"오류","output1":{},"output2":[]}
+                    """);
+
+            assertThatThrownBy(() -> stockChartService.getStockChart(STOCK_CODE, "3month").block())
+                    .isInstanceOf(RuntimeException.class);
+
+            assertThat(redisTemplate.opsForValue().get("stock:chart:" + STOCK_CODE + ":3month")).isNull();
+        }
+    }
+
+    @Nested
+    @DisplayName("output2 구조별 파싱")
+    class OutputShapeParsing {
+
+        @Test
+        @DisplayName("배열 안에 Map이 아닌 항목이 섞이면 건너뛴다")
+        void nonMapItemsInArray_areSkipped() {
+            enqueueRawOutput2("[" + dailyRow(daysAgo(1), "") + ", \"쓰레기값\", 42]");
+
+            List<StockChartResponse> result = stockChartService.getStockChart(STOCK_CODE, "3month").block();
+
+            assertThat(result).hasSize(1);
+        }
+
+        @Test
+        @DisplayName("output2가 output 키를 가진 객체면 그 안의 배열을 읽는다")
+        void nestedOutputKey_withList() {
+            enqueueRawOutput2("{\"output\":[" + dailyRow(daysAgo(2), "") + "," + dailyRow(daysAgo(1), "") + "]}");
+
+            List<StockChartResponse> result = stockChartService.getStockChart(STOCK_CODE, "3month").block();
+
+            assertThat(result).hasSize(2);
+        }
+
+        @Test
+        @DisplayName("output 키 안이 단일 객체여도 한 건으로 읽는다")
+        void nestedOutputKey_withSingleObject() {
+            enqueueRawOutput2("{\"output\":" + dailyRow(daysAgo(1), "") + "}");
+
+            List<StockChartResponse> result = stockChartService.getStockChart(STOCK_CODE, "3month").block();
+
+            assertThat(result).hasSize(1);
+        }
+
+        @Test
+        @DisplayName("output2가 output 키 없는 단일 객체면 그대로 한 건으로 읽는다")
+        void bareObject_isReadAsSingleRow() {
+            enqueueRawOutput2(dailyRow(daysAgo(1), ""));
+
+            List<StockChartResponse> result = stockChartService.getStockChart(STOCK_CODE, "3month").block();
+
+            assertThat(result).hasSize(1);
+        }
+
+        @Test
+        @DisplayName("output2가 객체도 배열도 아니면 빈 리스트다")
+        void scalarOutput_returnsEmpty() {
+            enqueueRawOutput2("\"unexpected\"");
+
+            List<StockChartResponse> result = stockChartService.getStockChart(STOCK_CODE, "3month").block();
+
+            assertThat(result).isEmpty();
+        }
+
+        @Test
+        @DisplayName("날짜 형식이 어긋나면 조회 실패 예외로 감싼다")
+        void invalidDateFormat_wrapsInFailure() {
+            enqueueRawOutput2("[" + dailyRow("2026-09-01", "") + "]");
+
+            assertThatThrownBy(() -> stockChartService.getStockChart(STOCK_CODE, "3month").block())
+                    .isInstanceOf(RuntimeException.class)
+                    .hasMessageContaining("주식 차트 데이터 조회 실패");
+        }
+    }
+
+    @Nested
+    @DisplayName("필드 변환")
+    class FieldMapping {
+
+        private StockChartResponse fetchSingleRow(String extraFields) {
+            enqueueRawOutput2("[" + dailyRow(daysAgo(1), extraFields) + "]");
+            List<StockChartResponse> result = stockChartService.getStockChart(STOCK_CODE, "3month").block();
+            assertThat(result).hasSize(1);
+            return result.get(0);
+        }
+
+        @Test
+        @DisplayName("전일대비율이 오면 그 값을 그대로 쓴다")
+        void changeRate_presentIsUsedAsIs() {
+            StockChartResponse row = fetchSingleRow("\"prdy_vrss\":\"1000\",\"prdy_ctrt\":\"1.45\"");
+
+            assertThat(row.changeRate()).isEqualTo("1.45");
+        }
+
+        @Test
+        @DisplayName("전일대비율이 없으면 전일대비와 종가로 계산한다")
+        void changeRate_absentIsComputed() {
+            // 종가 70000, 전일대비 1000 → 전일 종가 69000 기준 1000/69000 = 1.45%
+            StockChartResponse row = fetchSingleRow("\"prdy_vrss\":\"1000\"");
+
+            assertThat(row.changeRate()).isEqualTo("1.45");
+        }
+
+        @Test
+        @DisplayName("전일대비가 0이면 계산하지 않고 0을 쓴다")
+        void changeRate_zeroChangeFallsBackToZero() {
+            StockChartResponse row = fetchSingleRow("\"prdy_vrss\":\"0\"");
+
+            assertThat(row.changeRate()).isEqualTo("0");
+        }
+
+        @Test
+        @DisplayName("숫자 필드가 비었거나 숫자가 아니면 0으로 떨어진다")
+        void nonNumericFields_becomeZero() {
+            enqueueRawOutput2("""
+                    [{"stck_bsop_date":"%s","stck_clpr":"","stck_oprc":"안녕",
+                      "stck_hgpr":null,"stck_lwpr":"68000","acml_vol":"not-a-number",
+                      "acml_tr_pbmn":"70000000","prdy_vrss":"0"}]
+                    """.formatted(daysAgo(1)));
+
+            List<StockChartResponse> result = stockChartService.getStockChart(STOCK_CODE, "3month").block();
+
+            StockChartResponse row = result.get(0);
+            assertThat(row.closePrice()).isZero();
+            assertThat(row.openPrice()).isZero();
+            assertThat(row.highPrice()).isZero();
+            assertThat(row.volume()).isZero();
+            assertThat(row.lowPrice()).isEqualTo(68000);
+        }
+
+        @Test
+        @DisplayName("숫자 앞뒤 공백은 잘라내고 변환한다")
+        void paddedNumbers_areTrimmed() {
+            StockChartResponse row = fetchSingleRow("\"prdy_vrss\":\"  1000  \"");
+
+            assertThat(row.changeAmount()).isEqualTo(1000);
+        }
+
+        @Test
+        @DisplayName("일/주/월봉은 시간 정보가 없다")
+        void dailyChart_hasNoTime() {
+            StockChartResponse row = fetchSingleRow("\"prdy_vrss\":\"0\"");
+
+            assertThat(row.time()).isNull();
         }
     }
 
