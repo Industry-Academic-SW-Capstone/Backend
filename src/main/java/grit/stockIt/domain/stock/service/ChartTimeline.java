@@ -8,6 +8,7 @@ import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Locale;
 
 /**
  * KIS 호출 시각·일자 산출 순수 로직.
@@ -45,7 +46,7 @@ public class ChartTimeline {
         LocalTime current = start;
 
         while (current.isBefore(end) || current.equals(end)) {
-            String timeStr = String.format("%02d%02d%02d", current.getHour(), current.getMinute(), 0);
+            String timeStr = String.format(Locale.ROOT, "%02d%02d%02d", current.getHour(), current.getMinute(), 0);
             ranges.add(timeStr);
 
             current = current.plusMinutes(30);
@@ -55,7 +56,7 @@ public class ChartTimeline {
             }
         }
 
-        String endTimeStr = String.format("%02d%02d%02d", end.getHour(), end.getMinute(), end.getSecond());
+        String endTimeStr = String.format(Locale.ROOT, "%02d%02d%02d", end.getHour(), end.getMinute(), end.getSecond());
         if (ranges.isEmpty() || !ranges.get(ranges.size() - 1).equals(endTimeStr)) {
             ranges.add(endTimeStr);
         }

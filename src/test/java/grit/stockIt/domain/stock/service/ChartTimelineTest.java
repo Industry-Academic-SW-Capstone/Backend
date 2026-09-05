@@ -10,6 +10,7 @@ import org.junit.jupiter.params.provider.ValueSource;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.util.List;
+import java.util.Locale;
 
 @DisplayName("ChartTimeline 단위 특성화 테스트")
 class ChartTimelineTest {
@@ -75,6 +76,25 @@ class ChartTimelineTest {
     void T10_시작이_종료보다_늦어도_calculateTimeRanges는_비지_않는다() {
         assertThat(timeline.calculateTimeRanges(LocalTime.of(9, 0), LocalTime.of(8, 0)))
                 .containsExactly("080000");
+    }
+
+    /**
+     * KIS FID_INPUT_HOUR_1은 ASCII 숫자만 받는다. Formatter의 %d는 기본 로케일의 zeroDigit을
+     * 따르므로 latn이 아닌 자릿수 체계(ar-SA 등)에서는 아랍-인도 숫자가 나간다. 격자 항목과
+     * 말미 항목 두 포맷 지점을 한 번에 지나가도록 말미 초가 0이 아닌 구간을 쓴다.
+     */
+    @Test
+    void T11_비라틴_자릿수_로케일에서도_조회_시각은_ASCII_숫자다() {
+        Locale previousDefault = Locale.getDefault();
+        Locale.setDefault(Locale.forLanguageTag("ar-SA"));
+        try {
+            List<String> ranges = timeline.calculateTimeRanges(LocalTime.of(9, 0), LocalTime.of(10, 15, 37));
+
+            assertThat(ranges).containsExactly("090000", "093000", "100000", "101537");
+            assertThat(ranges).allMatch(range -> range.matches("[0-9]{6}"));
+        } finally {
+            Locale.setDefault(previousDefault);
+        }
     }
 
     @ParameterizedTest
