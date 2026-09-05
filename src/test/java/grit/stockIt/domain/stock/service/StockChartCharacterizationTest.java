@@ -3,8 +3,11 @@ package grit.stockIt.domain.stock.service;
 import grit.stockIt.domain.stock.dto.StockChartResponse;
 import grit.stockIt.global.auth.KisTokenManager;
 import grit.stockIt.global.support.IntegrationTestSupport;
+import okhttp3.mockwebserver.Dispatcher;
 import okhttp3.mockwebserver.MockResponse;
 import okhttp3.mockwebserver.MockWebServer;
+import okhttp3.mockwebserver.QueueDispatcher;
+import okhttp3.mockwebserver.RecordedRequest;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -17,8 +20,12 @@ import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 import java.io.IOException;
+import java.time.Clock;
 import java.time.Duration;
 import java.time.LocalDate;
+import java.time.LocalTime;
+import java.time.ZoneId;
+import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Set;
@@ -43,6 +50,14 @@ class StockChartCharacterizationTest extends IntegrationTestSupport {
     private static final MockWebServer KIS = new MockWebServer();
     private static final DateTimeFormatter YYYYMMDD = DateTimeFormatter.ofPattern("yyyyMMdd");
     private static final String STOCK_CODE = "005930";
+
+    private static final ZoneId SEOUL = ZoneId.of("Asia/Seoul");
+
+    /**
+     * 기본 기준 시각: 2026-09-04(금) 16:00 KST — 장 마감 후.
+     * 분봉 조회가 09:00~15:30 전 구간을 훑는 시각이라 호출 횟수가 고정된다.
+     */
+    private static final ZonedDateTime FIXED_NOW = ZonedDateTime.of(2026, 9, 4, 16, 0, 0, 0, SEOUL);
 
     static {
         try {
@@ -71,15 +86,31 @@ class StockChartCharacterizationTest extends IntegrationTestSupport {
     @MockitoBean
     private KisTokenManager kisTokenManager;
 
+    @MockitoBean
+    private Clock clock;
+
     @BeforeEach
     void setUp() {
         given(kisTokenManager.getAccessToken()).willReturn("test-access-token");
+        fixClockAt(FIXED_NOW);
 
         Set<String> cacheKeys = redisTemplate.keys("stock:chart:*");
         if (cacheKeys != null && !cacheKeys.isEmpty()) {
             redisTemplate.delete(cacheKeys);
         }
+
+        // 큐를 새로 갈아끼워 이전 테스트가 남긴 응답·디스패처가 새지 않게 한다.
+        KIS.setDispatcher(new QueueDispatcher());
         drainPendingRequests();
+    }
+
+    private void fixClockAt(ZonedDateTime moment) {
+        given(clock.instant()).willReturn(moment.toInstant());
+        given(clock.getZone()).willReturn(SEOUL);
+    }
+
+    private void fixClockAt(int year, int month, int day, int hour, int minute) {
+        fixClockAt(ZonedDateTime.of(year, month, day, hour, minute, 0, 0, SEOUL));
     }
 
     /** 이전 테스트가 큐에 남긴 요청 기록을 비운다 — 호출 횟수 단언이 서로 오염되지 않게. */
@@ -133,14 +164,58 @@ class StockChartCharacterizationTest extends IntegrationTestSupport {
                 """.formatted(date, extraFields.isEmpty() ? "" : "," + extraFields);
     }
 
-    /** KIS 응답 픽스처용 yyyyMMdd 문자열. */
+    /** KIS 응답 픽스처용 yyyyMMdd 문자열. 고정 시계 기준이라 자정을 넘겨도 흔들리지 않는다. */
     private static String daysAgo(int days) {
         return dateDaysAgo(days).format(YYYYMMDD);
     }
 
     /** 단언용 — StockChartResponse.date는 LocalDate다. */
     private static LocalDate dateDaysAgo(int days) {
-        return LocalDate.now().minusDays(days);
+        return FIXED_NOW.toLocalDate().minusDays(days);
+    }
+
+    /** 분봉 한 건. */
+    private static String minuteRow(String date, String hhmmss) {
+        return """
+                {"stck_bsop_date":"%s","stck_cntg_hour":"%s","stck_prpr":"70500",
+                 "stck_oprc":"70000","stck_hgpr":"70800","stck_lwpr":"69900",
+                 "cntg_vol":"120","acml_tr_pbmn":"8460000"}
+                """.formatted(date, hhmmss);
+    }
+
+    private static String minuteBody(String... rows) {
+        return """
+                {"rt_cd":"0","msg_cd":"MCA00000","msg1":"정상","output1":{},"output2":[%s]}
+                """.formatted(String.join(",", rows));
+    }
+
+    /** 모든 요청에 같은 본문을 돌려준다 — 호출 횟수가 시각에 따라 달라지는 경로용. */
+    private static void respondAlways(String body) {
+        KIS.setDispatcher(new Dispatcher() {
+            @Override
+            public MockResponse dispatch(RecordedRequest request) {
+                return new MockResponse().setHeader("Content-Type", "application/json").setBody(body);
+            }
+        });
+    }
+
+    /** 요청의 FID_INPUT_DATE_1 값에 맞춰 그 날짜의 분봉을 돌려준다. */
+    private static void respondPerRequestedDate(String... timesOfDay) {
+        KIS.setDispatcher(new Dispatcher() {
+            @Override
+            public MockResponse dispatch(RecordedRequest request) {
+                String date = request.getRequestUrl() == null
+                        ? null
+                        : request.getRequestUrl().queryParameter("FID_INPUT_DATE_1");
+                String[] rows = new String[timesOfDay.length];
+                for (int i = 0; i < timesOfDay.length; i++) {
+                    rows[i] = minuteRow(date, timesOfDay[i]);
+                }
+                return new MockResponse()
+                        .setHeader("Content-Type", "application/json")
+                        .setBody(minuteBody(rows));
+            }
+        });
     }
 
     @Nested
@@ -232,6 +307,28 @@ class StockChartCharacterizationTest extends IntegrationTestSupport {
             stockChartService.getStockChart(STOCK_CODE, "3MONTH").block();
 
             assertThat(redisTemplate.opsForValue().get("stock:chart:" + STOCK_CODE + ":3month")).isNotNull();
+        }
+
+        @Test
+        @DisplayName("접미사 없는 별칭도 같은 경로를 탄다 (year → 1year)")
+        void aliasPeriodType_year() {
+            enqueueDailyChart(List.of(daysAgo(300)));
+            enqueueDailyChart(List.of(daysAgo(10)));
+
+            List<StockChartResponse> result = stockChartService.getStockChart(STOCK_CODE, "year").block();
+
+            assertThat(result).isNotEmpty();
+            assertThat(redisTemplate.opsForValue().get("stock:chart:" + STOCK_CODE + ":year")).isNotNull();
+        }
+
+        @Test
+        @DisplayName("접미사 없는 별칭도 같은 경로를 탄다 (day → 1day)")
+        void aliasPeriodType_day() {
+            respondAlways(minuteBody(minuteRow("20260904", "090000")));
+
+            List<StockChartResponse> result = stockChartService.getStockChart(STOCK_CODE, "day").block();
+
+            assertThat(result).hasSize(1);
         }
 
         @Test
@@ -433,6 +530,281 @@ class StockChartCharacterizationTest extends IntegrationTestSupport {
             StockChartResponse row = fetchSingleRow("\"prdy_vrss\":\"0\"");
 
             assertThat(row.time()).isNull();
+        }
+    }
+
+    @Nested
+    @DisplayName("당일 분봉 (1day)")
+    class IntradayMinuteChart {
+
+        private static final String TODAY = "20260904";
+
+        @Test
+        @DisplayName("장 시작 전이면 KIS를 호출하지 않고 빈 리스트를 준다")
+        void beforeMarketOpen_returnsEmptyWithoutCallingKis() {
+            fixClockAt(2026, 9, 4, 8, 30);
+            respondAlways(minuteBody(minuteRow(TODAY, "090000")));
+            int before = KIS.getRequestCount();
+
+            List<StockChartResponse> result = stockChartService.getStockChart(STOCK_CODE, "1day").block();
+
+            assertThat(result).isEmpty();
+            assertThat(KIS.getRequestCount() - before).isZero();
+        }
+
+        @Test
+        @DisplayName("장 마감 후에는 09:00~15:30을 30분 단위로 14번 조회한다")
+        void afterMarketClose_queriesFourteenBuckets() {
+            respondAlways(minuteBody(minuteRow(TODAY, "090000")));
+            int before = KIS.getRequestCount();
+
+            stockChartService.getStockChart(STOCK_CODE, "1day").block();
+
+            assertThat(KIS.getRequestCount() - before).isEqualTo(14);
+        }
+
+        @Test
+        @DisplayName("장중이면 현재 시각까지만 조회한다")
+        void duringMarketHours_queriesUpToNow() {
+            fixClockAt(2026, 9, 4, 10, 17);
+            respondAlways(minuteBody(minuteRow(TODAY, "090000")));
+            int before = KIS.getRequestCount();
+
+            stockChartService.getStockChart(STOCK_CODE, "1day").block();
+
+            // 09:00, 09:30, 10:00 + 종료시각(10:17) = 4회
+            assertThat(KIS.getRequestCount() - before).isEqualTo(4);
+        }
+
+        @Test
+        @DisplayName("여러 번 조회한 결과에서 같은 날짜+시간은 한 건으로 합친다")
+        void duplicateTimestampsAcrossBuckets_areDeduplicated() {
+            respondAlways(minuteBody(minuteRow(TODAY, "090000"), minuteRow(TODAY, "091000")));
+
+            List<StockChartResponse> result = stockChartService.getStockChart(STOCK_CODE, "1day").block();
+
+            assertThat(result)
+                    .as("14번 호출이 모두 같은 두 건을 돌려줘도 중복 제거된다")
+                    .hasSize(2);
+        }
+
+        @Test
+        @DisplayName("분봉은 날짜+시간 오름차순으로 정렬된다")
+        void minuteRows_sortedByDateThenTime() {
+            respondAlways(minuteBody(
+                    minuteRow(TODAY, "103000"),
+                    minuteRow(TODAY, "090000"),
+                    minuteRow(TODAY, "094500")));
+
+            List<StockChartResponse> result = stockChartService.getStockChart(STOCK_CODE, "1day").block();
+
+            assertThat(result).extracting(StockChartResponse::time)
+                    .containsExactly(LocalTime.of(9, 0), LocalTime.of(9, 45), LocalTime.of(10, 30));
+        }
+
+        @Test
+        @DisplayName("분봉은 현재가를 종가로 쓰고 전일대비는 0으로 채운다")
+        void minuteRow_usesCurrentPriceAsCloseAndZeroChange() {
+            respondAlways(minuteBody(minuteRow(TODAY, "090000")));
+
+            StockChartResponse row = stockChartService.getStockChart(STOCK_CODE, "1day").block().get(0);
+
+            assertThat(row.closePrice()).as("stck_prpr를 종가로 쓴다").isEqualTo(70500);
+            assertThat(row.volume()).as("cntg_vol를 거래량으로 쓴다").isEqualTo(120L);
+            assertThat(row.changeAmount()).isZero();
+            assertThat(row.changeRate()).isEqualTo("0");
+        }
+
+        @Test
+        @DisplayName("시간이 6자리가 아니면 time은 null이 된다")
+        void malformedTime_becomesNull() {
+            respondAlways(minuteBody(minuteRow(TODAY, "0900")));
+
+            List<StockChartResponse> result = stockChartService.getStockChart(STOCK_CODE, "1day").block();
+
+            assertThat(result).hasSize(1);
+            assertThat(result.get(0).time()).isNull();
+        }
+
+        @Test
+        @DisplayName("시간 자리에 숫자가 아닌 값이 오면 time은 null이 된다")
+        void nonNumericTime_becomesNull() {
+            respondAlways(minuteBody(minuteRow(TODAY, "ab0000")));
+
+            List<StockChartResponse> result = stockChartService.getStockChart(STOCK_CODE, "1day").block();
+
+            assertThat(result.get(0).time()).isNull();
+        }
+
+        @Test
+        @DisplayName("시간이 null이면 time은 null이 된다")
+        void nullTime_becomesNull() {
+            respondAlways("""
+                    {"rt_cd":"0","msg_cd":"MCA00000","msg1":"정상","output1":{},"output2":[
+                      {"stck_bsop_date":"20260904","stck_cntg_hour":null,"stck_prpr":"70500",
+                       "stck_oprc":"70000","stck_hgpr":"70800","stck_lwpr":"69900",
+                       "cntg_vol":"120","acml_tr_pbmn":""}]}
+                    """);
+
+            List<StockChartResponse> result = stockChartService.getStockChart(STOCK_CODE, "1day").block();
+
+            assertThat(result).hasSize(1);
+            assertThat(result.get(0).time()).isNull();
+            assertThat(result.get(0).amount()).as("빈 문자열 거래대금은 0").isZero();
+        }
+
+        @Test
+        @DisplayName("분봉 output2가 배열이 아니면 그 구간은 빈 값으로 넘어간다")
+        void nonArrayMinuteOutput_yieldsNothing() {
+            respondAlways("""
+                    {"rt_cd":"0","msg_cd":"MCA00000","msg1":"정상","output1":{},"output2":"이상한값"}
+                    """);
+
+            List<StockChartResponse> result = stockChartService.getStockChart(STOCK_CODE, "1day").block();
+
+            assertThat(result).isEmpty();
+        }
+
+        @Test
+        @DisplayName("분봉 output2가 null이면 그 구간은 빈 값으로 넘어간다")
+        void nullMinuteOutput_yieldsNothing() {
+            respondAlways("""
+                    {"rt_cd":"0","msg_cd":"MCA00000","msg1":"정상","output1":{},"output2":null}
+                    """);
+
+            List<StockChartResponse> result = stockChartService.getStockChart(STOCK_CODE, "1day").block();
+
+            assertThat(result).isEmpty();
+        }
+
+        @Test
+        @DisplayName("분봉 조회가 KIS 오류를 받으면 조회 실패로 감싼다")
+        void minuteApiError_wrapsInFailure() {
+            respondAlways("""
+                    {"rt_cd":"1","msg_cd":"E","msg1":"분봉 오류","output1":{},"output2":[]}
+                    """);
+
+            assertThatThrownBy(() -> stockChartService.getStockChart(STOCK_CODE, "1day").block())
+                    .isInstanceOf(RuntimeException.class)
+                    .hasMessageContaining("주식 분봉 데이터 조회 실패");
+        }
+    }
+
+    @Nested
+    @DisplayName("주간 분봉 (1week)")
+    class WeeklyMinuteChart {
+
+        @Test
+        @DisplayName("최근 5영업일 × 4개 시간창 = 20번 조회한다")
+        void queriesFiveBusinessDaysTimesFourWindows() {
+            respondPerRequestedDate("090000");
+            int before = KIS.getRequestCount();
+
+            stockChartService.getStockChart(STOCK_CODE, "1week").block();
+
+            assertThat(KIS.getRequestCount() - before).isEqualTo(20);
+        }
+
+        @Test
+        @DisplayName("주말은 영업일에서 빠진다")
+        void weekendsAreExcluded() {
+            // 2026-09-06은 일요일. 최근 5영업일은 08-31(월)~09-04(금)이다.
+            fixClockAt(2026, 9, 6, 16, 0);
+            respondPerRequestedDate("090000");
+
+            List<StockChartResponse> result = stockChartService.getStockChart(STOCK_CODE, "1week").block();
+
+            assertThat(result).extracting(StockChartResponse::date)
+                    .containsExactly(
+                            LocalDate.of(2026, 8, 31),
+                            LocalDate.of(2026, 9, 1),
+                            LocalDate.of(2026, 9, 2),
+                            LocalDate.of(2026, 9, 3),
+                            LocalDate.of(2026, 9, 4));
+        }
+
+        @Test
+        @DisplayName("요청한 날짜와 다른 날짜의 데이터는 버린다")
+        void rowsFromOtherDates_areDropped() {
+            KIS.setDispatcher(new Dispatcher() {
+                @Override
+                public MockResponse dispatch(RecordedRequest request) {
+                    // 요청 날짜와 무관하게 항상 같은 날짜를 돌려준다 → 해당 날짜 요청에서만 살아남는다.
+                    return new MockResponse()
+                            .setHeader("Content-Type", "application/json")
+                            .setBody(minuteBody(minuteRow("20260902", "090000")));
+                }
+            });
+
+            List<StockChartResponse> result = stockChartService.getStockChart(STOCK_CODE, "1week").block();
+
+            assertThat(result).extracting(StockChartResponse::date)
+                    .as("09-02을 요청한 4번에서만 통과하고, 중복 제거로 한 건이 남는다")
+                    .containsExactly(LocalDate.of(2026, 9, 2));
+        }
+
+        @Test
+        @DisplayName("10분보다 촘촘한 데이터는 솎아낸다")
+        void rowsCloserThanTenMinutes_areThinned() {
+            respondPerRequestedDate("090000", "090300", "090700", "091500", "093000");
+
+            List<StockChartResponse> result = stockChartService.getStockChart(STOCK_CODE, "1week").block();
+
+            assertThat(result).extracting(StockChartResponse::time)
+                    .as("09:00 이후 10분 미만 간격은 버려진다")
+                    .containsExactly(
+                            LocalTime.of(9, 0), LocalTime.of(9, 15), LocalTime.of(9, 30),
+                            LocalTime.of(9, 0), LocalTime.of(9, 15), LocalTime.of(9, 30),
+                            LocalTime.of(9, 0), LocalTime.of(9, 15), LocalTime.of(9, 30),
+                            LocalTime.of(9, 0), LocalTime.of(9, 15), LocalTime.of(9, 30),
+                            LocalTime.of(9, 0), LocalTime.of(9, 15), LocalTime.of(9, 30));
+        }
+
+        @Test
+        @DisplayName("응답이 비어 있으면 그 구간을 건너뛰고 예외를 내지 않는다")
+        void blankResponse_isSkipped() {
+            KIS.setDispatcher(new Dispatcher() {
+                @Override
+                public MockResponse dispatch(RecordedRequest request) {
+                    return new MockResponse().setHeader("Content-Type", "application/json").setBody("");
+                }
+            });
+
+            List<StockChartResponse> result = stockChartService.getStockChart(STOCK_CODE, "1week").block();
+
+            assertThat(result).isEmpty();
+        }
+
+        @Test
+        @DisplayName("HTML 응답은 인증 문제로 보고 그 구간을 건너뛴다")
+        void htmlResponse_isSkipped() {
+            KIS.setDispatcher(new Dispatcher() {
+                @Override
+                public MockResponse dispatch(RecordedRequest request) {
+                    return new MockResponse().setBody("<html>login required</html>");
+                }
+            });
+
+            List<StockChartResponse> result = stockChartService.getStockChart(STOCK_CODE, "1week").block();
+
+            assertThat(result).isEmpty();
+        }
+
+        @Test
+        @DisplayName("rt_cd가 비어 있으면 그 구간을 건너뛴다")
+        void blankReturnCode_isSkipped() {
+            KIS.setDispatcher(new Dispatcher() {
+                @Override
+                public MockResponse dispatch(RecordedRequest request) {
+                    return new MockResponse()
+                            .setHeader("Content-Type", "application/json")
+                            .setBody("{\"rt_cd\":\"\",\"msg1\":\"\",\"output1\":{},\"output2\":[]}");
+                }
+            });
+
+            List<StockChartResponse> result = stockChartService.getStockChart(STOCK_CODE, "1week").block();
+
+            assertThat(result).isEmpty();
         }
     }
 
