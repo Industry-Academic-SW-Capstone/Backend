@@ -16,6 +16,7 @@ import reactor.core.publisher.Mono;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+import java.time.Clock;
 import java.time.Duration;
 import java.time.DayOfWeek;
 import java.time.LocalDate;
@@ -44,6 +45,7 @@ public class StockChartService {
     private final KisApiProperties kisApiProperties;
     private final ObjectMapper objectMapper;
     private final StringRedisTemplate redisTemplate;
+    private final Clock clock;
 
     private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ofPattern("yyyyMMdd");
     
@@ -175,7 +177,7 @@ public class StockChartService {
 
         // 3달 - 1일 간격 (일봉)
         if ("3month".equals(normalizedType)) {
-            LocalDate endDateLocal = LocalDate.now();
+            LocalDate endDateLocal = LocalDate.now(clock);
             LocalDate startDateLocal = endDateLocal.minusMonths(3);
             return getChartDataFromKis(stockCode, "D", startDateLocal, endDateLocal) // 일봉
                     .map(chartDataList -> {
@@ -190,7 +192,7 @@ public class StockChartService {
         
         // 1년 - 7일 간격 (일봉, 7일 간격으로 필터링)
         if ("1year".equals(normalizedType) || "year".equals(normalizedType)) {
-            LocalDate endDateLocal = LocalDate.now();
+            LocalDate endDateLocal = LocalDate.now(clock);
             LocalDate startDateLocal = endDateLocal.minusYears(1);
             
             // KIS API 제한으로 인해 여러 번 호출하여 합치기 (6개월씩 나눠서)
@@ -247,7 +249,7 @@ public class StockChartService {
         
         // 5년 - 1달 간격 (월봉)
         if ("5year".equals(normalizedType)) {
-            LocalDate endDateLocal = LocalDate.now();
+            LocalDate endDateLocal = LocalDate.now(clock);
             LocalDate startDateLocal = endDateLocal.minusYears(5);
             return getChartDataFromKis(stockCode, "M", startDateLocal, endDateLocal) // 월봉
                     .map(chartDataList -> {
@@ -328,7 +330,7 @@ public class StockChartService {
      * @param minuteInterval 분봉 간격 (1분 또는 10분)
      */
     private Mono<List<KisMinuteChartDataDto>> getMinuteChartDataFromKisMultiple(String stockCode, int minuteInterval) {
-        LocalTime now = LocalTime.now();
+        LocalTime now = LocalTime.now(clock);
         LocalTime marketStart = LocalTime.of(9, 0); // 장 시작 시간
         LocalTime marketEnd = LocalTime.of(15, 30); // 장 종료 시간
         
@@ -532,7 +534,7 @@ public class StockChartService {
      * 분봉 API는 당일만 조회 가능하므로, 당일 분봉을 조회하고 10분 간격으로 필터링
      */
     private Mono<List<KisMinuteChartDataDto>> getMinuteChartDataForWeek(String stockCode, int minuteInterval) {
-        List<LocalDate> recentBusinessDays = getRecentBusinessDays(LocalDate.now(), 5);
+        List<LocalDate> recentBusinessDays = getRecentBusinessDays(LocalDate.now(clock), 5);
 
         if (recentBusinessDays.isEmpty()) {
             return Mono.just(List.of());
