@@ -68,7 +68,8 @@ class StockRankingApiCharacterizationTest {
         industryRepository = mock(IndustryRepository.class);
 
         stockRankingService = new StockRankingService(
-                webClient, kisTokenManager, kisApiProperties, stockRepository, industryRepository);
+                webClient, kisTokenManager, kisApiProperties, stockRepository, industryRepository,
+                new StockRankingParsingService(), new IndustryRankingCalculationService());
     }
 
     @AfterEach

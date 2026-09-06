@@ -74,7 +74,9 @@ class StockRankingDefectFreezeTest {
                 kisTokenManager,
                 new KisApiProperties("http://unused", "test-appkey", "test-appsecret"),
                 stockRepository,
-                mock(grit.stockIt.domain.industry.repository.IndustryRepository.class));
+                mock(grit.stockIt.domain.industry.repository.IndustryRepository.class),
+                new StockRankingParsingService(),
+                new IndustryRankingCalculationService());
 
         mockMvc = MockMvcBuilders
                 .standaloneSetup(new StockRankingController(service))
