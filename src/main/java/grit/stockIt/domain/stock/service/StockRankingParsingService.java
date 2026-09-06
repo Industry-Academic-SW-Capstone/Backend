@@ -147,7 +147,7 @@ public class StockRankingParsingService {
         );
     }
 
-    public Long parseLongValue(Object value) {
+    Long parseLongValue(Object value) {
         if (value == null) return 0L;
         if (value instanceof Number) return ((Number) value).longValue();
         if (value instanceof String) {
@@ -160,7 +160,7 @@ public class StockRankingParsingService {
         return 0L;
     }
 
-    public Integer parseIntValue(String value) {
+    Integer parseIntValue(String value) {
         if (value == null || value.trim().isEmpty()) return 0;
         try {
             // 음수 처리 (전일대비는 음수일 수 있음)
