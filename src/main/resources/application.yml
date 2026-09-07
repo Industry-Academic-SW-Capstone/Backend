@@ -100,3 +100,19 @@ app:
     # 관리자 API(/api/admin/**, /api/batch-jobs/**) 허용 이메일. 쉼표로 구분한다.
     # 비어 있으면 아무도 통과하지 못한다(fail-closed).
     emails: ${APP_ADMIN_EMAILS:}
+
+# 지정가 매칭 엔진
+matching:
+  orderbook:
+    # 오더북 백엔드: redis(기본) | jpa
+    #   redis — Redis ZSet 오더북 + Redis 분산 락. 주문 저장과 오더북이 분리돼 이중 쓰기
+    #           정합성 관리(RedisDBSyncService 복구 배치)가 필요하다.
+    #   jpa   — trade_order 테이블 자체가 오더북(idx_orderbook_active) + PostgreSQL advisory 락.
+    #           이중 쓰기가 없어 복구 배치가 무동작이 된다.
+    # 벤치마크 비교용 스위치다. 두 백엔드는 매칭 정산 로직을 공유하므로,
+    # 이 값만 바꿔 오더북 자료구조의 성능 차이를 단일 변수로 측정할 수 있다.
+    backend: ${MATCHING_ORDERBOOK_BACKEND:redis}
+  # Redis 분산 락 TTL(초). jpa 백엔드에서는 advisory 락이 트랜잭션 종료 시 자동 해제되므로 무시된다.
+  limit-lock-ttl-seconds: ${MATCHING_LIMIT_LOCK_TTL_SECONDS:5}
+  # 체결 이벤트 1건이 훑을 오더북 후보 최대 개수. 임계 구역 길이에 직접 영향을 준다.
+  limit-order-fetch-size: ${MATCHING_LIMIT_ORDER_FETCH_SIZE:100}
