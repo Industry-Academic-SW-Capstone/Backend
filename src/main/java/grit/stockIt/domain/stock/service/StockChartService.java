@@ -17,18 +17,14 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import java.time.Duration;
-import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
-import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.Comparator;
-import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
-import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
@@ -44,18 +40,10 @@ public class StockChartService {
     private final KisApiProperties kisApiProperties;
     private final ObjectMapper objectMapper;
     private final StringRedisTemplate redisTemplate;
-
-    private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ofPattern("yyyyMMdd");
-    
-    // Redis 캐시 키 prefix
-    private static final String CACHE_KEY_PREFIX = "stock:chart:";
-    
-    // 기간별 캐시 TTL 설정
-    private static final Duration CACHE_TTL_1DAY = Duration.ofMinutes(1);      // 1분봉: 1분
-    private static final Duration CACHE_TTL_1WEEK = Duration.ofMinutes(5);     // 10분봉: 5분
-    private static final Duration CACHE_TTL_3MONTH = Duration.ofMinutes(30);  // 일봉: 30분
-    private static final Duration CACHE_TTL_1YEAR = Duration.ofHours(1);       // 주봉: 1시간
-    private static final Duration CACHE_TTL_5YEAR = Duration.ofHours(12);     // 월봉: 12시간
+    private final ChartPeriodPolicy chartPeriodPolicy;
+    private final KisValueParser kisValueParser;
+    private final ChartTimeline chartTimeline;
+    private final ChartSampling chartSampling;
 
     /**
      * 주식 차트 데이터 조회 (Redis 캐싱 적용)
@@ -67,9 +55,9 @@ public class StockChartService {
             String stockCode,
             String periodType
     ) {
-        String normalizedType = periodType.toLowerCase();
+        String normalizedType = chartPeriodPolicy.normalize(periodType);
 
-        String cacheKey = CACHE_KEY_PREFIX + stockCode + ":" + normalizedType;
+        String cacheKey = chartPeriodPolicy.cacheKey(stockCode, normalizedType);
 
         String cachedData = redisTemplate.opsForValue().get(cacheKey);
         if (cachedData != null) {
@@ -89,7 +77,7 @@ public class StockChartService {
                 .doOnNext(chartData -> {
                     try {
                         String jsonData = objectMapper.writeValueAsString(chartData);
-                        Duration ttl = getCacheTtl(normalizedType);
+                        Duration ttl = chartPeriodPolicy.cacheTtl(normalizedType);
                         redisTemplate.opsForValue().set(cacheKey, jsonData, ttl);
                         log.info("차트 데이터 캐시 저장: key={} ({}, {}개, TTL={}s)",
                                 cacheKey, periodType, chartData.size(), ttl.toSeconds());
@@ -100,30 +88,16 @@ public class StockChartService {
     }
     
     /**
-     * 기간 타입에 따른 캐시 TTL 반환
-     */
-    private Duration getCacheTtl(String periodType) {
-        return switch (periodType) {
-            case "1day", "day" -> CACHE_TTL_1DAY;
-            case "1week", "week" -> CACHE_TTL_1WEEK;
-            case "3month" -> CACHE_TTL_3MONTH;
-            case "1year", "year" -> CACHE_TTL_1YEAR;
-            case "5year" -> CACHE_TTL_5YEAR;
-            default -> CACHE_TTL_3MONTH; // 기본값
-        };
-    }
-    
-    /**
      * KIS API에서 차트 데이터 조회 (캐싱 없이)
      */
     private Mono<List<StockChartResponse>> fetchStockChartFromApi(
             String stockCode,
             String periodType
     ) {
-        String normalizedType = periodType.toLowerCase();
+        String normalizedType = chartPeriodPolicy.normalize(periodType);
         
         // 1일 - 1분 간격 (390개)
-        if ("1day".equals(normalizedType) || "day".equals(normalizedType)) {
+        if (chartPeriodPolicy.isOneDay(normalizedType)) {
             return getMinuteChartDataFromKisMultiple(stockCode, 1) // 1분 간격
                     .map(chartDataList -> {
                         return chartDataList.stream()
@@ -138,7 +112,7 @@ public class StockChartService {
         }
         
         // 1주 - 10분 간격 (최근 5영업일, 10분 간격)
-        if ("1week".equals(normalizedType) || "week".equals(normalizedType)) {
+        if (chartPeriodPolicy.isOneWeek(normalizedType)) {
             final int minuteInterval = 10;
             return getMinuteChartDataForWeek(stockCode, minuteInterval)
                     .map(chartDataList -> {
@@ -146,17 +120,15 @@ public class StockChartService {
                         LocalDateTime lastDateTime = null;
 
                         for (KisMinuteChartDataDto kisData : chartDataList) {
-                            LocalDate currentDate = parseDate(kisData.date());
-                            LocalTime currentTime = parseTime(kisData.time());
+                            LocalDate currentDate = kisValueParser.parseDate(kisData.date());
+                            LocalTime currentTime = kisValueParser.parseTime(kisData.time());
                             if (currentDate == null || currentTime == null) {
                                 continue;
                             }
 
                             LocalDateTime currentDateTime = LocalDateTime.of(currentDate, currentTime);
 
-                            if (lastDateTime == null
-                                    || !currentDateTime.toLocalDate().equals(lastDateTime.toLocalDate())
-                                    || currentDateTime.isAfter(lastDateTime.plusMinutes(minuteInterval - 1L))) {
+                            if (chartSampling.shouldKeepMinuteBar(lastDateTime, currentDateTime, minuteInterval)) {
                                 result.add(mapMinuteToStockChartDto(stockCode, periodType, kisData));
                                 lastDateTime = currentDateTime;
                             }
@@ -174,13 +146,13 @@ public class StockChartService {
         }
 
         // 3달 - 1일 간격 (일봉)
-        if ("3month".equals(normalizedType)) {
+        if (chartPeriodPolicy.isThreeMonth(normalizedType)) {
             LocalDate endDateLocal = LocalDate.now();
             LocalDate startDateLocal = endDateLocal.minusMonths(3);
             return getChartDataFromKis(stockCode, "D", startDateLocal, endDateLocal) // 일봉
                     .map(chartDataList -> {
                         return chartDataList.stream()
-                                .sorted(Comparator.comparing(kisData -> parseDate(kisData.date()))) // 날짜 기준 오름차순 정렬 (과거 → 현재)
+                                .sorted(Comparator.comparing(kisData -> kisValueParser.parseDate(kisData.date()))) // 날짜 기준 오름차순 정렬 (과거 → 현재)
                                 .map(kisData -> mapToStockChartDto(stockCode, periodType, kisData))
                                 .toList();
                     })
@@ -189,7 +161,7 @@ public class StockChartService {
         }
         
         // 1년 - 7일 간격 (일봉, 7일 간격으로 필터링)
-        if ("1year".equals(normalizedType) || "year".equals(normalizedType)) {
+        if (chartPeriodPolicy.isOneYear(normalizedType)) {
             LocalDate endDateLocal = LocalDate.now();
             LocalDate startDateLocal = endDateLocal.minusYears(1);
             
@@ -197,10 +169,9 @@ public class StockChartService {
             List<Mono<List<KisChartDataDto>>> monos = new ArrayList<>();
             
             // 1년을 6개월씩 2번으로 나눠서 호출
-            LocalDate midDate = startDateLocal.plusMonths(6);
-            
-            monos.add(getChartDataFromKis(stockCode, "D", startDateLocal, midDate)); // 첫 6개월
-            monos.add(getChartDataFromKis(stockCode, "D", midDate.plusDays(1), endDateLocal)); // 나머지 6개월 (11월 포함)
+            for (ChartTimeline.DateRange half : chartTimeline.splitIntoHalves(startDateLocal, endDateLocal)) {
+                monos.add(getChartDataFromKis(stockCode, "D", half.start(), half.end()));
+            }
             
             // 모든 Mono를 병렬로 실행하고 합치기
             return Flux.merge(monos)
@@ -214,26 +185,17 @@ public class StockChartService {
                         
                         // 날짜 기준 오름차순 정렬 (과거 → 현재)
                         List<KisChartDataDto> sortedList = allData.stream()
-                                .sorted(Comparator.comparing(kisData -> parseDate(kisData.date())))
+                                .sorted(Comparator.comparing(kisData -> kisValueParser.parseDate(kisData.date())))
                                 .toList();
                         
                         // 날짜 기준으로 7일 간격 필터링 (과거부터 현재까지)
+                        List<LocalDate> sortedDates = sortedList.stream()
+                                .map(kisData -> kisValueParser.parseDate(kisData.date()))
+                                .toList();
+
                         List<StockChartResponse> result = new ArrayList<>();
-                        LocalDate lastSelectedDate = null;
-                        
-                        for (int i = 0; i < sortedList.size(); i++) {
-                            KisChartDataDto kisData = sortedList.get(i);
-                            LocalDate currentDate = parseDate(kisData.date());
-                            
-                            // 첫 번째 데이터이거나, 마지막 선택된 날짜로부터 7일 이상 경과한 경우
-                            // 마지막 데이터 포인트는 항상 포함
-                            boolean isLastItem = (i == sortedList.size() - 1);
-                            if (lastSelectedDate == null || 
-                                currentDate.isAfter(lastSelectedDate.plusDays(6)) || 
-                                isLastItem) { // 7일 이상 차이 또는 마지막 데이터
-                                result.add(mapToStockChartDto(stockCode, periodType, kisData));
-                                lastSelectedDate = currentDate;
-                            }
+                        for (int index : chartSampling.selectWeeklySampleIndexes(sortedDates)) {
+                            result.add(mapToStockChartDto(stockCode, periodType, sortedList.get(index)));
                         }
                         
                         // 날짜 기준 오름차순 정렬 (과거 → 현재) - 안전성을 위해 최종 정렬
@@ -246,13 +208,13 @@ public class StockChartService {
         }
         
         // 5년 - 1달 간격 (월봉)
-        if ("5year".equals(normalizedType)) {
+        if (chartPeriodPolicy.isFiveYear(normalizedType)) {
             LocalDate endDateLocal = LocalDate.now();
             LocalDate startDateLocal = endDateLocal.minusYears(5);
             return getChartDataFromKis(stockCode, "M", startDateLocal, endDateLocal) // 월봉
                     .map(chartDataList -> {
                         return chartDataList.stream()
-                                .sorted(Comparator.comparing(kisData -> parseDate(kisData.date()))) // 날짜 기준 오름차순 정렬 (과거 → 현재)
+                                .sorted(Comparator.comparing(kisData -> kisValueParser.parseDate(kisData.date()))) // 날짜 기준 오름차순 정렬 (과거 → 현재)
                                 .map(kisData -> mapToStockChartDto(stockCode, periodType, kisData))
                                 .toList();
                     })
@@ -260,7 +222,7 @@ public class StockChartService {
                     .onErrorResume(e -> Mono.error(new RuntimeException("주식 차트 데이터 조회 실패: " + stockCode, e)));
         }
 
-        throw new IllegalArgumentException("Invalid period type: " + periodType + ". Supported: 1day, 1week, 3month, 1year, 5year");
+        throw new IllegalArgumentException(chartPeriodPolicy.unsupportedPeriodMessage(periodType));
     }
 
     /**
@@ -273,8 +235,8 @@ public class StockChartService {
             LocalDate endDate
     ) {
         String accessToken = kisTokenManager.getAccessToken();
-        String startDateStr = startDate.format(DATE_FORMATTER);
-        String endDateStr = endDate.format(DATE_FORMATTER);
+        String startDateStr = kisValueParser.formatDate(startDate);
+        String endDateStr = kisValueParser.formatDate(endDate);
 
         return webClient.get()
                 .uri(uriBuilder -> uriBuilder
@@ -329,17 +291,14 @@ public class StockChartService {
      */
     private Mono<List<KisMinuteChartDataDto>> getMinuteChartDataFromKisMultiple(String stockCode, int minuteInterval) {
         LocalTime now = LocalTime.now();
-        LocalTime marketStart = LocalTime.of(9, 0); // 장 시작 시간
-        LocalTime marketEnd = LocalTime.of(15, 30); // 장 종료 시간
-        
+
         // 현재 시간이 장 시작 전이면 빈 리스트 반환
-        if (now.isBefore(marketStart)) {
+        if (chartTimeline.isBeforeMarketOpen(now)) {
             return Mono.just(new ArrayList<>());
         }
         
         // 조회할 시간 범위 계산 (30분 단위)
-        LocalTime endTime = now.isAfter(marketEnd) ? marketEnd : now;
-        List<String> timeRanges = calculateTimeRanges(marketStart, endTime);
+        List<String> timeRanges = chartTimeline.intradayRequestTimes(now);
         
         // 각 시간 범위마다 비동기로 호출
         List<Mono<List<KisMinuteChartDataDto>>> monos = timeRanges.stream()
@@ -357,63 +316,15 @@ public class StockChartService {
                     }
                     
                     // 중복 제거 및 시간 순서로 정렬
-                    return deduplicateAndSort(allData);
+                    return chartSampling.deduplicateAndSort(allData);
                 });
-    }
-
-    /**
-     * 시간 범위를 30분 단위로 나누기
-     */
-    private List<String> calculateTimeRanges(LocalTime start, LocalTime end) {
-        List<String> ranges = new ArrayList<>();
-        LocalTime current = start;
-        
-        while (current.isBefore(end) || current.equals(end)) {
-            // HHMMSS 형식으로 변환
-            String timeStr = String.format("%02d%02d%02d", current.getHour(), current.getMinute(), 0);
-            ranges.add(timeStr);
-            
-            // 30분 추가
-            current = current.plusMinutes(30);
-            
-            // 종료 시간을 넘으면 중단
-            if (current.isAfter(end)) {
-                break;
-            }
-        }
-        
-        String endTimeStr = String.format("%02d%02d%02d", end.getHour(), end.getMinute(), end.getSecond());
-        if (ranges.isEmpty() || !ranges.get(ranges.size() - 1).equals(endTimeStr)) {
-            ranges.add(endTimeStr);
-        }
-
-        return ranges;
-    }
-
-    /**
-     * 조회 종료일 기준 최근 영업일 목록(주말 제외)
-     */
-    private List<LocalDate> getRecentBusinessDays(LocalDate endDate, int count) {
-        List<LocalDate> result = new ArrayList<>();
-        LocalDate cursor = endDate;
-
-        while (result.size() < count) {
-            DayOfWeek dayOfWeek = cursor.getDayOfWeek();
-            if (dayOfWeek != DayOfWeek.SATURDAY && dayOfWeek != DayOfWeek.SUNDAY) {
-                result.add(cursor);
-            }
-            cursor = cursor.minusDays(1);
-        }
-
-        Collections.reverse(result);
-        return result;
     }
 
     /**
      * 주식 일별 분봉 데이터 조회 (KIS 주식일별분봉조회 API)
      */
     private Mono<List<KisMinuteChartDataDto>> getMinuteChartDataFromKisDaily(String stockCode, LocalDate targetDate) {
-        List<String> timeWindows = List.of("153000", "133000", "113000", "093000");
+        List<String> timeWindows = chartTimeline.dailyMinuteWindows();
 
         return Flux.fromIterable(timeWindows)
                 .concatMap(hour -> requestDailyMinuteChunk(stockCode, targetDate, hour))
@@ -423,7 +334,7 @@ public class StockChartService {
                     for (List<KisMinuteChartDataDto> part : listOfLists) {
                         merged.addAll(part);
                     }
-                    return deduplicateAndSort(merged);
+                    return chartSampling.deduplicateAndSort(merged);
                 });
     }
 
@@ -433,7 +344,7 @@ public class StockChartService {
             String requestHour
     ) {
         String accessToken = kisTokenManager.getAccessToken();
-        String dateStr = targetDate.format(DATE_FORMATTER);
+        String dateStr = kisValueParser.formatDate(targetDate);
 
         return webClient.get()
                 .uri(uriBuilder -> uriBuilder
@@ -464,7 +375,7 @@ public class StockChartService {
                     if (trimmed.startsWith("<")) {
                         log.error("KIS 일별 분봉 응답이 HTML입니다. 인증/세션 이슈 가능. 날짜: {}, 종목: {}, hour={}, 응답: {}",
                                 targetDate, stockCode, requestHour, trimmed);
-                        return Mono.just(List.<KisMinuteChartDataDto>of());
+                        return Mono.error(new RuntimeException("KIS API 오류: HTML 응답 (인증/세션 이슈 가능)"));
                     }
 
                     final KisChartResponse response;
@@ -492,7 +403,7 @@ public class StockChartService {
                     }
 
                     List<KisMinuteChartDataDto> parsed = parseMinuteOutputData(response.output2());
-                    String targetDateStr = targetDate.format(DATE_FORMATTER);
+                    String targetDateStr = kisValueParser.formatDate(targetDate);
 
                     List<KisMinuteChartDataDto> filtered = parsed.stream()
                             .filter(item -> targetDateStr.equals(item.date()))
@@ -504,35 +415,12 @@ public class StockChartService {
     }
 
     /**
-     * 중복 제거 및 시간 순서로 정렬
-     */
-    private List<KisMinuteChartDataDto> deduplicateAndSort(List<KisMinuteChartDataDto> data) {
-        // 날짜+시간을 키로 사용하여 중복 제거 (LinkedHashSet으로 순서 유지)
-        Set<String> seen = new LinkedHashSet<>();
-        List<KisMinuteChartDataDto> unique = new ArrayList<>();
-        
-        for (KisMinuteChartDataDto item : data) {
-            String key = item.date() + "_" + item.time();
-            if (!seen.contains(key)) {
-                seen.add(key);
-                unique.add(item);
-            }
-        }
-        
-        // 날짜+시간 순서로 정렬
-        return unique.stream()
-                .sorted(Comparator
-                        .comparing(KisMinuteChartDataDto::date)
-                        .thenComparing(KisMinuteChartDataDto::time))
-                .collect(Collectors.toList());
-    }
-
-    /**
      * 1주일 분봉 데이터 조회 (1주일 전부터 현재까지)
      * 분봉 API는 당일만 조회 가능하므로, 당일 분봉을 조회하고 10분 간격으로 필터링
      */
     private Mono<List<KisMinuteChartDataDto>> getMinuteChartDataForWeek(String stockCode, int minuteInterval) {
-        List<LocalDate> recentBusinessDays = getRecentBusinessDays(LocalDate.now(), 5);
+        List<LocalDate> recentBusinessDays =
+                chartTimeline.recentBusinessDays(LocalDate.now(), chartTimeline.weekBusinessDayCount());
 
         if (recentBusinessDays.isEmpty()) {
             return Mono.just(List.of());
@@ -554,7 +442,7 @@ public class StockChartService {
                     return dailyFlux;
                 })
                 .collectList()
-                .map(this::deduplicateAndSort);
+                .map(chartSampling::deduplicateAndSort);
     }
 
     private Mono<List<KisMinuteChartDataDto>> getMinuteChartDataFromKis(String stockCode, String startTime, int minuteInterval) {
@@ -608,35 +496,6 @@ public class StockChartService {
     }
 
     /**
-     * 날짜 문자열 파싱
-     */
-    private LocalDate parseDate(String dateStr) {
-        try {
-            return LocalDate.parse(dateStr, DATE_FORMATTER);
-        } catch (Exception e) {
-            throw new IllegalArgumentException("Invalid date format: " + dateStr + " (expected: yyyyMMdd)", e);
-        }
-    }
-
-    /**
-     * 시간 문자열 파싱 (HHMMSS 형식)
-     */
-    private LocalTime parseTime(String timeStr) {
-        if (timeStr == null || timeStr.trim().isEmpty() || timeStr.length() != 6) {
-            return null;
-        }
-        try {
-            int hour = Integer.parseInt(timeStr.substring(0, 2));
-            int minute = Integer.parseInt(timeStr.substring(2, 4));
-            int second = Integer.parseInt(timeStr.substring(4, 6));
-            return LocalTime.of(hour, minute, second);
-        } catch (Exception e) {
-            log.warn("시간 파싱 실패: {}", timeStr);
-            return null;
-        }
-    }
-
-    /**
      * KIS API 분봉 응답을 StockChartDto로 변환
      */
     private StockChartResponse mapMinuteToStockChartDto(String stockCode, String periodType, KisMinuteChartDataDto kisData) {
@@ -645,14 +504,14 @@ public class StockChartService {
         return new StockChartResponse(
                 stockCode,
                 periodType,
-                parseDate(kisData.date()),
-                parseTime(kisData.time()), // 시간 정보 포함 (HHMMSS 형식)
-                parseIntValue(kisData.openPrice()),
-                parseIntValue(kisData.highPrice()),
-                parseIntValue(kisData.lowPrice()),
-                parseIntValue(kisData.currentPrice()), // stck_prpr를 종가로 사용
-                parseLongValue(kisData.volume()), // cntg_vol (체결 거래량)
-                parseLongValue(kisData.amount()),
+                kisValueParser.parseDate(kisData.date()),
+                kisValueParser.parseTime(kisData.time()), // 시간 정보 포함 (HHMMSS 형식)
+                kisValueParser.parseIntValue(kisData.openPrice()),
+                kisValueParser.parseIntValue(kisData.highPrice()),
+                kisValueParser.parseIntValue(kisData.lowPrice()),
+                kisValueParser.parseIntValue(kisData.currentPrice()), // stck_prpr를 종가로 사용
+                kisValueParser.parseLongValue(kisData.volume()), // cntg_vol (체결 거래량)
+                kisValueParser.parseLongValue(kisData.amount()),
                 0, // 전일대비 (분봉에는 없음)
                 "0" // 전일대비율 (분봉에는 없음)
         );
@@ -665,11 +524,11 @@ public class StockChartService {
         // changeRate가 없으면 changeAmount와 closePrice로 계산
         String changeRate = kisData.changeRate();
         if (changeRate == null || changeRate.trim().isEmpty()) {
-            int closePrice = parseIntValue(kisData.closePrice());
-            int changeAmount = parseIntValue(kisData.changeAmount());
-            if (closePrice != 0 && changeAmount != 0) {
+            int closePrice = kisValueParser.parseIntValue(kisData.closePrice());
+            int changeAmount = kisValueParser.parseIntValue(kisData.changeAmount());
+            if (closePrice != 0 && changeAmount != 0 && closePrice != changeAmount) {
                 double rate = (changeAmount / (double)(closePrice - changeAmount)) * 100;
-                changeRate = String.format("%.2f", rate);
+                changeRate = String.format(Locale.ROOT, "%.2f", rate);
             } else {
                 changeRate = "0";
             }
@@ -678,15 +537,15 @@ public class StockChartService {
         return new StockChartResponse(
                 stockCode,
                 periodType,
-                parseDate(kisData.date()),
+                kisValueParser.parseDate(kisData.date()),
                 null, // 일/주/월/년봉은 시간 정보 없음
-                parseIntValue(kisData.openPrice()),
-                parseIntValue(kisData.highPrice()),
-                parseIntValue(kisData.lowPrice()),
-                parseIntValue(kisData.closePrice()),
-                parseLongValue(kisData.volume()),
-                parseLongValue(kisData.amount()),
-                parseIntValue(kisData.changeAmount()),
+                kisValueParser.parseIntValue(kisData.openPrice()),
+                kisValueParser.parseIntValue(kisData.highPrice()),
+                kisValueParser.parseIntValue(kisData.lowPrice()),
+                kisValueParser.parseIntValue(kisData.closePrice()),
+                kisValueParser.parseLongValue(kisData.volume()),
+                kisValueParser.parseLongValue(kisData.amount()),
+                kisValueParser.parseIntValue(kisData.changeAmount()),
                 changeRate
         );
     }
@@ -778,30 +637,5 @@ public class StockChartService {
         }
     }
 
-    /**
-     * String을 Integer로 안전하게 변환
-     */
-    private Integer parseIntValue(String value) {
-        if (value == null || value.trim().isEmpty()) return 0;
-        try {
-            return Integer.parseInt(value.trim());
-        } catch (NumberFormatException e) {
-            log.warn("Integer 파싱 실패: {}", value);
-            return 0;
-        }
-    }
-
-    /**
-     * String을 Long으로 안전하게 변환
-     */
-    private Long parseLongValue(String value) {
-        if (value == null || value.trim().isEmpty()) return 0L;
-        try {
-            return Long.parseLong(value.trim());
-        } catch (NumberFormatException e) {
-            log.warn("Long 파싱 실패: {}", value);
-            return 0L;
-        }
-    }
 }
 
