@@ -1,6 +1,6 @@
 package grit.stockIt.domain.matching.service;
 
-import grit.stockIt.domain.matching.repository.RedisOrderBookRepository;
+import grit.stockIt.domain.matching.repository.OrderBookStore;
 import grit.stockIt.domain.order.entity.Order;
 import grit.stockIt.domain.order.entity.OrderMethod;
 import grit.stockIt.domain.order.entity.OrderStatus;
@@ -25,7 +25,7 @@ import java.util.Set;
 public class RedisDBSyncService {
 
     private final OrderRepository orderRepository;
-    private final RedisOrderBookRepository redisOrderBookRepository;
+    private final OrderBookStore orderBookStore;
 
     @Value("${sync.recent-minutes:5}")
     private int recentMinutes;
@@ -69,9 +69,9 @@ public class RedisDBSyncService {
                 String stockCode = order.getStock().getCode();
                 OrderMethod orderMethod = order.getOrderMethod();
                 
-                if (!redisOrderBookRepository.exists(order.getOrderId(), stockCode, orderMethod)) {
+                if (!orderBookStore.exists(order.getOrderId(), stockCode, orderMethod)) {
                     try {
-                        redisOrderBookRepository.addOrder(order);
+                        orderBookStore.addOrder(order);
                         syncedCount++;
                         log.debug("주문 누락 복구: orderId={} stockCode={} method={}", 
                             order.getOrderId(), stockCode, orderMethod);
@@ -106,7 +106,7 @@ public class RedisDBSyncService {
     // Redis에 있지만 DB에서 이미 체결된 주문(유령 주문)을 Redis에서 제거
     private void removeGhostOrders() {
         // Redis에서 모든 주문 ID 조회 (종목별로)
-        Map<String, Set<Long>> redisOrdersByStock = redisOrderBookRepository.getAllOrderIdsByStock();
+        Map<String, Set<Long>> redisOrdersByStock = orderBookStore.getAllOrderIdsByStock();
 
         if (redisOrdersByStock.isEmpty()) {
             return;
@@ -142,7 +142,7 @@ public class RedisDBSyncService {
                 // Redis에서 제거
                 for (Long orderId : filledOrderIds) {
                     try {
-                        redisOrderBookRepository.removeOrder(orderId, stockCode, orderMethod);
+                        orderBookStore.removeOrder(orderId, stockCode, orderMethod);
                         removedCount++;
                         log.debug("유령 주문 제거: orderId={} stockCode={} method={}", 
                             orderId, stockCode, orderMethod);

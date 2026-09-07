@@ -7,7 +7,7 @@ import grit.stockIt.domain.account.repository.AccountStockRepository;
 import grit.stockIt.domain.execution.entity.Execution;
 import grit.stockIt.domain.execution.service.ExecutionService;
 import grit.stockIt.domain.matching.dto.LimitOrderFillEvent;
-import grit.stockIt.domain.matching.repository.RedisOrderBookRepository;
+import grit.stockIt.domain.matching.repository.OrderBookStore;
 import grit.stockIt.domain.matching.dto.OrderBookEntry;
 import grit.stockIt.domain.order.entity.Order;
 import grit.stockIt.domain.order.entity.OrderMethod;
@@ -49,7 +49,7 @@ public class LimitOrderExecutionService {
 
     private final ExecutionService executionService;
     private final OrderRepository orderRepository;
-    private final RedisOrderBookRepository redisOrderBookRepository;
+    private final OrderBookStore orderBookStore;
     private final OrderSubscriptionCoordinator orderSubscriptionCoordinator;
     private final OrderHoldRepository orderHoldRepository;
     private final AccountRepository accountRepository;
@@ -70,7 +70,7 @@ public class LimitOrderExecutionService {
             return List.of();
         }
 
-        List<OrderBookEntry> candidates = redisOrderBookRepository.fetchMatchingEntries(
+        List<OrderBookEntry> candidates = orderBookStore.fetchMatchingEntries(
                 stockCode,
                 event.orderMethod(),
                 event.price(),
@@ -125,13 +125,13 @@ public class LimitOrderExecutionService {
             if (order == null || command == null) {
                 log.warn("DB에서 주문을 찾을 수 없어 건너뜁니다. orderId={}", orderId);
                 if (command != null) {
-                    redisOrderBookRepository.removeOrder(orderId, stockCode, command.entry().orderMethod());
+                    orderBookStore.removeOrder(orderId, stockCode, command.entry().orderMethod());
                     orderSubscriptionCoordinator.unregisterLimitOrder(stockCode);
                 }
                 continue;
             }
             if (!isActive(order)) {
-                redisOrderBookRepository.removeOrder(orderId, stockCode, order.getOrderMethod());
+                orderBookStore.removeOrder(orderId, stockCode, order.getOrderMethod());
                 orderSubscriptionCoordinator.unregisterLimitOrder(stockCode);
                 continue;
             }
@@ -144,7 +144,7 @@ public class LimitOrderExecutionService {
             entityManager.refresh(order);
             if (!isActive(order)) {
                 log.debug("락 획득 후 주문이 이미 체결/취소됨. orderId={} status={}", orderId, order.getStatus());
-                redisOrderBookRepository.removeOrder(orderId, stockCode, order.getOrderMethod());
+                orderBookStore.removeOrder(orderId, stockCode, order.getOrderMethod());
                 orderSubscriptionCoordinator.unregisterLimitOrder(stockCode);
                 continue;
             }
@@ -219,7 +219,7 @@ public class LimitOrderExecutionService {
                 }
             } catch (IllegalArgumentException ex) {
                 log.error("주문 체결 처리 중 오류 발생. orderId={} fillQuantity={}", orderId, actualFillQuantity, ex);
-                redisOrderBookRepository.removeOrder(orderId, stockCode, order.getOrderMethod());
+                orderBookStore.removeOrder(orderId, stockCode, order.getOrderMethod());
                 orderSubscriptionCoordinator.unregisterLimitOrder(order.getStock().getCode());
             }
         }
@@ -239,10 +239,10 @@ public class LimitOrderExecutionService {
 
                 if (order.getRemainingQuantity() <= 0) {
                     // 전량 체결된 주문은 Redis에서 삭제
-                    redisOrderBookRepository.removeOrder(orderId, stockCode, order.getOrderMethod());
+                    orderBookStore.removeOrder(orderId, stockCode, order.getOrderMethod());
                 } else {
                     // 부분 체결된 주문은 수량 업데이트
-                    redisOrderBookRepository.updateRemainingQuantity(
+                    orderBookStore.updateRemainingQuantity(
                         orderId, stockCode, order.getOrderMethod(), order.getRemainingQuantity()
                     );
                 }
@@ -251,7 +251,7 @@ public class LimitOrderExecutionService {
             // 소진된 주문도 Redis에서 삭제
             for (OrderBookEntry entry : orderedEntries) {
                 if (entry.isExhausted()) {
-                    redisOrderBookRepository.removeOrder(entry.orderId(), stockCode, entry.orderMethod());
+                    orderBookStore.removeOrder(entry.orderId(), stockCode, entry.orderMethod());
                 }
             }
         } catch (Exception e) {
@@ -338,7 +338,7 @@ public class LimitOrderExecutionService {
 
     private void cancelDueToInsufficientFunds(Order order, String stockCode, Account account) {
         order.markCancelled();
-        redisOrderBookRepository.removeOrder(order.getOrderId(), stockCode, order.getOrderMethod());
+        orderBookStore.removeOrder(order.getOrderId(), stockCode, order.getOrderMethod());
         orderSubscriptionCoordinator.unregisterLimitOrder(stockCode);
         orderHoldRepository.findById(order.getOrderId())
                 .ifPresent(hold -> {

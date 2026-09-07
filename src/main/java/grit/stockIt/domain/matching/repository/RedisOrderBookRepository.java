@@ -6,6 +6,7 @@ import grit.stockIt.domain.order.entity.OrderMethod;
 import grit.stockIt.domain.order.entity.OrderStatus;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.dao.DataAccessException;
 import org.springframework.data.redis.connection.RedisConnection;
 import org.springframework.data.redis.core.Cursor;
@@ -26,7 +27,8 @@ import java.time.ZoneId;
 @Slf4j
 @Repository
 @RequiredArgsConstructor
-public class RedisOrderBookRepository {
+@ConditionalOnProperty(name = "matching.orderbook.backend", havingValue = "redis", matchIfMissing = true)
+public class RedisOrderBookRepository implements OrderBookStore {
 
     private static final String ORDER_QUEUE_KEY = "sim:order:book:%s:%s";
     private static final String ORDER_DATA_KEY = "sim:order:data:%s";
@@ -41,6 +43,7 @@ public class RedisOrderBookRepository {
 
     private final StringRedisTemplate redisTemplate;
 
+    @Override
     public void addOrder(Order order) {
         if (!isActiveStatus(order.getStatus())) {
             return;
@@ -61,6 +64,7 @@ public class RedisOrderBookRepository {
         redisTemplate.opsForZSet().add(queueKey, order.getOrderId().toString(), order.getPrice().doubleValue());
     }
 
+    @Override
     public void removeOrder(Long orderId, String stockCode, OrderMethod orderMethod) {
         String queueKey = queueKey(stockCode, orderMethod);
         String dataKey = dataKey(orderId);
@@ -68,6 +72,7 @@ public class RedisOrderBookRepository {
         redisTemplate.delete(dataKey);
     }
 
+    @Override
     public void updateRemainingQuantity(Long orderId, String stockCode, OrderMethod orderMethod, int remainingQuantity) {
         String dataKey = dataKey(orderId);
         if (remainingQuantity <= 0) {
@@ -77,6 +82,7 @@ public class RedisOrderBookRepository {
         redisTemplate.opsForHash().put(dataKey, FIELD_REMAINING, Integer.toString(remainingQuantity));
     }
 
+    @Override
     public List<OrderBookEntry> fetchMatchingEntries(String stockCode, OrderMethod takerMethod, BigDecimal priceLimit, int maxOrders) {
         OrderMethod targetMethod = takerMethod == OrderMethod.BUY ? OrderMethod.SELL : OrderMethod.BUY;
         String queueKey = queueKey(stockCode, targetMethod);
@@ -196,6 +202,7 @@ public class RedisOrderBookRepository {
     }
 
     // 주문이 Redis에 존재하는지 확인
+    @Override
     public boolean exists(Long orderId, String stockCode, OrderMethod orderMethod) {
         String queueKey = queueKey(stockCode, orderMethod);
         Double score = redisTemplate.opsForZSet().score(queueKey, orderId.toString());
@@ -203,6 +210,7 @@ public class RedisOrderBookRepository {
     }
 
     // 종목별 Redis에 있는 모든 주문 ID 조회
+    @Override
     public Map<String, Set<Long>> getAllOrderIdsByStock() {
         Map<String, Set<Long>> result = new HashMap<>();
         

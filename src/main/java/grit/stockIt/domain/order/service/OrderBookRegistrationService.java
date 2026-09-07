@@ -1,6 +1,6 @@
 package grit.stockIt.domain.order.service;
 
-import grit.stockIt.domain.matching.repository.RedisOrderBookRepository;
+import grit.stockIt.domain.matching.repository.OrderBookStore;
 import grit.stockIt.domain.order.entity.Order;
 import grit.stockIt.domain.stock.entity.Stock;
 import grit.stockIt.global.util.TransactionHandler;
@@ -16,7 +16,7 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 @RequiredArgsConstructor
 public class OrderBookRegistrationService {
 
-    private final RedisOrderBookRepository redisOrderBookRepository;
+    private final OrderBookStore orderBookStore;
     private final OrderSubscriptionCoordinator orderSubscriptionCoordinator;
 
     /**
@@ -37,7 +37,7 @@ public class OrderBookRegistrationService {
 
     // 주문 취소 시 잔량이 남아있으면 오더북에서 제거(커밋 전 동기 실행, 기존 동작 보존)
     public void removeOnCancel(Order order) {
-        redisOrderBookRepository.removeOrder(order.getOrderId(), order.getStock().getCode(), order.getOrderMethod());
+        orderBookStore.removeOrder(order.getOrderId(), order.getStock().getCode(), order.getOrderMethod());
         orderSubscriptionCoordinator.unregisterLimitOrder(order.getStock().getCode());
     }
 
@@ -49,7 +49,7 @@ public class OrderBookRegistrationService {
     // DB 커밋 후 Redis 오더북에 주문을 추가하는 메서드
     private void addOrderToRedisAfterCommit(Order order, Stock stock) {
         try {
-            redisOrderBookRepository.addOrder(order);
+            orderBookStore.addOrder(order);
             orderSubscriptionCoordinator.registerLimitOrder(stock.getCode());
         } catch (Exception e) {
             log.error("주문 생성 후 Redis 업데이트 실패. orderId={} stockCode={}",
