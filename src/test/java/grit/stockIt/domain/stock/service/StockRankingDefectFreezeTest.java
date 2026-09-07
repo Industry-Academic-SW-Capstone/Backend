@@ -1,7 +1,6 @@
 package grit.stockIt.domain.stock.service;
 
 import grit.stockIt.domain.stock.controller.StockRankingController;
-import grit.stockIt.domain.stock.dto.StockRankingResponse;
 import grit.stockIt.domain.stock.entity.Stock;
 import grit.stockIt.domain.stock.repository.StockRepository;
 import grit.stockIt.global.auth.KisTokenManager;
