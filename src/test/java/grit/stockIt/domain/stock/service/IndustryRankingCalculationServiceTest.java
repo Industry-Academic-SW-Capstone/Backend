@@ -13,7 +13,6 @@ import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * IndustryRankingCalculationService 순수 단위 테스트.
@@ -196,7 +195,7 @@ class IndustryRankingCalculationServiceTest {
                     stock("006", 50)));
 
             List<IndustryStockRankingResponse> result = service.selectTopStocks(
-                    byIndustry, List.of("A"), Map.of("A", industry("A", "업종A")), 5);
+                    new IndustryRankingCalculationService.IndustryGrouping(byIndustry, List.of("A")), Map.of("A", industry("A", "업종A")), 5);
 
             // 뮤테이션 1(maxPerIndustry 5->4) 검출 지점
             assertThat(result).hasSize(1);
@@ -215,7 +214,8 @@ class IndustryRankingCalculationServiceTest {
                     stock("003", 500)));
 
             List<IndustryStockRankingResponse> result = service.selectTopStocks(
-                    byIndustry, List.of("A"), Map.of("A", industry("A", "업종A")), 5);
+                    new IndustryRankingCalculationService.IndustryGrouping(byIndustry, List.of("A")),
+                    Map.of("A", industry("A", "업종A")), 5);
 
             assertThat(result.get(0).stocks())
                     .extracting(StockRankingResponse::stockCode)
@@ -231,7 +231,8 @@ class IndustryRankingCalculationServiceTest {
                     stock("002", 900, 111)));
 
             List<IndustryStockRankingResponse> result = service.selectTopStocks(
-                    byIndustry, List.of("A"), Map.of("A", industry("A", "업종A")), 5);
+                    new IndustryRankingCalculationService.IndustryGrouping(byIndustry, List.of("A")),
+                    Map.of("A", industry("A", "업종A")), 5);
 
             // 뮤테이션 6(정렬키 amount->volume) 검출 지점
             assertThat(result.get(0).stocks())
@@ -249,7 +250,7 @@ class IndustryRankingCalculationServiceTest {
 
             // 거래대금 순이라면 B,C,A지만 인자로 준 순서가 우선이다
             List<IndustryStockRankingResponse> result = service.selectTopStocks(
-                    byIndustry, List.of("C", "A", "B"),
+                    new IndustryRankingCalculationService.IndustryGrouping(byIndustry, List.of("C", "A", "B")),
                     Map.of("A", industry("A", "업종A"),
                             "B", industry("B", "업종B"),
                             "C", industry("C", "업종C")), 5);
@@ -268,7 +269,7 @@ class IndustryRankingCalculationServiceTest {
                     "C", List.of(stock("003", 100)));
 
             List<IndustryStockRankingResponse> result = service.selectTopStocks(
-                    byIndustry, List.of("A", "B", "C"),
+                    new IndustryRankingCalculationService.IndustryGrouping(byIndustry, List.of("A", "B", "C")),
                     Map.of("A", industry("A", "업종A"),
                             "B", industry("B", "업종B"),
                             "C", industry("C", "업종C")), 5);
@@ -287,7 +288,7 @@ class IndustryRankingCalculationServiceTest {
                     "A", List.of(stock("001", 100)));
 
             List<IndustryStockRankingResponse> result = service.selectTopStocks(
-                    byIndustry, List.of("A"), Map.of(), 5);
+                    new IndustryRankingCalculationService.IndustryGrouping(byIndustry, List.of("A")), Map.of(), 5);
 
             assertThat(result).hasSize(1);
             assertThat(result.get(0).industryCode()).isEqualTo("A");
@@ -302,7 +303,7 @@ class IndustryRankingCalculationServiceTest {
                     "B", List.of());
 
             List<IndustryStockRankingResponse> result = service.selectTopStocks(
-                    byIndustry, List.of("A", "B"),
+                    new IndustryRankingCalculationService.IndustryGrouping(byIndustry, List.of("A", "B")),
                     Map.of("A", industry("A", "업종A"),
                             "B", industry("B", "업종B")), 5);
 
@@ -311,18 +312,9 @@ class IndustryRankingCalculationServiceTest {
                     .containsExactly("A");
         }
 
-        @Test
-        @DisplayName("stocksByIndustry에 없는 업종코드를 주면 NPE가 난다")
-        void throwsWhenIndustryCodeMissingFromMap() {
-            // 현재 구현은 stocks가 null인지 확인하지 않는다. 호출자가 groupAndSort의
-            // 결과를 그대로 넘긴다는 전제에 의존한다는 뜻이라 그대로 고정한다.
-            Map<String, List<StockRankingResponse>> byIndustry = Map.of(
-                    "A", List.of(stock("001", 100)));
-
-            assertThatThrownBy(() -> service.selectTopStocks(
-                    byIndustry, List.of("A", "없는업종"), Map.of(), 5))
-                    .isInstanceOf(NullPointerException.class);
-        }
+        // NPE 테스트 삭제: selectTopStocks가 IndustryGrouping을 통째로 받게 되면서
+        // stocksByIndustry와 sortedIndustryCodes의 불일치 상태가 표현 불가능해졌다.
+        // 이것이 🟡3 시그니처 축소의 목적이다.
 
         @Test
         @DisplayName("maxPerIndustry가 0이면 모든 업종이 결과에서 빠진다")
@@ -331,7 +323,7 @@ class IndustryRankingCalculationServiceTest {
                     "A", List.of(stock("001", 100)));
 
             List<IndustryStockRankingResponse> result = service.selectTopStocks(
-                    byIndustry, List.of("A"), Map.of("A", industry("A", "업종A")), 0);
+                    new IndustryRankingCalculationService.IndustryGrouping(byIndustry, List.of("A")), Map.of("A", industry("A", "업종A")), 0);
 
             assertThat(result).isEmpty();
         }
@@ -340,7 +332,8 @@ class IndustryRankingCalculationServiceTest {
         @DisplayName("업종 목록이 비면 빈 결과를 돌려준다")
         void returnsEmptyForEmptyIndustryList() {
             List<IndustryStockRankingResponse> result =
-                    service.selectTopStocks(Map.of(), List.of(), Map.of(), 5);
+                    service.selectTopStocks(
+                    new IndustryRankingCalculationService.IndustryGrouping(Map.of(), List.of()), Map.of(), 5);
 
             assertThat(result).isEmpty();
         }
@@ -363,8 +356,7 @@ class IndustryRankingCalculationServiceTest {
             IndustryRankingCalculationService.IndustryGrouping grouping =
                     service.groupAndSort(allStocks, stockMap);
             List<IndustryStockRankingResponse> result = service.selectTopStocks(
-                    grouping.stocksByIndustry(),
-                    grouping.sortedIndustryCodes(),
+                    grouping,
                     Map.of("A", industry("A", "업종A"),
                             "B", industry("B", "업종B"),
                             "C", industry("C", "업종C")),

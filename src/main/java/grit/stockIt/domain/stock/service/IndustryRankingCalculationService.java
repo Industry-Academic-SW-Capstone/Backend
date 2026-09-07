@@ -4,7 +4,6 @@ import grit.stockIt.domain.industry.entity.Industry;
 import grit.stockIt.domain.stock.dto.IndustryStockRankingResponse;
 import grit.stockIt.domain.stock.dto.StockRankingResponse;
 import grit.stockIt.domain.stock.entity.Stock;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -15,12 +14,12 @@ import java.util.stream.Collectors;
 /**
  * 업종별 인기 종목 랭킹 계산 (의존 0).
  *
- * 업종 랭킹 규칙(업종 정렬 기준, 업종당 상한, 동점 처리)이 바뀔 때 이 클래스가 바뀐다.
+ * 업종 랭킹 규칙(업종 정렬 기준, 동점 처리)이 바뀔 때 이 클래스가 바뀐다.
+ * 업종당 상한은 정책이라 호출자가 정한다.
  *
  * 두 단계로 나뉜 이유는 그 사이에 DB 조회가 끼기 때문이다. 호출자는 {@link #groupAndSort}가
  * 돌려준 업종코드로 Industry를 조회한 뒤 그 결과를 {@link #selectTopStocks}에 넘긴다.
  */
-@Slf4j
 @Service
 public class IndustryRankingCalculationService {
 
@@ -77,18 +76,20 @@ public class IndustryRankingCalculationService {
     /**
      * 업종 순서대로 각 업종의 거래대금 상위 종목을 골라 응답을 조립한다.
      *
+     * groupAndSort가 돌려준 IndustryGrouping을 통째로 받는다. 두 필드를 따로 받으면
+     * 호출자가 짝이 안 맞는 조합을 넘길 수 있고 그때 NPE가 난다.
+     *
      * industryMap에 없는 업종코드는 industryName이 null인 채로 나간다.
      */
     public List<IndustryStockRankingResponse> selectTopStocks(
-            Map<String, List<StockRankingResponse>> stocksByIndustry,
-            List<String> sortedIndustryCodes,
+            IndustryGrouping grouping,
             Map<String, Industry> industryMap,
             int maxPerIndustry) {
 
         List<IndustryStockRankingResponse> result = new ArrayList<>();
 
-        for (String industryCode : sortedIndustryCodes) {
-            List<StockRankingResponse> stocks = stocksByIndustry.get(industryCode);
+        for (String industryCode : grouping.sortedIndustryCodes()) {
+            List<StockRankingResponse> stocks = grouping.stocksByIndustry().get(industryCode);
 
             List<StockRankingResponse> topStocks = stocks.stream()
                     .sorted((a, b) -> Long.compare(b.amount(), a.amount()))

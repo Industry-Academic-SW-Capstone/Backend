@@ -99,25 +99,22 @@ public class StockRankingParsingService {
         String stockCode = (String) (data.get("mksc_shrn_iscd") != null
                 ? data.get("mksc_shrn_iscd")
                 : data.get("stck_shrn_iscd"));
-        // 거래대금: 등락 API에는 acml_tr_pbmn이 없을 수 있으므로 기본값 "0"
-        String amount = (String) (data.getOrDefault("acml_tr_pbmn", "0"));
-
-        return new KisStockDataDto(
-                stockCode,
-                (String) data.get("hts_kor_isnm"),
-                (String) data.get("data_rank"),
-                (String) data.get("stck_prpr"),
-                (String) data.get("prdy_vrss_sign"),
-                (String) data.get("prdy_vrss"),
-                (String) data.get("prdy_ctrt"),
-                (String) data.get("acml_vol"),
-                amount
-        );
+        return toDto(data, stockCode);
     }
 
     KisStockDataDto mapToKisStockDataDtoFluctuation(Map<String, Object> data) {
         String stockCode = (String) data.get("stck_shrn_iscd"); // 등락은 무조건 stck_shrn_iscd
-        String amount = (String) (data.getOrDefault("acml_tr_pbmn", "0")); // 등락 응답엔 보통 없음
+        return toDto(data, stockCode);
+    }
+
+    /**
+     * 종목코드가 결정된 뒤 나머지 8개 필드를 조립한다.
+     * 인접한 동일 타입(volume/amount=String)을 뒤바꿔 써도 컴파일되므로
+     * 조립 지점을 하나로 유지한다.
+     */
+    private KisStockDataDto toDto(Map<String, Object> data, String stockCode) {
+        // 거래대금: 등락 API에는 acml_tr_pbmn이 없을 수 있으므로 기본값 "0"
+        String amount = (String) (data.getOrDefault("acml_tr_pbmn", "0"));
 
         return new KisStockDataDto(
                 stockCode,

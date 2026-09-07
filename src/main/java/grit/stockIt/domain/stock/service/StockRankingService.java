@@ -143,10 +143,7 @@ public class StockRankingService {
                     final int maxPerIndustry = 5;
                     List<IndustryStockRankingResponse> result =
                             industryRankingCalculationService.selectTopStocks(
-                                    grouping.stocksByIndustry(),
-                                    grouping.sortedIndustryCodes(),
-                                    industryMap,
-                                    maxPerIndustry);
+                                    grouping, industryMap, maxPerIndustry);
 
                     log.info("업종별 인기 종목 조회 완료 - {}개 업종 (동적 감지)", result.size());
                     return result;
