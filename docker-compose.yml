@@ -130,6 +130,19 @@ services:
     # 실행: docker-compose --profile load-test run --rm k6 run /scripts/matching-engine-test.js
     # 환경 변수는 명령어에서 직접 전달: --env BASE_URL=...
 
+  # Redis 오더북 백엔드 측정용 지표(명령 지연·연결 수·메모리·키 수).
+  # PostgreSQL 쪽만 상세히 보이면 두 백엔드 비교가 비대칭이 되므로 함께 수집한다.
+  redis-exporter:
+    image: oliver006/redis_exporter:latest
+    container_name: redis-exporter
+    environment:
+      REDIS_ADDR: "redis://redis:6379"
+    depends_on:
+      - redis
+    networks:
+      - backend
+    restart: unless-stopped
+
   postgres-exporter:
     image: quay.io/prometheuscommunity/postgres-exporter:latest
     container_name: postgres-exporter
