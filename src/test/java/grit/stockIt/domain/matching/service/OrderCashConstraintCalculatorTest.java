@@ -78,4 +78,11 @@ class OrderCashConstraintCalculatorTest {
         int result = calculator.calculate(new BigDecimal("1000"), new BigDecimal("100"), 0);
         assertThat(result).isZero();
     }
+
+    @Test
+    @DisplayName("desired가 0 이하이면 0을 반환한다")
+    void calculate_NegativeOrZeroDesired_ReturnsZero() {
+        assertThat(calculator.calculate(new BigDecimal("10000"), new BigDecimal("100"), 0)).isZero();
+        assertThat(calculator.calculate(new BigDecimal("10000"), new BigDecimal("100"), -5)).isZero();
+    }
 }

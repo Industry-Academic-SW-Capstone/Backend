@@ -84,6 +84,7 @@ public class LimitOrderExecutionService {
             return List.of();
         }
 
+        // Priority policy: LimitOrderMatchPlanner.sortByPriority (in-memory), RedisOrderBookRepository.fetchMatchingEntries (ZSET pre-sort/truncation), Order sentinel prices
         FillPlan plan = matchPlanner.plan(candidates, event.orderMethod(), remainingQuantity);
 
         if (plan.allocations().isEmpty()) {

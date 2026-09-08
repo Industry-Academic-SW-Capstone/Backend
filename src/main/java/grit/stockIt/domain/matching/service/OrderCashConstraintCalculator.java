@@ -18,6 +18,9 @@ public class OrderCashConstraintCalculator {
      * @return 실제로 감당 가능한 체결 수량 (0 이상, desired 이하)
      */
     public int calculate(BigDecimal cash, BigDecimal price, int desired) {
+        if (desired <= 0) {
+            return 0;
+        }
         if (price == null || price.signum() <= 0) {
             return 0;
         }

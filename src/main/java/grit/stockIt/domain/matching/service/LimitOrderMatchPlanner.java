@@ -70,6 +70,7 @@ public class LimitOrderMatchPlanner {
         return new FillPlan(allocations, exhaustedEntries, remainingQuantity);
     }
 
+    // Sort contract co-owned by: RedisOrderBookRepository.fetchMatchingEntries (ZSET direction/truncation), Order sentinel prices (MARKET_BUY/SELL_SENTINEL_PRICE)
     private List<OrderBookEntry> sortByPriority(List<OrderBookEntry> entries, OrderMethod takerMethod) {
         Comparator<OrderBookEntry> comparator = Comparator.comparing(OrderBookEntry::price);
         if (takerMethod == OrderMethod.SELL) {
