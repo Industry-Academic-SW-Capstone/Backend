@@ -31,13 +31,11 @@ import jakarta.persistence.EntityManager;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
-import java.math.RoundingMode;
 
 @Slf4j
 @Service
@@ -58,6 +56,9 @@ public class LimitOrderExecutionService {
     private final StringRedisTemplate redisTemplate;
     private final ObjectMapper objectMapper;
     private final EntityManager entityManager;
+
+    private final LimitOrderMatchPlanner matchPlanner = new LimitOrderMatchPlanner();
+    private final OrderCashConstraintCalculator cashConstraintCalculator = new OrderCashConstraintCalculator();
 
     @Value("${matching.limit-order-fetch-size:100}")
     private int fetchSize;
@@ -83,32 +84,18 @@ public class LimitOrderExecutionService {
             return List.of();
         }
 
-        List<OrderBookEntry> orderedEntries = sortByPriority(candidates, event.orderMethod());
-        Map<Long, FillCommand> fillCommands = new LinkedHashMap<>();
+        // Priority policy: LimitOrderMatchPlanner.sortByPriority (in-memory), RedisOrderBookRepository.fetchMatchingEntries (ZSET pre-sort/truncation), Order sentinel prices
+        FillPlan plan = matchPlanner.plan(candidates, event.orderMethod(), remainingQuantity);
 
-        // Redis에서 주문 조회 및 fillCommands 생성 (읽기만 수행)
-        for (OrderBookEntry entry : orderedEntries) {
-            if (remainingQuantity <= 0) {
-                break;
-            }
-
-            if (entry.isExhausted()) {
-                // 소진된 주문은 나중에 DB 업데이트 후 Redis에서 삭제
-                continue;
-            }
-
-            int fillQuantity = Math.min(entry.remainingQuantity(), remainingQuantity);
-            if (fillQuantity <= 0) {
-                continue;
-            }
-
-            fillCommands.put(entry.orderId(), new FillCommand(entry, fillQuantity));
-            remainingQuantity -= fillQuantity;
-        }
-
-        if (fillCommands.isEmpty()) {
+        if (plan.allocations().isEmpty()) {
             return List.of();
         }
+
+        Map<Long, FillCommand> fillCommands = new LinkedHashMap<>();
+        for (FillPlan.FillAllocation allocation : plan.allocations()) {
+            fillCommands.put(allocation.entry().orderId(), new FillCommand(allocation.entry(), allocation.fillQuantity()));
+        }
+        remainingQuantity = plan.unallocatedQuantity();
 
         List<Long> filledOrderIds = new ArrayList<>(fillCommands.keySet());
         List<Order> orders = orderRepository.findAllById(filledOrderIds);
@@ -160,7 +147,7 @@ public class LimitOrderExecutionService {
             BigDecimal fillPrice = event.price();
 
             if (order.getOrderMethod() == OrderMethod.BUY) {
-                int affordableQuantity = calculateAffordableQuantity(account, fillPrice, desiredFillQuantity);
+                int affordableQuantity = cashConstraintCalculator.calculate(account.getCash(), fillPrice, desiredFillQuantity);
                 if (affordableQuantity <= 0) {
                     log.warn("계좌 현금 부족으로 주문을 취소합니다. orderId={} accountId={} requiredUnitPrice={} cash={}",
                             orderId, account.getAccountId(), fillPrice, account.getCash());
@@ -249,10 +236,8 @@ public class LimitOrderExecutionService {
             }
 
             // 소진된 주문도 Redis에서 삭제
-            for (OrderBookEntry entry : orderedEntries) {
-                if (entry.isExhausted()) {
-                    redisOrderBookRepository.removeOrder(entry.orderId(), stockCode, entry.orderMethod());
-                }
+            for (OrderBookEntry entry : plan.exhaustedEntries()) {
+                redisOrderBookRepository.removeOrder(entry.orderId(), stockCode, entry.orderMethod());
             }
         } catch (Exception e) {
             log.error("Redis 업데이트 실패로 DB 롤백: stockCode={} eventId={}", 
@@ -274,15 +259,6 @@ public class LimitOrderExecutionService {
 
     private boolean isActive(Order order) {
         return ELIGIBLE_STATUSES.contains(order.getStatus());
-    }
-
-    private List<OrderBookEntry> sortByPriority(List<OrderBookEntry> entries, OrderMethod takerMethod) {
-        Comparator<OrderBookEntry> comparator = Comparator.comparing(OrderBookEntry::price);
-        if (takerMethod == OrderMethod.SELL) {
-            comparator = comparator.reversed();
-        }
-        comparator = comparator.thenComparingLong(OrderBookEntry::createdAtEpochMillis);
-        return entries.stream().sorted(comparator).toList();
     }
 
     private record FillCommand(OrderBookEntry entry, int fillQuantity) {
@@ -318,22 +294,6 @@ public class LimitOrderExecutionService {
                                     order.getOrderId(), account.getAccountId(), order.getStock().getCode())
                     );
         }
-    }
-
-    private int calculateAffordableQuantity(Account account, BigDecimal price, int desiredQuantity) {
-        if (price == null || price.signum() <= 0) {
-            return 0;
-        }
-        BigDecimal cash = account.getCash();
-        if (cash.compareTo(price) < 0) {
-            return 0;
-        }
-        BigDecimal affordableRaw = cash.divide(price, 0, RoundingMode.FLOOR);
-        if (affordableRaw.compareTo(BigDecimal.ZERO) <= 0) {
-            return 0;
-        }
-        int affordable = affordableRaw.min(BigDecimal.valueOf(desiredQuantity)).intValue();
-        return Math.min(affordable, desiredQuantity);
     }
 
     private void cancelDueToInsufficientFunds(Order order, String stockCode, Account account) {
