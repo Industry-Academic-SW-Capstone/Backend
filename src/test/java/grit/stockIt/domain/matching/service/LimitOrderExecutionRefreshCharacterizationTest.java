@@ -11,7 +11,6 @@ import grit.stockIt.domain.matching.dto.OrderBookEntry;
 import grit.stockIt.domain.matching.repository.RedisOrderBookRepository;
 import grit.stockIt.domain.member.entity.Member;
 import grit.stockIt.domain.order.entity.Order;
-import grit.stockIt.domain.order.entity.OrderHold;
 import grit.stockIt.domain.order.entity.OrderMethod;
 import grit.stockIt.domain.order.repository.OrderHoldRepository;
 import grit.stockIt.domain.order.repository.OrderRepository;
@@ -40,8 +39,16 @@ import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.*;
-import static org.mockito.Mockito.*;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 /**
  * 특성화(Characterization) 테스트: 계좌 락 획득 후 entityManager.refresh() 시점에
