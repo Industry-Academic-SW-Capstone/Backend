@@ -10,7 +10,11 @@ import java.util.List;
  *
  * @param allocations         체결이 배정된 항목들. 각 {@link FillAllocation}은 배정 대상
  *                             {@link OrderBookEntry}를 인덱스가 아닌 요소 자체로 보유하여
- *                             호출자가 별도 키 정합성을 유지할 필요가 없다.
+ *                             호출자가 별도 키 정합성을 유지할 필요가 없다. 이 리스트의 순서는
+ *                             매칭 우선순위 순서(정렬된 순서)이며, 호출자는 이 순서에 의존해
+ *                             {@code findByIdWithLock} 호출 순서(DB 행 락 획득 순서, 곧 데드락
+ *                             프로파일)와 반환되는 {@link grit.stockIt.domain.execution.entity.Execution}
+ *                             순서를 결정한다. 따라서 이 순서를 재정렬해서는 안 된다.
  * @param exhaustedEntries     정렬된 전체 후보 목록에서 {@link OrderBookEntry#isExhausted()}가
  *                             참인 모든 항목. 할당 루프가 수량 소진으로 {@code break}된 이후에
  *                             위치한 소진 항목도 반드시 포함된다(정렬 순서 유지) —

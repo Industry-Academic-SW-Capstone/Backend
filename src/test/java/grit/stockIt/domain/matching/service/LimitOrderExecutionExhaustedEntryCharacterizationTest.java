@@ -54,8 +54,9 @@ import static org.mockito.Mockito.when;
 
 /**
  * 특성화(Characterization) 테스트: 소진된(exhausted, remainingQuantity<=0) OrderBookEntry의
- * Redis 삭제 경로. distributeEvent() L252-256의 소진 항목 삭제 루프는 할당 루프의 break와
- * 무관하게 orderedEntries 전체를 순회한다. 이 gap은 기존 테스트에서 전혀 커버되지 않았다.
+ * Redis 삭제 경로. distributeEvent()의 소진 항목 삭제 루프(plan.exhaustedEntries()를 순회)는
+ * LimitOrderMatchPlanner가 만든 할당 루프의 break와 무관하게, 정렬된 전체 후보 목록에서 소진된
+ * 항목을 별도 패스로 전부 수집한다. 이 gap은 기존 테스트에서 전혀 커버되지 않았다.
  * 현재 동작을 있는 그대로 기록하며 고치지 않는다 (특히 케이스 3의 누수 동작).
  */
 @ExtendWith(MockitoExtension.class)
@@ -249,7 +250,8 @@ class LimitOrderExecutionExhaustedEntryCharacterizationTest {
         // Then
         assertThat(executions).hasSize(1);
         // 할당 루프는 remainingQuantity(이벤트)가 0이 되는 순간 break하여 exhaustedAfterBreak를 못 보지만,
-        // 소진 삭제 루프는 orderedEntries 전체를 별도로 순회하므로 여전히 삭제된다.
+        // LimitOrderMatchPlanner.plan()의 exhaustedEntries 수집은 정렬된 전체 후보 목록을 별도로
+        // 순회하므로 여전히 포함되고, 그 결과가 distributeEvent의 소진 삭제 루프에서 삭제된다.
         verify(redisOrderBookRepository, times(1)).removeOrder(2L, stockCode, OrderMethod.BUY);
     }
 
@@ -277,7 +279,8 @@ class LimitOrderExecutionExhaustedEntryCharacterizationTest {
 
         // Then
         assertThat(executions).isEmpty();
-        // L109-111의 조기 반환으로 인해 소진 삭제 루프에 도달하지 못한다 (현재의 리소스 누수를 있는 그대로 고정)
+        // distributeEvent의 `if (plan.allocations().isEmpty()) { return List.of(); }` 조기 반환으로
+        // 인해 소진 삭제 루프(plan.exhaustedEntries() 순회)에 도달하지 못한다 (현재의 리소스 누수를 있는 그대로 고정)
         verify(redisOrderBookRepository, never()).removeOrder(anyLong(), anyString(), any());
         verify(orderRepository, never()).findAllById(any());
     }
@@ -312,7 +315,7 @@ class LimitOrderExecutionExhaustedEntryCharacterizationTest {
         Order activeOrder = limitBuy(1L, new BigDecimal("100"), 10);
         OrderHold activeHold = hold(activeOrder, new BigDecimal("1000"), 1L);
 
-        // 입력 순서를 일부러 정렬 순서와 다르게 준다 (서비스가 sortByPriority로 다시 정렬함을 검증)
+        // 입력 순서를 일부러 정렬 순서와 다르게 준다 (LimitOrderMatchPlanner가 내부적으로 다시 정렬함을 검증)
         when(redisOrderBookRepository.fetchMatchingEntries(stockCode, OrderMethod.SELL, event.price(), 100))
                 .thenReturn(List.of(exhaustedLowest, activeEntry, exhaustedHighest, exhaustedMiddle));
         when(orderRepository.findAllById(anyList()))
