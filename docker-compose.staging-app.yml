@@ -23,8 +23,15 @@ services:
     ports:
       - "8080:8080"
     restart: unless-stopped
+    # 힙을 인스턴스 크기에서 분리한다.
+    # Dockerfile이 MaxRAMPercentage=75라 제한이 없으면 힙 상한이 "호스트 메모리의 75%"가 되어,
+    # 인스턴스 타입을 바꾸는 순간 힙도 같이 변한다 — arm 간 비교가 깨진다.
+    # 4g → 힙 상한 3 GiB. 단계 3(앱 인메모리 오더북)에서 부족하면 이 한 줄만 올린다.
+    mem_limit: 4g
     environment:
-      - SPRING_PROFILES_ACTIVE=dev
+      # staging 프로파일: 접속 대상을 환경변수로 받으면서 LoadTestController(@Profile("!prod"))를 살린다.
+      # dev는 호스트가 하드코딩돼 분리 인스턴스를 못 가리키고, prod는 부하 진입점이 사라진다.
+      - SPRING_PROFILES_ACTIVE=staging
       - POSTGRES_DB=${POSTGRES_DB}
       - POSTGRES_USER=${POSTGRES_USER}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}

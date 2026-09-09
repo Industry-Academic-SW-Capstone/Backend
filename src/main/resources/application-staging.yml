@@ -1,0 +1,47 @@
+# staging: 부하테스트 전용. 앱·RDS·Redis가 서로 다른 인스턴스에 있다.
+#
+# 왜 dev도 prod도 아닌 별도 프로파일인가
+#   dev   접속 대상이 compose 서비스명(db, redis)으로 하드코딩돼 있어
+#         POSTGRES_URL·SPRING_REDIS_HOST를 읽지 않는다 → 분리 인스턴스를 못 가리킨다.
+#   prod  환경변수는 제대로 읽지만 LoadTestController가 @Profile("!prod")다.
+#         부하 진입점이 사라져 측정 자체가 불가능하다.
+#   → "!prod"에 속하면서 접속 대상을 환경변수로 받는 프로파일이 따로 필요하다.
+spring:
+  config:
+    import: optional:file:.env[.properties]
+
+  datasource:
+    url: ${POSTGRES_URL}
+    username: ${POSTGRES_USER}
+    password: ${POSTGRES_PASSWORD}
+    driver-class-name: org.postgresql.Driver
+
+  data:
+    redis:
+      host: ${SPRING_REDIS_HOST}
+      port: ${SPRING_REDIS_PORT:6379}
+
+  jpa:
+    hibernate:
+      # 빈 RDS에 스키마를 만들 주체가 이것뿐이다.
+      # Flyway는 spring.flyway.enabled=false로 꺼져 있어 FlywayConfig 빈이 등록조차 되지 않고,
+      # 마이그레이션(V2·V6~V11)에도 기반 테이블을 만드는 스크립트가 없다.
+      # 실제 prod는 validate로 도는 차이가 있으므로 측정 결과에 기록할 것.
+      ddl-auto: update
+    show-sql: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        default_batch_fetch_size: 100
+
+  task:
+    scheduling:
+      # 주기 배치가 측정을 오염시킨다.
+      #   RankingService       보유 종목 현재가를 KIS 레이트 리미터(초당 25건)로 순차 조회 → 60초 톱니
+      #   RedisDBSyncService   주문마다 orderBookStore.exists() → 백엔드마다 비용이 달라 arm 간 편향
+      #
+      # 주의: 이 값은 Spring Boot 표준 프로퍼티가 아니다. 현재는 RankingService가 직접 읽어
+      # 자체 차단할 뿐이고, RedisDBSyncService는 그대로 돈다. 스케줄러를 실제로 멈추는
+      # 설정(no-op TaskScheduler)은 src/test에만 있어 운영 클래스패스에 없다.
+      # 전체 차단은 그 설정을 src/main으로 옮긴 뒤에 완성된다.
+      enabled: false
