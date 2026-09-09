@@ -9,6 +9,7 @@ import grit.stockIt.domain.execution.service.ExecutionService;
 import grit.stockIt.domain.matching.dto.LimitOrderFillEvent;
 import grit.stockIt.domain.matching.repository.OrderBookStore;
 import grit.stockIt.domain.matching.dto.OrderBookEntry;
+import grit.stockIt.domain.matching.queue.MatchingEventQueue;
 import grit.stockIt.domain.order.entity.Order;
 import grit.stockIt.domain.order.entity.OrderMethod;
 import grit.stockIt.domain.order.entity.OrderStatus;
@@ -21,11 +22,9 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.ApplicationEventPublisher;
-import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import grit.stockIt.domain.order.event.TradeCompletionEvent;
-import com.fasterxml.jackson.databind.ObjectMapper;
 
 import jakarta.persistence.EntityManager;
 
@@ -44,7 +43,6 @@ import java.math.RoundingMode;
 @RequiredArgsConstructor
 public class LimitOrderExecutionService {
 
-    private static final String LIMIT_EVENT_QUEUE_KEY_PATTERN = "sim:limit:event:%s";
     private static final List<OrderStatus> ELIGIBLE_STATUSES = List.of(OrderStatus.PENDING, OrderStatus.PARTIALLY_FILLED);
 
     private final ExecutionService executionService;
@@ -55,8 +53,7 @@ public class LimitOrderExecutionService {
     private final AccountRepository accountRepository;
     private final AccountStockRepository accountStockRepository;
     private final ApplicationEventPublisher eventPublisher;
-    private final StringRedisTemplate redisTemplate;
-    private final ObjectMapper objectMapper;
+    private final MatchingEventQueue matchingEventQueue;
     private final EntityManager entityManager;
 
     @Value("${matching.limit-order-fetch-size:100}")
@@ -363,8 +360,7 @@ public class LimitOrderExecutionService {
                 sourceEvent.eventTimestamp()
         );
         try {
-            String payload = objectMapper.writeValueAsString(residualEvent);
-            redisTemplate.opsForList().leftPush(buildEventQueueKey(stockCode), payload);
+            matchingEventQueue.requeueFront(stockCode, residualEvent);
         } catch (Exception e) {
             log.error("잔여 체결 이벤트 재큐잉 실패. stockCode={} event={}", stockCode, residualEvent, e);
         }
@@ -395,9 +391,6 @@ public class LimitOrderExecutionService {
                 );
     }
 
-    private String buildEventQueueKey(String stockCode) {
-        return LIMIT_EVENT_QUEUE_KEY_PATTERN.formatted(stockCode);
-    }
 
     // 체결 완료 이벤트 발행
     private void publishExecutionFilledEvent(Execution execution, Order order, String stockCode, Account account) {

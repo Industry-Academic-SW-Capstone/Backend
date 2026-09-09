@@ -11,6 +11,7 @@ import grit.stockIt.domain.execution.service.ExecutionService;
 import grit.stockIt.domain.matching.dto.LimitOrderFillEvent;
 import grit.stockIt.domain.matching.dto.OrderBookEntry;
 import grit.stockIt.domain.matching.repository.OrderBookStore;
+import grit.stockIt.domain.matching.queue.MatchingEventQueue;
 import grit.stockIt.domain.notification.event.ExecutionFilledEvent;
 import grit.stockIt.domain.order.entity.Order;
 import grit.stockIt.domain.order.entity.OrderHold;
@@ -32,9 +33,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
 import org.springframework.context.ApplicationEventPublisher;
-import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.test.util.ReflectionTestUtils;
-import com.fasterxml.jackson.databind.ObjectMapper;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -45,16 +44,12 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
-import org.springframework.data.redis.core.ListOperations;
 
 @ExtendWith(MockitoExtension.class)
 @MockitoSettings(strictness = Strictness.LENIENT)
 @DisplayName("LimitOrderExecutionService 테스트")
 class LimitOrderExecutionServiceTest {
     
-    @Mock
-    private ListOperations<String, String> listOperations;
-
     @Mock
     private ExecutionService executionService;
 
@@ -80,10 +75,7 @@ class LimitOrderExecutionServiceTest {
     private ApplicationEventPublisher eventPublisher;
 
     @Mock
-    private StringRedisTemplate redisTemplate;
-
-    @Mock
-    private ObjectMapper objectMapper;
+    private MatchingEventQueue matchingEventQueue;
 
     @Mock
     private EntityManager entityManager;
@@ -105,19 +97,6 @@ class LimitOrderExecutionServiceTest {
         // fetchSize 설정
         ReflectionTestUtils.setField(limitOrderExecutionService, "fetchSize", 100);
         
-        // ObjectMapper Mock 설정 (잔여 이벤트 재큐잉용)
-        try {
-            doAnswer(invocation -> {
-                // 간단한 JSON 직렬화 (테스트용)
-                return "{\"eventId\":\"test\",\"orderMethod\":\"SELL\",\"price\":100,\"quantity\":10}";
-            }).when(objectMapper).writeValueAsString(any(grit.stockIt.domain.matching.dto.LimitOrderFillEvent.class));
-        } catch (Exception e) {
-            // Mockito가 예외를 처리하므로 무시
-        }
-        
-        // StringRedisTemplate Mock 설정
-        when(redisTemplate.opsForList()).thenReturn(listOperations);
-
         // 테스트 데이터 생성
         testMember = Member.builder()
                 .memberId(1L)
