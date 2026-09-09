@@ -4,8 +4,8 @@ import grit.stockIt.domain.account.repository.AccountStockRepository;
 import grit.stockIt.domain.matching.repository.RedisMarketDataRepository;
 import grit.stockIt.domain.stock.service.StockDetailService;
 import com.google.common.util.concurrent.RateLimiter;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
@@ -24,15 +24,33 @@ import java.util.Set;
  */
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class RankingPriceCollectionService {
 
     private final AccountStockRepository accountStockRepository;
     private final RedisMarketDataRepository redisMarketDataRepository;
     private final StockDetailService stockDetailService;
 
-    // Rate Limiter: KIS API 초당 30개 제한 (안전하게 25개로 설정)
-    private final RateLimiter kisApiRateLimiter = RateLimiter.create(25.0);
+    /**
+     * KIS API 호출 속도 제한. KIS가 초당 30건을 막으므로 기본값은 여유를 둔 25건이다.
+     *
+     * <p>초당 한도를 프로퍼티로 받는 이유: 하드코딩하면 테스트에서 끌 수 없다.
+     * 캐시 미스 종목이 N개면 이 리미터가 N/25초 동안 스레드를 재우는데, 테스트 DB에
+     * 종목이 쌓일수록 대기가 선형으로 늘어 빌드 시간을 지배하게 된다
+     * (실측: 종목 598개 → 테스트 메서드 하나당 약 24초 대기).
+     * 테스트 프로파일은 사실상 무제한으로 설정한다.
+     */
+    private final RateLimiter kisApiRateLimiter;
+
+    public RankingPriceCollectionService(
+            AccountStockRepository accountStockRepository,
+            RedisMarketDataRepository redisMarketDataRepository,
+            StockDetailService stockDetailService,
+            @Value("${kis.api.rate-limit-per-second:25.0}") double rateLimitPerSecond) {
+        this.accountStockRepository = accountStockRepository;
+        this.redisMarketDataRepository = redisMarketDataRepository;
+        this.stockDetailService = stockDetailService;
+        this.kisApiRateLimiter = RateLimiter.create(rateLimitPerSecond);
+    }
 
     // ==================== 배치 현재가 수집 ====================
 
