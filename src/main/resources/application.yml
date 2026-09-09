@@ -61,6 +61,9 @@ management:
 # KIS API 설정
 kis:
   api:
+    # KIS API 호출 속도 제한(초당). KIS가 초당 30건을 막으므로 여유를 둔 값이다.
+    # 랭킹 배치가 캐시 미스 종목을 이 속도로 순차 조회한다.
+    rate-limit-per-second: ${KIS_API_RATE_LIMIT_PER_SECOND:25.0}
     url: "https://openapi.koreainvestment.com:9443"
     appkey: ${KIS_API_APPKEY}
     appsecret: ${KIS_API_APPSECRET}
@@ -112,6 +115,16 @@ matching:
     # 벤치마크 비교용 스위치다. 두 백엔드는 매칭 정산 로직을 공유하므로,
     # 이 값만 바꿔 오더북 자료구조의 성능 차이를 단일 변수로 측정할 수 있다.
     backend: ${MATCHING_ORDERBOOK_BACKEND:redis}
+  queue:
+    # 체결 이벤트 큐 백엔드: redis(기본) | jpa
+    #   redis — Redis List. RPUSH/LPOP/LPUSH 모두 1왕복·O(1).
+    #           소비가 트랜잭션 밖이라 정산 롤백 시 이벤트가 유실된다.
+    #   jpa   — matching_event_queue 테이블. 소비가 SELECT FOR UPDATE SKIP LOCKED + DELETE
+    #           2왕복이고 dead tuple이 쌓이지만, 소비가 매칭 트랜잭션에 참여해
+    #           정산이 롤백되면 이벤트도 큐로 되돌아간다.
+    # 오더북 백엔드와 독립적으로 지정한다. Redis 구성요소를 하나씩 얹으며
+    # 각각의 기여를 분리해 측정하기 위한 것이다.
+    backend: ${MATCHING_QUEUE_BACKEND:redis}
   # Redis 분산 락 TTL(초). jpa 백엔드에서는 advisory 락이 트랜잭션 종료 시 자동 해제되므로 무시된다.
   limit-lock-ttl-seconds: ${MATCHING_LIMIT_LOCK_TTL_SECONDS:5}
   # 체결 이벤트 1건이 훑을 오더북 후보 최대 개수. 임계 구역 길이에 직접 영향을 준다.

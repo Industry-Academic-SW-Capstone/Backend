@@ -6,6 +6,7 @@ import grit.stockIt.domain.contest.entity.Contest;
 import grit.stockIt.domain.contest.repository.ContestRepository;
 import grit.stockIt.domain.matching.dto.LimitOrderFillEvent;
 import grit.stockIt.domain.matching.dto.OrderBookEntry;
+import grit.stockIt.domain.matching.queue.MatchingEventQueue;
 import grit.stockIt.domain.matching.service.LimitOrderMatchingService;
 import grit.stockIt.domain.member.entity.AuthProvider;
 import grit.stockIt.domain.member.entity.Member;
@@ -44,11 +45,16 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <p>벤치마크의 전제는 "두 백엔드가 같은 후보를 같은 우선순위로 돌려준다"는 것이다.
  * 그게 깨지면 성능 비교는 의미가 없으므로, 계약 검증과 함께 Redis 구현과의 동치성도 확인한다.
  *
+ * <p>종단 테스트는 큐까지 RDB로 두어 Redis를 전혀 쓰지 않는 경로를 검증한다.
+ *
  * <p>테스트 환경은 Flyway가 꺼져 있으므로({@code spring.flyway.enabled=false}) 실제
  * 마이그레이션 파일을 {@code @Sql}로 직접 적용한다 — 인덱스 DDL 자체의 유효성도 함께 검증된다.
  */
 @DisplayName("RDB 오더북 저장소 (통합 테스트)")
-@TestPropertySource(properties = "matching.orderbook.backend=jpa")
+@TestPropertySource(properties = {
+        "matching.orderbook.backend=jpa",
+        "matching.queue.backend=jpa"
+})
 @Sql(scripts = "classpath:db/migration/V10__add_orderbook_index.sql")
 class JpaOrderBookStoreIntegrationTest extends IntegrationTestSupport {
 
@@ -61,6 +67,9 @@ class JpaOrderBookStoreIntegrationTest extends IntegrationTestSupport {
 
     @Autowired
     private LimitOrderMatchingService limitOrderMatchingService;
+
+    @Autowired
+    private MatchingEventQueue matchingEventQueue;
 
     @Autowired
     private StringRedisTemplate redisTemplate;
@@ -286,11 +295,7 @@ class JpaOrderBookStoreIntegrationTest extends IntegrationTestSupport {
     }
 
     private void pushEvent(LimitOrderFillEvent event) {
-        try {
-            redisTemplate.opsForList().rightPush("sim:limit:event:" + stockCode, objectMapper.writeValueAsString(event));
-        } catch (Exception e) {
-            throw new IllegalStateException("테스트 이벤트 직렬화 실패", e);
-        }
+        matchingEventQueue.enqueue(stockCode, event);
     }
 
     private <T> T runInTransaction(java.util.function.Supplier<T> action) {
