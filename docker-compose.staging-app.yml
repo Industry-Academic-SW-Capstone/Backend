@@ -1,10 +1,10 @@
-# 벤치마크 — 앱 서버 (측정 대상 호스트)
+# 스테이징 — 앱 서버 (측정 대상 호스트)
 #
 # 이 호스트에는 측정 대상과 호스트 지표 수집기만 둔다.
 # 부하 생성기(k6)와 모니터링 백엔드(Prometheus/Grafana)는 별도 호스트로 분리한다
-# — docker-compose.bench-ops.yml 참고.
+# — docker-compose.staging-ops.yml 참고.
 #
-# 실행: docker compose -f docker-compose.bench-app.yml up -d
+# 실행: docker compose -f docker-compose.staging-app.yml up -d
 #
 # 필요한 환경변수 (.env)
 #   POSTGRES_URL              jdbc:postgresql://<RDS 엔드포인트>:5432/<db>

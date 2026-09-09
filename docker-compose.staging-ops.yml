@@ -1,4 +1,4 @@
-# 벤치마크 — 부하 생성 + 모니터링 서버
+# 스테이징 — 부하 생성 + 모니터링 서버
 #
 # 측정 대상 호스트(앱 서버)에서 분리한다.
 #   k6         : VU가 많으면 CPU를 1코어 이상 쓴다. 앱 서버에 있으면 측정 대상의 CPU를 뺏는다.
@@ -6,8 +6,8 @@
 #                그 스파이크가 p99에 섞여 GC 탓으로 오해된다(시나리오 D).
 #   exporter들 : postgres/redis exporter는 원격 접속이라 어느 호스트에 있어도 된다.
 #
-# 실행: docker compose -f docker-compose.bench-ops.yml up -d
-#       docker compose -f docker-compose.bench-ops.yml --profile load-test run --rm k6 \
+# 실행: docker compose -f docker-compose.staging-ops.yml up -d
+#       docker compose -f docker-compose.staging-ops.yml --profile load-test run --rm k6 \
 #           run /scripts/matching-engine-test.js --env BASE_URL=http://${APP_HOST}:8080
 #
 # 필요한 환경변수 (.env)
@@ -30,7 +30,7 @@ services:
       - ./k6/scripts:/scripts
       - ./k6/results:/results
     networks:
-      - bench
+      - staging
     profiles:
       - load-test
 
@@ -45,7 +45,7 @@ services:
     command:
       - "--collector.stat_statements"
     networks:
-      - bench
+      - staging
     restart: unless-stopped
     logging:
       driver: "json-file"
@@ -59,7 +59,7 @@ services:
     environment:
       REDIS_ADDR: "redis://${REDIS_HOST}:6379"
     networks:
-      - bench
+      - staging
     restart: unless-stopped
     logging:
       driver: "json-file"
@@ -78,10 +78,10 @@ services:
       - "9090:9090"
     volumes:
       # 분리 구성 전용 설정. 타깃이 서비스명이 아니라 사설 IP다.
-      - ./monitoring/prometheus/prometheus-bench.yml:/etc/prometheus/prometheus.yml:ro
+      - ./monitoring/prometheus/prometheus-staging.yml:/etc/prometheus/prometheus.yml:ro
       - prometheus_data:/prometheus
     networks:
-      - bench
+      - staging
     restart: unless-stopped
     logging:
       driver: "json-file"
@@ -104,7 +104,7 @@ services:
     depends_on:
       - prometheus
     networks:
-      - bench
+      - staging
     restart: unless-stopped
     logging:
       driver: "json-file"
@@ -117,5 +117,5 @@ volumes:
   grafana_data:
 
 networks:
-  bench:
-    name: bench
+  staging:
+    name: staging
