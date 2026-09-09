@@ -1,0 +1,121 @@
+# 벤치마크 — 부하 생성 + 모니터링 서버
+#
+# 측정 대상 호스트(앱 서버)에서 분리한다.
+#   k6         : VU가 많으면 CPU를 1코어 이상 쓴다. 앱 서버에 있으면 측정 대상의 CPU를 뺏는다.
+#   Prometheus : TSDB compaction이 주기적으로 CPU·I/O를 튀게 한다. 앱 서버에 있으면
+#                그 스파이크가 p99에 섞여 GC 탓으로 오해된다(시나리오 D).
+#   exporter들 : postgres/redis exporter는 원격 접속이라 어느 호스트에 있어도 된다.
+#
+# 실행: docker compose -f docker-compose.bench-ops.yml up -d
+#       docker compose -f docker-compose.bench-ops.yml --profile load-test run --rm k6 \
+#           run /scripts/matching-engine-test.js --env BASE_URL=http://${APP_HOST}:8080
+#
+# 필요한 환경변수 (.env)
+#   APP_HOST        앱 서버 사설 IP
+#   RDS_HOST        RDS 엔드포인트
+#   REDIS_HOST      Redis 인스턴스 사설 IP
+#   POSTGRES_USER / _PASSWORD / _DB
+
+services:
+  k6:
+    image: grafana/k6:latest
+    container_name: k6
+    ports:
+      - "5665:5665"
+    environment:
+      K6_PROMETHEUS_RW_SERVER_URL: http://prometheus:9090/api/v1/write
+      K6_WEB_DASHBOARD: "true"
+      K6_WEB_DASHBOARD_HOST: 0.0.0.0
+    volumes:
+      - ./k6/scripts:/scripts
+      - ./k6/results:/results
+    networks:
+      - bench
+    profiles:
+      - load-test
+
+  # RDS에 원격 접속한다. sslmode는 RDS 기본이 require이므로 disable로 두면 접속이 거부된다.
+  # pg_stat_statements를 쓰려면 RDS 파라미터 그룹에서
+  # shared_preload_libraries에 추가하고 재부팅해야 한다.
+  postgres-exporter:
+    image: quay.io/prometheuscommunity/postgres-exporter:latest
+    container_name: postgres-exporter
+    environment:
+      DATA_SOURCE_NAME: "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${RDS_HOST}:5432/${POSTGRES_DB}?sslmode=require"
+    command:
+      - "--collector.stat_statements"
+    networks:
+      - bench
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  redis-exporter:
+    image: oliver006/redis_exporter:latest
+    container_name: redis-exporter
+    environment:
+      REDIS_ADDR: "redis://${REDIS_HOST}:6379"
+    networks:
+      - bench
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--web.enable-remote-write-receiver'
+      - '--storage.tsdb.retention.time=30d'
+    ports:
+      - "9090:9090"
+    volumes:
+      # 분리 구성 전용 설정. 타깃이 서비스명이 아니라 사설 IP다.
+      - ./monitoring/prometheus/prometheus-bench.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    networks:
+      - bench
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+    depends_on:
+      - prometheus
+    networks:
+      - bench
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  prometheus_data:
+  grafana_data:
+
+networks:
+  bench:
+    name: bench
