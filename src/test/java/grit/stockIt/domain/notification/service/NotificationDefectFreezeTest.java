@@ -55,9 +55,13 @@ import static org.mockito.Mockito.when;
  *       {@code String.format} 에 {@code Locale.ROOT} 를 명시한 뒤 둘 다 latn 으로 고정된다.
  *       <b>이 갱신 diff 가 사용자 영향 명세다: 비latn 로케일 사용자가 보던 숫자 표기가 바뀐다.</b>
  *       배포 대상이 ko-KR 이라 DF-2 대조군은 수정 유무와 무관하게 통과하므로 이 판별 케이스가 필요하다.</li>
- *   <li><b>DF-4</b> — 결함 ③-a(Market sentAt 이중 호출). 현재 DB 용과 FCM 용이 독립 호출이라
- *       일치가 보장되지 않는다. {@code detailSentAt <= fcmSentAt} 으로 동결하고
- *       C6 이 {@code isEqualTo} 로 갱신한다. {@code <=} → {@code ==} diff 가 사용자 영향 명세다.</li>
+ *   <li><b>DF-4</b> — 결함 ③-a(Market sentAt 이중 호출).
+ *       <b>C6 에서 갱신됨.</b> 수정 전에는 DB 용과 FCM 용이 독립 호출이라 일치가 보장되지 않았고
+ *       {@code detailSentAt <= fcmSentAt} 으로만 동결할 수 있었다.
+ *       회원 루프 안에서 회원당 1회만 읽도록 바꾼 뒤 두 값이 항상 같아져 {@code isEqualTo} 로 조인다.
+ *       <b>{@code <=} 에서 {@code ==} 로 바뀐 diff 가 사용자 영향 명세다:</b>
+ *       같은 알림의 DB 기록 시각과 푸시 페이로드 시각이 더 이상 갈리지 않는다.
+ *       JSON 키와 타입은 그대로이므로 API 계약 변경은 없다.</li>
  * </ul>
  *
  * <h2>DF-4 의 비-단정 규약 (판별자 아님)</h2>
@@ -323,7 +327,7 @@ class NotificationDefectFreezeTest {
     // =====================================================================
 
     @Nested
-    @DisplayName("DF-4 (결함 ③-a): Market 의 DB sentAt 과 FCM sentAt 이 독립 호출이다")
+    @DisplayName("DF-4 (결함 ③-a): Market 의 DB sentAt 과 FCM sentAt 이 같은 값이다 (C6 수정 후)")
     class DefectMarketSentAt {
 
         @SuppressWarnings("unchecked")
@@ -353,11 +357,13 @@ class NotificationDefectFreezeTest {
         }
 
         /**
-         * 현재 동작 동결: DB 용 sentAt 이 FCM 용보다 먼저 생성되므로 항상 작거나 같다.
-         * C6 이 이 단정을 isEqualTo 로 갱신한다.
+         * C6 수정 후: 회원당 1회만 읽은 값을 두 경로가 공유하므로 항상 같다.
+         *
+         * <p>수정 전에는 두 독립 호출 사이에 DB I/O 가 끼어 값이 벌어질 수 있었고
+         * {@code isLessThanOrEqualTo} 로만 동결할 수 있었다.
          */
         @Test
-        void df4_market_detailSentAtIsLessThanOrEqualToFcmSentAt() throws Exception {
+        void df4_market_detailSentAtEqualsFcmSentAt() throws Exception {
             Captured c = runMarketSingleMember();
 
             Map<String, Object> detail = new ObjectMapper()
@@ -366,7 +372,7 @@ class NotificationDefectFreezeTest {
             long detailSentAt = ((Number) detail.get("sentAt")).longValue();
             long fcmSentAt = Long.parseLong(c.fcmData().get("sentAt"));
 
-            assertThat(detailSentAt).isLessThanOrEqualTo(fcmSentAt);
+            assertThat(detailSentAt).isEqualTo(fcmSentAt);
         }
 
         /**
