@@ -58,9 +58,21 @@ export function defaultAccountId(token) {
 // ── 오더북 시딩 ──────────────────────────────────────────────────
 // 반대 방향 주문이 없으면 체결이 일어나지 않아 측정이 무의미해진다(계획서 §5-A).
 //
-// 이벤트를 SELL로 보내면 매수 후보(price >= 체결가)를 훑으므로 BUY 주문을 심는다.
-// 주문 생성은 OrderBookRegistrationService가 orderBookStore.addOrder를 호출하므로
-// redis·jpa 백엔드 양쪽에 모두 반영된다. SQL로 직접 넣으면 Redis ZSet에는 안 들어간다
+// ★ 매도(SELL)로 심는 이유. 매수 주문은 OrderService가 validateStockTradeable을 호출해
+//   외부 Python 분석 서버(PYTHON_ANALYSIS_URL)에 동기 요청을 보낸다. 그 서버가 없으면
+//   UntradeableStockException으로 400이 떨어진다. 매도 경로에는 이 검증이 없다.
+//   측정 대상은 mock-execution 경로이고 주문 생성은 시딩에만 쓰이므로, 검증을 타지 않는
+//   방향을 고르는 것이 분석 서버를 띄우는 것보다 변수가 적다.
+//
+// 전제: 계좌에 해당 종목 보유분이 있어야 한다(applySellHold가 account_stock을 요구).
+//   INSERT INTO account_stock (account_id, stock_code, quantity, hold_quantity, average_price, created_at, updated_at)
+//   VALUES (1, '005930', 1000000000, 0, 100, now(), now());
+//
+// 매수 이벤트(taker BUY)는 매도 후보를 price <= 체결가 조건으로 훑으므로
+// EVENT_PRICE >= SEED_PRICE 여야 한다.
+//
+// API로 심는 이유: 주문 생성은 OrderBookRegistrationService가 orderBookStore.addOrder를
+// 호출해 redis·jpa 양쪽에 반영된다. SQL로 직접 넣으면 Redis ZSet에는 안 들어간다
 // (스케줄러를 껐으므로 RedisDBSyncService의 복구도 돌지 않는다).
 //
 // ★ 소진 방지: 이벤트 수량 × 지속시간보다 심은 총 수량이 커야 한다.
@@ -81,7 +93,7 @@ export function seedOrderBook(token, accountId, stockCode, opts) {
         stock_code: stockCode,
         price: price,
         quantity: quantity,
-        order_method: 'BUY',
+        order_method: 'SELL',
       }),
       { headers },
     );
@@ -89,7 +101,7 @@ export function seedOrderBook(token, accountId, stockCode, opts) {
       placed++;
     } else if (i === 0) {
       // 첫 주문이 실패하면 나머지도 실패한다. 잔고 부족·종목 미적재가 대부분이다.
-      fail(`시딩 주문 실패 (${res.status}): ${res.body}`);
+      fail(`시딩 주문 실패 (${res.status}): ${res.body}\n보유분(account_stock)과 종목 적재를 확인할 것`);
     }
   }
   console.log(`오더북 시딩: ${placed}/${count}건 (종목=${stockCode} 가격=${price} 수량=${quantity})`);
@@ -109,7 +121,7 @@ export function injectExecution(token, stockCode, price, quantity) {
     JSON.stringify({
       stock_code: stockCode,
       event_id: `k6-${__VU}-${seq}`,
-      order_method: 'SELL',        // 매수 후보(BUY)를 훑는다
+      order_method: 'BUY',         // 매도 후보(SELL)를 price <= 체결가로 훑는다
       price: price,
       quantity: quantity,
       event_timestamp: Date.now(),
