@@ -64,16 +64,17 @@ import static org.mockito.Mockito.when;
  *       JSON 키와 타입은 그대로이므로 API 계약 변경은 없다.</li>
  * </ul>
  *
- * <h2>DF-4 의 비-단정 규약 (판별자 아님)</h2>
- * 한 브로드캐스트의 서로 다른 두 멤버의 {@code sentAt} 에 대해서는 <b>어떤 단정도 하지 않는다</b>
- * (동등도, 비동등도). 각 멤버 내부의 DB/FCM 일치만 단정한다.
- * 이것은 잘못된 구현을 배제하지 못한다 — 루프 밖 1회 캡처에서도 멤버 내부 DB/FCM 일치는 참이기 때문이다.
- * 따라서 이 문단은 "판별 단정"이 아니라 <b>오염 방지용 비-단정 규약</b>이다.
+ * <h2>DF-4 의 판별 케이스 (루프 안/밖 구분)</h2>
+ * 단일 멤버 픽스처만으로는 부족하다. 캡처를 루프 <b>밖</b>으로 올려도 각 멤버 내부의 DB/FCM 일치는
+ * 여전히 참이라 단일 멤버 단정이 전부 통과한다. 이것을 실측으로 확인했다:
+ * 캡처를 루프 밖으로 hoist 했을 때 전체 232건이 green 이었다.
  *
- * <p><b>실제 판별자는 AC-13 의 소스 위치 게이트</b>다:
- * {@code MarketNotificationService} 에서 {@code System.currentTimeMillis()} 호출이 정확히 1개이며
- * 그것이 {@code for (Member member : allMembers)} 블록 <b>내부</b>에 있음을 소스로 확인한다.
- * "루프 안 멤버당 1회"와 "루프 밖 1회"를 구분하는 유일한 게이트이므로 생략 불가다.
+ * <p>따라서 <b>여러 멤버가 서로 다른 {@code sentAt} 을 받는지</b>를 직접 단정한다.
+ * 루프 안 캡처면 멤버마다 값이 갈릴 수 있고, 루프 밖 캡처면 전원이 같은 값을 공유한다.
+ * 저장 스텁에 지연을 넣어 시각이 실제로 진행하도록 만든 뒤 첫 멤버와 마지막 멤버의 값을 비교한다.
+ *
+ * <p>소스 위치 확인(호출이 1개이고 루프 내부인지)은 여전히 유효한 보조 게이트이지만
+ * 더 이상 <b>유일한</b> 판별자가 아니다.
  */
 class NotificationDefectFreezeTest {
 
@@ -390,6 +391,54 @@ class NotificationDefectFreezeTest {
             assertThat(detail.get("sentAt")).isInstanceOf(Number.class);
             assertThat(c.fcmData()).containsKey("sentAt");
             assertThat(c.fcmData().get("sentAt")).matches("\\d+");
+        }
+
+        /**
+         * 판별 케이스: 캡처가 루프 <b>안</b>에 있는지 <b>밖</b>에 있는지를 구분한다.
+         *
+         * <p>단일 멤버 단정만으로는 구분되지 않는다. 루프 밖 캡처에서도 각 멤버 내부의
+         * DB/FCM 일치는 참이기 때문이다. 실측: 캡처를 루프 밖으로 옮겼을 때 전체 232건이 green 이었다.
+         *
+         * <p>여러 멤버를 넣고 저장 스텁에 지연을 주어 시각이 실제로 진행하게 한 뒤
+         * 첫 멤버와 마지막 멤버의 {@code sentAt} 이 서로 다름을 단정한다.
+         * 루프 밖 캡처라면 전원이 같은 값을 공유하므로 이 단정이 red 가 된다.
+         */
+        @Test
+        void df4_market_differentMembersReceiveDifferentSentAt() throws Exception {
+            MemberRepository memberRepository = mock(MemberRepository.class);
+            NotificationRepository notificationRepository = mock(NotificationRepository.class);
+            ObjectMapper objectMapper = spy(new ObjectMapper());
+            FcmService fcmService = mock(FcmService.class);
+
+            Member member1 = memberWithToken(1L, "t1");
+            Member member2 = memberWithToken(2L, "t2");
+            Member member3 = memberWithToken(3L, "t3");
+            when(memberRepository.findAll()).thenReturn(List.of(member1, member2, member3));
+
+            List<Notification> saved = new ArrayList<>();
+            when(notificationRepository.save(any(Notification.class))).thenAnswer(inv -> {
+                // 시각이 실제로 진행하도록 지연을 준다. 지연이 없으면 밀리초 해상도에서
+                // 루프 안 캡처여도 값이 같아질 수 있어 판별력이 사라진다.
+                Thread.sleep(3);
+                saved.add(inv.getArgument(0));
+                return inv.getArgument(0);
+            });
+            when(fcmService.sendExecutionNotification(anyString(), any())).thenReturn(true);
+
+            new MarketNotificationService(fcmService, memberRepository, notificationRepository, objectMapper)
+                    .sendMarketOpenNotification();
+
+            assertThat(saved).hasSize(3);
+
+            ObjectMapper reader = new ObjectMapper();
+            long first = ((Number) reader.readValue(saved.get(0).getDetailData(), Map.class)
+                    .get("sentAt")).longValue();
+            long last = ((Number) reader.readValue(saved.get(2).getDetailData(), Map.class)
+                    .get("sentAt")).longValue();
+
+            // 루프 안 캡처: 멤버마다 시각이 진행한다.
+            // 루프 밖 캡처였다면 세 값이 모두 같아 이 단정이 red 가 된다.
+            assertThat(last).isGreaterThan(first);
         }
     }
 }
