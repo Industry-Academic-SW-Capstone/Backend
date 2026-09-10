@@ -58,18 +58,20 @@ public class ExecutionNotificationService {
     }
 
     // 체결 알림 처리 (DB 저장 + FCM 푸시)
+    // 문구는 여기서 한 번만 계산해 두 경로가 같은 값을 쓴다.
+    // 각 경로가 따로 계산하면 한쪽만 수정됐을 때 DB 내역과 푸시 문구가 갈린다.
     private void processExecutionNotification(Member member, ExecutionFilledEvent event) {
-        saveNotificationToDatabase(member, event);
-        sendFcmPushNotification(member, event);
+        String title = ExecutionNotificationMessageFactory.title(event.stockName(), event.orderMethod());
+        String body = ExecutionNotificationMessageFactory.body(
+                event.orderMethod(), event.quantity(), event.price());
+
+        saveNotificationToDatabase(member, event, title, body);
+        sendFcmPushNotification(member, event, title, body);
     }
 
     // Notification 엔티티를 DB에 저장
-    private void saveNotificationToDatabase(Member member, ExecutionFilledEvent event) {
-        // 알림 제목과 내용 (순수 계산은 팩토리가 담당)
-        String title = ExecutionNotificationMessageFactory.title(event.stockName(), event.orderMethod());
-        String message = ExecutionNotificationMessageFactory.body(
-                event.orderMethod(), event.quantity(), event.price());
-
+    private void saveNotificationToDatabase(Member member, ExecutionFilledEvent event,
+                                            String title, String message) {
         // 상세 데이터 (JSON)
         String detailData = createDetailData(event);
 
@@ -104,7 +106,8 @@ public class ExecutionNotificationService {
     }
 
     // FCM 푸시 알림 전송
-    private void sendFcmPushNotification(Member member, ExecutionFilledEvent event) {
+    private void sendFcmPushNotification(Member member, ExecutionFilledEvent event,
+                                         String title, String body) {
         if (fcmService == null) {
             log.debug("FcmService를 사용할 수 없습니다. 알림을 전송하지 않습니다.");
             return;
@@ -119,11 +122,6 @@ public class ExecutionNotificationService {
             log.debug("체결 알림이 비활성화된 사용자: memberId={}", member.getMemberId());
             return;
         }
-
-        // 알림 제목과 내용 (DB 저장분과 동일한 팩토리 계산을 사용)
-        String title = ExecutionNotificationMessageFactory.title(event.stockName(), event.orderMethod());
-        String body = ExecutionNotificationMessageFactory.body(
-                event.orderMethod(), event.quantity(), event.price());
 
         // FCM 페이로드 (title, body 는 PWA Service Worker 에서 사용)
         Map<String, String> data = ExecutionNotificationMessageFactory.fcmData(

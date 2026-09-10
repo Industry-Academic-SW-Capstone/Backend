@@ -58,17 +58,19 @@ public class MissionNotificationService {
     }
 
     // 미션 알림 처리 (DB 저장 + FCM 푸시)
+    // 문구는 여기서 한 번만 계산해 두 경로가 같은 값을 쓴다.
+    // 각 경로가 따로 계산하면 한쪽만 수정됐을 때 DB 내역과 푸시 문구가 갈린다.
     private void processMissionNotification(Member member, MissionCompletedEvent event) {
-        saveNotificationToDatabase(member, event);
-        sendFcmPushNotification(member, event);
+        String title = MissionNotificationMessageFactory.title(event.missionName());
+        String body = MissionNotificationMessageFactory.body(event.moneyAmount(), event.titleName());
+
+        saveNotificationToDatabase(member, event, title, body);
+        sendFcmPushNotification(member, event, title, body);
     }
 
     // Notification 엔티티를 DB에 저장
-    private void saveNotificationToDatabase(Member member, MissionCompletedEvent event) {
-        // 알림 제목과 내용 (순수 계산은 팩토리가 담당)
-        String title = MissionNotificationMessageFactory.title(event.missionName());
-        String message = MissionNotificationMessageFactory.body(event.moneyAmount(), event.titleName());
-
+    private void saveNotificationToDatabase(Member member, MissionCompletedEvent event,
+                                            String title, String message) {
         // 상세 데이터 (JSON)
         String detailData = createDetailData(event);
 
@@ -103,7 +105,8 @@ public class MissionNotificationService {
     }
 
     // FCM 푸시 알림 전송
-    private void sendFcmPushNotification(Member member, MissionCompletedEvent event) {
+    private void sendFcmPushNotification(Member member, MissionCompletedEvent event,
+                                         String title, String body) {
         if (fcmService == null) {
             log.debug("FcmService를 사용할 수 없습니다. 알림을 전송하지 않습니다.");
             return;
@@ -113,10 +116,6 @@ public class MissionNotificationService {
             log.debug("FCM 토큰이 등록되지 않은 사용자: memberId={}", member.getMemberId());
             return;
         }
-
-        // 알림 제목과 내용 (DB 저장분과 동일한 팩토리 계산을 사용)
-        String title = MissionNotificationMessageFactory.title(event.missionName());
-        String body = MissionNotificationMessageFactory.body(event.moneyAmount(), event.titleName());
 
         // FCM 페이로드 (title, body 는 PWA Service Worker 에서 사용)
         Map<String, String> data = MissionNotificationMessageFactory.fcmData(
