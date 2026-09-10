@@ -59,7 +59,7 @@ import static org.mockito.Mockito.when;
  * 고정하므로, 배치 게이트를 열어야 하는 시나리오는 실 ConfigurableEnvironment의 PropertySources
  * 최상단에 spring.task.scheduling.enabled=true를 임시로 addFirst()해 수동으로 updateAllRankings()를
  * 직접 호출한다(@TestPropertySource 자체를 재정의하지 않음 — 실제 스케줄러가 살아나면 안 됨.
- * TestSchedulingConfig의 no-op TaskScheduler가 발화 자체를 억제한다).
+ * SchedulingDisabledConfig의 no-op TaskScheduler가 발화 자체를 억제한다).
  *
  * 근거 있는 하네스 이탈(실측 확인, 계획 문서의 @SpyBean 결정과 다름):
  * - ApplicationEventPublisher는 @SpyBean 불가능 — Spring 컨텍스트는 이를 일반 빈이 아니라

@@ -36,12 +36,13 @@ spring:
 
   task:
     scheduling:
-      # 주기 배치가 측정을 오염시킨다.
-      #   RankingService       보유 종목 현재가를 KIS 레이트 리미터(초당 25건)로 순차 조회 → 60초 톱니
-      #   RedisDBSyncService   주문마다 orderBookStore.exists() → 백엔드마다 비용이 달라 arm 간 편향
+      # 주기 배치가 측정을 오염시킨다. SchedulingDisabledConfig가 이 값을 보고
+      # no-op TaskScheduler를 주입해 @Scheduled 발화를 전부 막는다.
       #
-      # 주의: 이 값은 Spring Boot 표준 프로퍼티가 아니다. 현재는 RankingService가 직접 읽어
-      # 자체 차단할 뿐이고, RedisDBSyncService는 그대로 돈다. 스케줄러를 실제로 멈추는
-      # 설정(no-op TaskScheduler)은 src/test에만 있어 운영 클래스패스에 없다.
-      # 전체 차단은 그 설정을 src/main으로 옮긴 뒤에 완성된다.
+      #   RankingService       보유 종목 현재가를 KIS 레이트 리미터(초당 25건)로 순차 조회 → 60초 톱니
+      #   RedisDBSyncService   미체결 주문마다 orderBookStore.exists() 호출.
+      #                        Redis면 ZSCORE, JPA면 DB 조회라 arm마다 비용이 다르다 —
+      #                        RDB arm에만 부하가 더해져 R0 vs R3 비교가 편향된다.
+      #
+      # 스케줄러를 껐다는 사실과 이유를 측정 결과에 함께 기록할 것.
       enabled: false

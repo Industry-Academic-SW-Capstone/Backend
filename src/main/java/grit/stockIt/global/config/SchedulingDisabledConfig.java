@@ -15,19 +15,34 @@ import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 
 /**
- * 테스트 환경에서 스케줄러를 비활성화하는 설정 클래스
- * application-test.yml의 spring.task.scheduling.enabled=false와 함께 사용
+ * {@code spring.task.scheduling.enabled=false}일 때 모든 {@code @Scheduled} 발화를 막는다.
  *
- * 근본 교정(2026-08): 과거 taskRegistrar.setScheduler(null)은 ScheduledTaskRegistrar.getScheduler()가
- * null로 남아, Spring이 (WebSocketConfig 등이 제공하는) 다른 TaskScheduler @Bean으로 폴백하거나
- * 자체 ThreadPoolTaskScheduler를 새로 만들어 백그라운드 @Scheduled(RankingService.updateAllRankings 등)이
- * 테스트 컨텍스트 안에서 실제로 발화하게 만들었다 — 특성화 테스트의 결정성(발화 0)을 깨는 원인.
- * getScheduler()를 non-null로 유지하면서도 아무 것도 실행하지 않는 no-op TaskScheduler를 주입해
- * 폴백과 자체 재생성을 동시에 억제한다.
+ * <p><b>어디서 쓰나</b>
+ * <ul>
+ *   <li>테스트 — {@code src/test/resources/application.yml}이 이 값을 false로 둔다.
+ *       배경 스케줄러가 끼어들면 특성화 테스트의 결정성(발화 0)이 깨진다.</li>
+ *   <li>벤치마크(staging 프로파일) — 주기 배치가 측정을 오염시킨다.
+ *       {@code RankingService}는 보유 종목 현재가를 KIS 속도 제한(초당 25건)에 맞춰 순차 조회해
+ *       60초 주기 톱니를 만들고, {@code RedisDBSyncService}는 미체결 주문마다
+ *       {@code OrderBookStore#exists}를 호출한다. 후자가 특히 문제인데, 그 호출 비용이
+ *       백엔드마다 다르다(Redis면 ZSCORE, JPA면 DB 조회). 즉 <b>RDB arm에만 주기적 DB 부하가
+ *       더해져</b> 우리가 재려는 바로 그 차이를 편향시킨다.</li>
+ * </ul>
+ *
+ * <p><b>왜 프로퍼티만으로는 부족한가.</b> {@code spring.task.scheduling.enabled}는 Spring Boot
+ * 표준 프로퍼티가 아니다. {@code RankingService}가 {@code Environment}에서 직접 읽어 자체 차단할
+ * 뿐이라, 그 코드가 없는 {@code RedisDBSyncService} 같은 스케줄러는 그대로 돈다.
+ * 전부 멈추려면 스케줄러 자체를 무력화해야 한다.
+ *
+ * <p><b>왜 no-op {@link TaskScheduler}를 주입하나.</b> 과거 {@code taskRegistrar.setScheduler(null)}은
+ * {@code ScheduledTaskRegistrar.getScheduler()}가 null로 남아, Spring이 다른 {@code TaskScheduler}
+ * 빈(WebSocketConfig 등)으로 폴백하거나 자체 {@code ThreadPoolTaskScheduler}를 새로 만들어
+ * 결국 {@code @Scheduled}가 발화했다. non-null이면서 아무 것도 실행하지 않는 스케줄러를 주입해
+ * 폴백과 자체 재생성을 동시에 막는다.
  */
 @Configuration
 @ConditionalOnProperty(name = "spring.task.scheduling.enabled", havingValue = "false", matchIfMissing = false)
-public class TestSchedulingConfig implements SchedulingConfigurer {
+public class SchedulingDisabledConfig implements SchedulingConfigurer {
 
     @Override
     public void configureTasks(ScheduledTaskRegistrar taskRegistrar) {
