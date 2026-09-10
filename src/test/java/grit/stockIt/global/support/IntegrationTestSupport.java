@@ -5,6 +5,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.DefaultApplicationArguments;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -47,6 +48,9 @@ public abstract class IntegrationTestSupport {
         POSTGRES.start();
         REDIS.start();
     }
+
+    private static final int TRUNCATE_MAX_ATTEMPTS = 3;
+    private static final long TRUNCATE_RETRY_DELAY_MILLIS = 100L;
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
@@ -96,14 +100,43 @@ public abstract class IntegrationTestSupport {
         restoreDefaultContest();
     }
 
+    /**
+     * 모든 테이블을 비운다.
+     *
+     * <p><b>재시도하는 이유:</b> {@code TRUNCATE}는 대상 테이블 전부에 AccessExclusiveLock을 잡는다.
+     * 직전 테스트가 띄운 비동기 리스너 스레드가 아직 살아 있으면 그쪽은 AccessShareLock을 쥔 채
+     * 다른 테이블을 기다리므로 서로 물려 데드락이 난다(PostgreSQL이 감지해 한쪽을 중단시킨다).
+     *
+     * <p>상대 작업은 짧게 끝나므로 잠깐 뒤 다시 시도하면 성공한다. 테스트 격리를 위한 정리 작업이라
+     * 재시도가 실제 실패를 가리지 않는다 — 끝까지 실패하면 그대로 던진다.
+     */
     private void truncateAllTables() {
         List<String> tables = jdbcTemplate.queryForList(
                 "SELECT tablename FROM pg_tables WHERE schemaname = 'public'", String.class);
         if (tables.isEmpty()) {
             return;
         }
-        jdbcTemplate.execute(
-                "TRUNCATE TABLE " + String.join(", ", tables) + " RESTART IDENTITY CASCADE");
+        String sql = "TRUNCATE TABLE " + String.join(", ", tables) + " RESTART IDENTITY CASCADE";
+        for (int attempt = 1; ; attempt++) {
+            try {
+                jdbcTemplate.execute(sql);
+                return;
+            } catch (DataAccessException e) {
+                if (attempt >= TRUNCATE_MAX_ATTEMPTS) {
+                    throw e;
+                }
+                sleepBeforeRetry();
+            }
+        }
+    }
+
+    private void sleepBeforeRetry() {
+        try {
+            Thread.sleep(TRUNCATE_RETRY_DELAY_MILLIS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("테이블 정리 재시도 대기 중 인터럽트", e);
+        }
     }
 
     /**
