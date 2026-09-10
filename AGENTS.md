@@ -41,7 +41,7 @@ docker-compose --profile load-test run --rm k6 run /scripts/matching-engine-test
 
 ## 아키텍처
 
-**Java 21 / Spring Boot 3.5.6 / Gradle**, PostgreSQL 15, Redis 7, Flyway 마이그레이션 사용.
+**Java 21 / Spring Boot 3.5.6 / Gradle**, PostgreSQL 17(운영은 아직 15), Redis 7, Flyway 마이그레이션 사용.
 
 ### 패키지 구조 (`grit.stockIt`)
 
