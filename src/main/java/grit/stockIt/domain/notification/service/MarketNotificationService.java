@@ -13,7 +13,6 @@ import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -43,9 +42,9 @@ public class MarketNotificationService {
     public void sendMarketOpenNotification() {
         log.info("=== 장 시작 알림 전송 시작 ===");
         
-        String title = "장 시작 알림";
-        String message = "주식 시장이 시작되었습니다. 오늘도 좋은 하루 되세요!";
-        String iconType = "market_open";
+        String title = MarketNotificationMessageFactory.MARKET_OPEN_TITLE;
+        String message = MarketNotificationMessageFactory.MARKET_OPEN_MESSAGE;
+        String iconType = MarketNotificationMessageFactory.MARKET_OPEN_ICON;
         NotificationType type = NotificationType.MARKET_OPEN;
         
         sendNotificationToAllMembers(title, message, iconType, type);
@@ -59,9 +58,9 @@ public class MarketNotificationService {
     public void sendMarketCloseReminderNotification() {
         log.info("=== 장 마감 30분 전 알림 전송 시작 ===");
         
-        String title = "장 마감 30분 전";
-        String message = "장이 30분 후에 마감됩니다.";
-        String iconType = "market_close";
+        String title = MarketNotificationMessageFactory.MARKET_CLOSE_TITLE;
+        String message = MarketNotificationMessageFactory.MARKET_CLOSE_MESSAGE;
+        String iconType = MarketNotificationMessageFactory.MARKET_CLOSE_ICON;
         NotificationType type = NotificationType.MARKET_CLOSE_REMINDER;
         
         sendNotificationToAllMembers(title, message, iconType, type);
@@ -139,9 +138,8 @@ public class MarketNotificationService {
 
     // 상세 데이터를 JSON으로 변환
     private String createDetailData(NotificationType notificationType) {
-        Map<String, Object> detailMap = new HashMap<>();
-        detailMap.put("type", notificationType.name());
-        detailMap.put("sentAt", System.currentTimeMillis());
+        Map<String, Object> detailMap = MarketNotificationMessageFactory.detailMap(
+                notificationType, System.currentTimeMillis());
 
         try {
             return objectMapper.writeValueAsString(detailMap);
@@ -164,12 +162,9 @@ public class MarketNotificationService {
             return false;
         }
 
-        Map<String, String> data = new HashMap<>();
-        // title, body를 data에 포함 (PWA Service Worker에서 사용)
-        data.put("title", title);
-        data.put("body", message);
-        data.put("type", notificationType.name());
-        data.put("sentAt", String.valueOf(System.currentTimeMillis()));
+        // FCM 페이로드 (title, body 는 PWA Service Worker 에서 사용)
+        Map<String, String> data = MarketNotificationMessageFactory.fcmData(
+                title, message, notificationType, System.currentTimeMillis());
 
         boolean success = fcmService.sendExecutionNotification(
                 member.getFcmToken(),

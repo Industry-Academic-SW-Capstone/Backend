@@ -15,8 +15,6 @@ import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.math.BigDecimal;
-import java.util.HashMap;
 import java.util.Map;
 
 @Slf4j
@@ -67,16 +65,10 @@ public class ExecutionNotificationService {
 
     // Notification 엔티티를 DB에 저장
     private void saveNotificationToDatabase(Member member, ExecutionFilledEvent event) {
-        String orderMethodKorean = "BUY".equals(event.orderMethod()) ? "매수" : "매도";
-        
-        // 알림 제목
-        String title = String.format("%s %s 체결", event.stockName(), orderMethodKorean);
-        
-        // 알림 내용
-        String message = String.format("%s %d주가 %s원에 체결되었습니다", 
-                orderMethodKorean, 
-                event.quantity(), 
-                formatPrice(event.price()));
+        // 알림 제목과 내용 (순수 계산은 팩토리가 담당)
+        String title = ExecutionNotificationMessageFactory.title(event.stockName(), event.orderMethod());
+        String message = ExecutionNotificationMessageFactory.body(
+                event.orderMethod(), event.quantity(), event.price());
 
         // 상세 데이터 (JSON)
         String detailData = createDetailData(event);
@@ -101,17 +93,7 @@ public class ExecutionNotificationService {
 
     // 상세 데이터를 JSON으로 변환
     private String createDetailData(ExecutionFilledEvent event) {
-        Map<String, Object> detailMap = new HashMap<>();
-        detailMap.put("executionId", event.executionId());
-        detailMap.put("orderId", event.orderId());
-        detailMap.put("accountId", event.accountId());
-        detailMap.put("contestId", event.contestId());
-        detailMap.put("contestName", event.contestName());
-        detailMap.put("stockCode", event.stockCode());
-        detailMap.put("stockName", event.stockName());
-        detailMap.put("price", event.price());
-        detailMap.put("quantity", event.quantity());
-        detailMap.put("orderMethod", event.orderMethod());
+        Map<String, Object> detailMap = ExecutionNotificationMessageFactory.detailMap(event);
 
         try {
             return objectMapper.writeValueAsString(detailMap);
@@ -138,32 +120,14 @@ public class ExecutionNotificationService {
             return;
         }
 
-        String orderMethod = event.orderMethod(); // BUY, SELL
-        String orderMethodKorean = "BUY".equals(orderMethod) ? "매수" : "매도";
-        
-        // 알림 제목과 내용 생성
-        String title = String.format("%s %s 체결", event.stockName(), orderMethodKorean);
-        String body = String.format("%s %d주가 %s원에 체결되었습니다", 
-                orderMethodKorean, 
-                event.quantity(), 
-                formatPrice(event.price()));
-        
-        Map<String, String> data = new HashMap<>();
-        // title, body를 data에 포함 (PWA Service Worker에서 사용)
-        data.put("title", title);
-        data.put("body", body);
-        data.put("type", "EXECUTION");
-        data.put("executionId", String.valueOf(event.executionId()));
-        data.put("orderId", String.valueOf(event.orderId()));
-        data.put("accountId", String.valueOf(event.accountId()));
-        data.put("contestId", String.valueOf(event.contestId()));
-        data.put("contestName", event.contestName());
-        data.put("stockCode", event.stockCode());
-        data.put("stockName", event.stockName());
-        data.put("price", event.price().toString());
-        data.put("quantity", String.valueOf(event.quantity()));
-        data.put("orderMethod", orderMethod);
-        data.put("executedAt", String.valueOf(System.currentTimeMillis()));
+        // 알림 제목과 내용 (DB 저장분과 동일한 팩토리 계산을 사용)
+        String title = ExecutionNotificationMessageFactory.title(event.stockName(), event.orderMethod());
+        String body = ExecutionNotificationMessageFactory.body(
+                event.orderMethod(), event.quantity(), event.price());
+
+        // FCM 페이로드 (title, body 는 PWA Service Worker 에서 사용)
+        Map<String, String> data = ExecutionNotificationMessageFactory.fcmData(
+                event, title, body, System.currentTimeMillis());
 
         boolean success = fcmService.sendExecutionNotification( // FCM 푸시 알림 전송 (Data-Only)
                 member.getFcmToken(),
@@ -173,10 +137,6 @@ public class ExecutionNotificationService {
         if (!success) {
             log.warn("FCM 알림 전송 실패: memberId={}, executionId={}", member.getMemberId(), event.executionId());
         }
-    }
-
-    private String formatPrice(BigDecimal price) {
-        return String.format("%,d", price.intValue());
     }
 }
 

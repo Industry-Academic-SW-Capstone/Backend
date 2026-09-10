@@ -4,7 +4,6 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import grit.stockIt.domain.member.entity.Member;
 import grit.stockIt.domain.member.repository.MemberRepository;
-import grit.stockIt.domain.mission.enums.MissionTrack;
 import grit.stockIt.domain.notification.entity.Notification;
 import grit.stockIt.domain.notification.enums.NotificationType;
 import grit.stockIt.domain.notification.event.MissionCompletedEvent;
@@ -16,7 +15,6 @@ import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.HashMap;
 import java.util.Map;
 
 @Slf4j
@@ -67,24 +65,9 @@ public class MissionNotificationService {
 
     // Notification 엔티티를 DB에 저장
     private void saveNotificationToDatabase(Member member, MissionCompletedEvent event) {
-        // 알림 제목 생성
-        String title = String.format("%s 완료!", event.missionName());
-        
-        // 알림 내용 생성
-        StringBuilder messageBuilder = new StringBuilder();
-        if (event.moneyAmount() > 0) {
-            messageBuilder.append(String.format("보상으로 %,d원을 받았습니다.", event.moneyAmount()));
-        }
-        if (event.titleName() != null) {
-            if (messageBuilder.length() > 0) {
-                messageBuilder.append(" ");
-            }
-            messageBuilder.append(String.format("칭호 '%s'를 획득했습니다.", event.titleName()));
-        }
-        if (messageBuilder.length() == 0) {
-            messageBuilder.append("미션을 완료했습니다!");
-        }
-        String message = messageBuilder.toString();
+        // 알림 제목과 내용 (순수 계산은 팩토리가 담당)
+        String title = MissionNotificationMessageFactory.title(event.missionName());
+        String message = MissionNotificationMessageFactory.body(event.moneyAmount(), event.titleName());
 
         // 상세 데이터 (JSON)
         String detailData = createDetailData(event);
@@ -96,7 +79,7 @@ public class MissionNotificationService {
                 .title(title)
                 .message(message)
                 .detailData(detailData)
-                .iconType(getIconType(event.track()))
+                .iconType(MissionNotificationMessageFactory.iconType(event.track()))
                 .isRead(false)
                 .build();
 
@@ -109,13 +92,7 @@ public class MissionNotificationService {
 
     // 상세 데이터를 JSON으로 변환
     private String createDetailData(MissionCompletedEvent event) {
-        Map<String, Object> detailMap = new HashMap<>();
-        detailMap.put("missionId", event.missionId());
-        detailMap.put("missionName", event.missionName());
-        detailMap.put("track", event.track().name());
-        detailMap.put("rewardId", event.rewardId());
-        detailMap.put("moneyAmount", event.moneyAmount());
-        detailMap.put("titleName", event.titleName());
+        Map<String, Object> detailMap = MissionNotificationMessageFactory.detailMap(event);
 
         try {
             return objectMapper.writeValueAsString(detailMap);
@@ -137,37 +114,13 @@ public class MissionNotificationService {
             return;
         }
 
-        // 알림 제목 생성
-        String title = String.format("%s 완료!", event.missionName());
-        
-        // 알림 내용 생성
-        StringBuilder bodyBuilder = new StringBuilder();
-        if (event.moneyAmount() > 0) {
-            bodyBuilder.append(String.format("보상으로 %,d원을 받았습니다.", event.moneyAmount()));
-        }
-        if (event.titleName() != null) {
-            if (bodyBuilder.length() > 0) {
-                bodyBuilder.append(" ");
-            }
-            bodyBuilder.append(String.format("칭호 '%s'를 획득했습니다.", event.titleName()));
-        }
-        if (bodyBuilder.length() == 0) {
-            bodyBuilder.append("미션을 완료했습니다!");
-        }
-        String body = bodyBuilder.toString();
-        
-        Map<String, String> data = new HashMap<>();
-        // title, body를 data에 포함 (PWA Service Worker에서 사용)
-        data.put("title", title);
-        data.put("body", body);
-        data.put("type", "MISSION_COMPLETED");
-        data.put("missionId", String.valueOf(event.missionId()));
-        data.put("missionName", event.missionName());
-        data.put("track", event.track().name());
-        data.put("rewardId", event.rewardId() != null ? String.valueOf(event.rewardId()) : "");
-        data.put("moneyAmount", String.valueOf(event.moneyAmount()));
-        data.put("titleName", event.titleName() != null ? event.titleName() : "");
-        data.put("completedAt", String.valueOf(System.currentTimeMillis()));
+        // 알림 제목과 내용 (DB 저장분과 동일한 팩토리 계산을 사용)
+        String title = MissionNotificationMessageFactory.title(event.missionName());
+        String body = MissionNotificationMessageFactory.body(event.moneyAmount(), event.titleName());
+
+        // FCM 페이로드 (title, body 는 PWA Service Worker 에서 사용)
+        Map<String, String> data = MissionNotificationMessageFactory.fcmData(
+                event, title, body, System.currentTimeMillis());
 
         boolean success = fcmService.sendExecutionNotification( // FCM 푸시 알림 전송 (Data-Only)
                 member.getFcmToken(),
@@ -177,17 +130,6 @@ public class MissionNotificationService {
         if (!success) {
             log.warn("FCM 알림 전송 실패: memberId={}, missionId={}", member.getMemberId(), event.missionId());
         }
-    }
-
-    // 미션 트랙에 따른 아이콘 타입 반환
-    private String getIconType(MissionTrack track) {
-        return switch (track) {
-            case DAILY -> "mission_daily";
-            case SHORT_TERM -> "mission_short_term";
-            case SWING -> "mission_swing";
-            case LONG_TERM -> "mission_long_term";
-            case ACHIEVEMENT -> "mission_achievement";
-        };
     }
 }
 
