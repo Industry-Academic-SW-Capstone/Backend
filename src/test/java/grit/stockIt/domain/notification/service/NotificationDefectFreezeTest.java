@@ -49,7 +49,12 @@ import static org.mockito.Mockito.when;
  *   <li><b>DF-3</b> — 결함 ②의 <b>판별 케이스</b>. 기본 로케일을 ar-SA 로 바꿔야만 회귀가 드러난다.
  *       <b>수량({@code %d})과 금액({@code %,d}) 둘 다</b> 단정한다.
  *       {@code formatPrice} 만 고치면 같은 문자열의 수량이 로케일 의존으로 남아
- *       ar-SA 에서 혼종 숫자 출력이 된다. 두 단정의 동시 갱신이 C5 수정의 증거다.</li>
+ *       ar-SA 에서 혼종 숫자 출력이 된다.
+ *       <p><b>C5 에서 갱신됨.</b> 수정 전에는 ar-SA 에서 수량과 금액이 모두 아랍-인도 숫자였다
+ *       ("매수 \u0661\u0660주가 \u0667\u0660\u066c\u0660\u0660\u0660원에 체결되었습니다").
+ *       {@code String.format} 에 {@code Locale.ROOT} 를 명시한 뒤 둘 다 latn 으로 고정된다.
+ *       <b>이 갱신 diff 가 사용자 영향 명세다: 비latn 로케일 사용자가 보던 숫자 표기가 바뀐다.</b>
+ *       배포 대상이 ko-KR 이라 DF-2 대조군은 수정 유무와 무관하게 통과하므로 이 판별 케이스가 필요하다.</li>
  *   <li><b>DF-4</b> — 결함 ③-a(Market sentAt 이중 호출). 현재 DB 용과 FCM 용이 독립 호출이라
  *       일치가 보장되지 않는다. {@code detailSentAt <= fcmSentAt} 으로 동결하고
  *       C6 이 {@code isEqualTo} 로 갱신한다. {@code <=} → {@code ==} diff 가 사용자 영향 명세다.</li>
@@ -226,23 +231,25 @@ class NotificationDefectFreezeTest {
     // =====================================================================
 
     @Nested
-    @DisplayName("DF-3 (결함 ② 판별): ar-SA 에서 현재 수량과 금액이 모두 로케일 숫자가 된다")
+    @DisplayName("DF-3 (결함 ② 판별): ar-SA 에서도 수량과 금액이 모두 latn 숫자다 (C5 수정 후)")
     class DefectLocaleDiscriminating {
 
         /**
-         * 현재 동작 동결. 수량 10 이 아랍-인도 숫자로, 금액 70,000 도 아랍-인도 숫자로 나온다.
-         * C5 수정 후에는 둘 다 latn 이 되어 "매수 10주가 70,000원에 체결되었습니다" 가 되어야 한다.
+         * C5 수정 후 동작. ar-SA 기본 로케일에서도 수량과 금액이 모두 latn 숫자다.
+         *
+         * <p>수정 전에는 "매수 \u0661\u0660주가 \u0667\u0660\u066c\u0660\u0660\u0660원에 체결되었습니다" 였다.
+         * 이 한 줄의 변화가 사용자 영향 명세다.
          */
         @Test
-        void df3_execution_arSaBodyHasArabicIndicQuantityAndPrice() {
+        void df3_execution_arSaBodyUsesLatinQuantityAndPrice() {
             Locale orig = Locale.getDefault(Locale.Category.FORMAT);
             try {
                 Locale.setDefault(Locale.Category.FORMAT, Locale.forLanguageTag("ar-SA"));
 
                 String message = runExecution(executionEvent()).notification().getMessage();
 
-                // 결함 상태: 수량과 금액이 둘 다 로케일 숫자
-                assertThat(message).isEqualTo("매수 \u0661\u0660주가 \u0667\u0660\u066c\u0660\u0660\u0660원에 체결되었습니다");
+                // 수정 후: Locale.ROOT 고정으로 수량과 금액이 둘 다 latn
+                assertThat(message).isEqualTo("매수 10주가 70,000원에 체결되었습니다");
             } finally {
                 Locale.setDefault(Locale.Category.FORMAT, orig);
             }
@@ -250,39 +257,43 @@ class NotificationDefectFreezeTest {
 
         /**
          * 수량 단독 판별. formatPrice 만 고치는 부분 수정을 잡아낸다.
-         * 부분 수정 시 이 단정은 여전히 아랍-인도 숫자를 보게 되므로 red 가 된다.
+         *
+         * <p>바깥 String.format 에 Locale.ROOT 를 누락하면 금액은 latn 인데 수량만
+         * 아랍-인도 숫자로 남는 혼종 출력이 되고, 이 단정이 red 가 된다.
          */
         @Test
-        void df3_execution_arSaQuantityAloneIsArabicIndic() {
+        void df3_execution_arSaQuantityAloneIsLatin() {
             Locale orig = Locale.getDefault(Locale.Category.FORMAT);
             try {
                 Locale.setDefault(Locale.Category.FORMAT, Locale.forLanguageTag("ar-SA"));
 
                 assertThat(runExecution(executionEvent()).notification().getMessage())
-                        .contains("\u0661\u0660주가");
+                        .contains("10주가")
+                        .doesNotContain("\u0661\u0660주가");
             } finally {
                 Locale.setDefault(Locale.Category.FORMAT, orig);
             }
         }
 
         @Test
-        void df3_mission_arSaMoneyIsArabicIndic() {
+        void df3_mission_arSaMoneyIsLatin() {
             Locale orig = Locale.getDefault(Locale.Category.FORMAT);
             try {
                 Locale.setDefault(Locale.Category.FORMAT, Locale.forLanguageTag("ar-SA"));
 
                 assertThat(runMission(missionEventWithMoney()).notification().getMessage())
-                        .isEqualTo("보상으로 \u0665\u0660\u066c\u0660\u0660\u0660원을 받았습니다.");
+                        .isEqualTo("보상으로 50,000원을 받았습니다.");
             } finally {
                 Locale.setDefault(Locale.Category.FORMAT, orig);
             }
         }
 
         /**
-         * FCM 푸시분도 같은 결함을 갖는다. 중복 계산이라 두 경로 모두 오염된다.
+         * FCM 푸시분도 같은 수정을 공유한다. C4 로 계산 지점이 하나가 됐으므로
+         * 한쪽만 고쳐질 수 없다.
          */
         @Test
-        void df3_execution_arSaFcmBodyHasSameDefect() {
+        void df3_execution_arSaFcmBodySharesSameFix() {
             Locale orig = Locale.getDefault(Locale.Category.FORMAT);
             try {
                 Locale.setDefault(Locale.Category.FORMAT, Locale.forLanguageTag("ar-SA"));
@@ -290,8 +301,8 @@ class NotificationDefectFreezeTest {
                 Captured c = runExecution(executionEvent());
 
                 assertThat(c.fcmData().get("body"))
-                        .isEqualTo("매수 \u0661\u0660주가 \u0667\u0660\u066c\u0660\u0660\u0660원에 체결되었습니다");
-                // 두 경로가 같은 결함을 공유함 = DF-1 과 정합
+                        .isEqualTo("매수 10주가 70,000원에 체결되었습니다");
+                // 두 경로가 같은 값을 공유함 = DF-1 과 정합
                 assertThat(c.fcmData().get("body")).isEqualTo(c.notification().getMessage());
             } finally {
                 Locale.setDefault(Locale.Category.FORMAT, orig);

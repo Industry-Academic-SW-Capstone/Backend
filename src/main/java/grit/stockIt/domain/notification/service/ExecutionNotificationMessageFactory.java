@@ -3,6 +3,7 @@ package grit.stockIt.domain.notification.service;
 import grit.stockIt.domain.notification.event.ExecutionFilledEvent;
 
 import java.math.BigDecimal;
+import java.util.Locale;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -43,15 +44,27 @@ public final class ExecutionNotificationMessageFactory {
         return String.format("%s %s 체결", stockName, orderMethodKorean(orderMethod));
     }
 
-    /** 알림 내용: "매수 10주가 70,000원에 체결되었습니다" */
+    /**
+     * 알림 내용: "매수 10주가 70,000원에 체결되었습니다"
+     *
+     * <p><b>{@code Locale.ROOT} 를 반드시 명시한다.</b> 수량의 {@code %d} 는 기본 로케일의
+     * {@code zeroDigit} 을 따르므로 latn 이 아닌 자릿수 체계에서 비ASCII 숫자가 실린다.
+     * {@link #formatPrice} 만 고치면 같은 문자열 안에서 금액은 latn 인데 수량은 아랍-인도 숫자가 되는
+     * 혼종 출력이 된다.
+     */
     public static String body(String orderMethod, Integer quantity, BigDecimal price) {
-        return String.format("%s %d주가 %s원에 체결되었습니다",
+        return String.format(Locale.ROOT, "%s %d주가 %s원에 체결되었습니다",
                 orderMethodKorean(orderMethod), quantity, formatPrice(price));
     }
 
-    /** 금액 천 단위 구분 포맷. */
+    /**
+     * 금액 천 단위 구분 포맷.
+     *
+     * <p>{@code %,d} 는 기본 로케일의 자릿수 체계와 구분 기호를 따른다.
+     * {@code Locale.ROOT} 고정이 없으면 ar-SA 에서 아랍-인도 숫자, de-DE 에서 점 구분자가 된다.
+     */
     public static String formatPrice(BigDecimal price) {
-        return String.format("%,d", price.intValue());
+        return String.format(Locale.ROOT, "%,d", price.intValue());
     }
 
     /** DB {@code detailData} 로 직렬화될 맵. 10키. 타임스탬프 없음. */

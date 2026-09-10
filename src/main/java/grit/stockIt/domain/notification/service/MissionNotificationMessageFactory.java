@@ -4,6 +4,7 @@ import grit.stockIt.domain.mission.enums.MissionTrack;
 import grit.stockIt.domain.notification.event.MissionCompletedEvent;
 
 import java.util.HashMap;
+import java.util.Locale;
 import java.util.Map;
 
 /**
@@ -36,6 +37,9 @@ public final class MissionNotificationMessageFactory {
     /**
      * 알림 내용. 보상 금액과 칭호 유무에 따라 세 갈래다.
      *
+     * <p><b>금액 포맷에 {@code Locale.ROOT} 를 명시한다.</b> {@code %,d} 는 기본 로케일의
+     * 자릿수 체계와 구분 기호를 따르므로 고정하지 않으면 비latn 로케일에서 숫자 표기가 바뀐다.
+     *
      * <ul>
      *   <li>금액만: "보상으로 50,000원을 받았습니다."</li>
      *   <li>칭호만: "칭호 '주식왕'를 획득했습니다."</li>
@@ -46,7 +50,7 @@ public final class MissionNotificationMessageFactory {
     public static String body(long moneyAmount, String titleName) {
         StringBuilder builder = new StringBuilder();
         if (moneyAmount > 0) {
-            builder.append(String.format("보상으로 %,d원을 받았습니다.", moneyAmount));
+            builder.append(String.format(Locale.ROOT, "보상으로 %,d원을 받았습니다.", moneyAmount));
         }
         if (titleName != null) {
             if (builder.length() > 0) {
