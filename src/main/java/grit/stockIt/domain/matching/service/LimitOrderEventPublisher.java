@@ -16,8 +16,8 @@ import org.springframework.stereotype.Service;
 public class LimitOrderEventPublisher {
 
     private final MatchingEventQueue matchingEventQueue;
-    private final LimitOrderMatchingService limitOrderMatchingService;
     private final MatchingEventDispatcher matchingEventDispatcher;
+    private final MatchingQueueDepthMetrics matchingQueueDepthMetrics;
     private final RedisMarketDataRepository redisMarketDataRepository;
 
     @EventListener
@@ -43,10 +43,11 @@ public class LimitOrderEventPublisher {
      * 시세 수신 자체가 밀린다. 적재 실패는 로그만 남긴다.
      *
      * <p>체결 건수와 체결 지연은 응답이 아니라 앱 지표({@code matching.executions},
-     * {@code matching.event.latency})로 관측한다.
+     * {@code matching.event.latency})로 관측하고, 적체는 {@code matching.queue.depth}로 본다.
      */
     public void publish(String stockCode, LimitOrderFillEvent event) {
         redisMarketDataRepository.updateLastPrice(stockCode, event.price());
+        matchingQueueDepthMetrics.track(stockCode);
 
         try {
             matchingEventQueue.enqueue(stockCode, event);

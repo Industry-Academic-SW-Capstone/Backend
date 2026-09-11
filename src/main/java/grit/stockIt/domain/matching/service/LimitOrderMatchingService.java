@@ -60,6 +60,11 @@ public class LimitOrderMatchingService {
         this.eventLatency = Timer.builder("matching.event.latency")
                 .description("체결 이벤트 도착부터 체결 완료까지")
                 .publishPercentileHistogram()
+                // 기본 히스토그램 상한은 30초다. 포화 구간에서 실제 지연이 그 위로 가면
+                // 분위수가 전부 30초로 뭉쳐 "30초에서 평평"한 가짜 그래프가 된다.
+                // 관측된 적체(큐 1만 건 이상)를 담을 수 있게 5분까지 넓힌다.
+                .minimumExpectedValue(Duration.ofMillis(1))
+                .maximumExpectedValue(Duration.ofMinutes(5))
                 .register(meterRegistry);
     }
 
