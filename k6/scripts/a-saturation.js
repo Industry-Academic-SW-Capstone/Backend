@@ -17,10 +17,11 @@ const STOCK = __ENV.STOCK_CODE || '005930';
 const EMAIL = __ENV.LOAD_EMAIL || 'loadtest@stockit.local';
 const PASSWORD = __ENV.LOAD_PASSWORD || 'loadtest1234';
 
-const SEED_COUNT = Number(__ENV.SEED_COUNT || 300);
+const SEED_COUNT = Number(__ENV.SEED_COUNT || 10000);
 const SEED_PRICE = Number(__ENV.SEED_PRICE || 100);
+const SEED_LEVELS = Number(__ENV.SEED_LEVELS || 100);
 const SEED_QTY = Number(__ENV.SEED_QTY || 1000);
-const EVENT_PRICE = Number(__ENV.EVENT_PRICE || 100);
+const EVENT_PRICE = Number(__ENV.EVENT_PRICE || 200);
 const EVENT_QTY = Number(__ENV.EVENT_QTY || 1);
 
 // 계단을 예상 포화점 주변에 모은다.
@@ -67,7 +68,7 @@ export function setup() {
   const token = login(EMAIL, PASSWORD);
   const accountId = defaultAccountId(token);
   console.log(`계단: ${MULTIPLIERS.map((m) => Math.round(STAGE_BASE * m)).join(' -> ')} (STAGE_BASE=${STAGE_BASE})`);
-  seedOrderBook(token, accountId, STOCK, { count: SEED_COUNT, price: SEED_PRICE, quantity: SEED_QTY });
+  seedOrderBook(token, accountId, STOCK, { count: SEED_COUNT, price: SEED_PRICE, quantity: SEED_QTY, priceLevels: SEED_LEVELS });
   return { token };
 }
 

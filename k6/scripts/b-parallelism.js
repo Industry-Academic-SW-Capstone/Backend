@@ -34,10 +34,11 @@ const EMAIL = __ENV.LOAD_EMAIL || 'loadtest@stockit.local';
 const PASSWORD = __ENV.LOAD_PASSWORD || 'loadtest1234';
 
 // 종목당 시딩 주문 수. 종목이 늘면 setup 시간도 늘어난다(주문 1건당 HTTP 1회).
-const SEED_COUNT = Number(__ENV.SEED_COUNT || 30);
+const SEED_COUNT = Number(__ENV.SEED_COUNT || 200);
 const SEED_PRICE = Number(__ENV.SEED_PRICE || 100);
+const SEED_LEVELS = Number(__ENV.SEED_LEVELS || 50);
 const SEED_QTY = Number(__ENV.SEED_QTY || 1000);
-const EVENT_PRICE = Number(__ENV.EVENT_PRICE || 100);
+const EVENT_PRICE = Number(__ENV.EVENT_PRICE || 200);
 const EVENT_QTY = Number(__ENV.EVENT_QTY || 1);
 
 const PEAK = Number(__ENV.PEAK_RATE || 800);
@@ -71,7 +72,7 @@ export function setup() {
   const accountId = defaultAccountId(token);
   console.log(`종목 ${STOCKS.length}개, 종목당 ${SEED_COUNT}건 시딩`);
   for (const stock of STOCKS) {
-    seedOrderBook(token, accountId, stock, { count: SEED_COUNT, price: SEED_PRICE, quantity: SEED_QTY });
+    seedOrderBook(token, accountId, stock, { count: SEED_COUNT, price: SEED_PRICE, quantity: SEED_QTY, priceLevels: SEED_LEVELS });
   }
   return { token, stocks: STOCKS };
 }

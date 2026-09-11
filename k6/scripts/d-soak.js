@@ -25,10 +25,11 @@ const PASSWORD = __ENV.LOAD_PASSWORD || 'loadtest1234';
 const SOAK_RATE = Number(__ENV.SOAK_RATE || 100);      // ← B 강도의 60~70%
 const SOAK_DURATION = __ENV.SOAK_DURATION || '2h';
 
-const SEED_COUNT = Number(__ENV.SEED_COUNT || 500);
+const SEED_COUNT = Number(__ENV.SEED_COUNT || 5000);
 const SEED_PRICE = Number(__ENV.SEED_PRICE || 1000);
+const SEED_LEVELS = Number(__ENV.SEED_LEVELS || 100);
 const SEED_QTY = Number(__ENV.SEED_QTY || 100);
-const EVENT_PRICE = Number(__ENV.EVENT_PRICE || 1000);
+const EVENT_PRICE = Number(__ENV.EVENT_PRICE || 200);
 const EVENT_QTY = Number(__ENV.EVENT_QTY || 1);
 
 export const options = {
@@ -56,7 +57,7 @@ export function setup() {
   if (seeded < needed) {
     console.warn(`시딩 수량 부족 경고: 심은 ${seeded} < 필요 ${needed}. 후반부 체결이 0건이 될 수 있다`);
   }
-  seedOrderBook(token, accountId, STOCK, { count: SEED_COUNT, price: SEED_PRICE, quantity: SEED_QTY });
+  seedOrderBook(token, accountId, STOCK, { count: SEED_COUNT, price: SEED_PRICE, quantity: SEED_QTY, priceLevels: SEED_LEVELS });
   return { token };
 }
 

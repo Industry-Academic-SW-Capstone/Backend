@@ -69,7 +69,15 @@ export function defaultAccountId(token) {
 //   VALUES (1, '005930', 1000000000, 0, 100, now(), now());
 //
 // 매수 이벤트(taker BUY)는 매도 후보를 price <= 체결가 조건으로 훑으므로
-// EVENT_PRICE >= SEED_PRICE 여야 한다.
+// EVENT_PRICE >= (SEED_PRICE + priceLevels - 1) 이어야 전 구간이 매칭 대상이 된다.
+//
+// ★ 가격을 분산하는 이유. 전부 같은 가격이면 정렬할 대상이 없어 인덱스의 price 컬럼이
+//   무의미해진다. 블로그 1편의 주장("정렬 후 조회가 매 체결마다 실행된다")은 오더북이
+//   여러 호가에 깊게 쌓였을 때만 성립하므로, 그 조건을 만들어야 검증이 된다.
+//
+// ★ 깊이도 중요하다. PostgreSQL에게 수백 행은 Seq Scan이 0.1ms라 인덱스를 걸어도
+//   옵티마이저가 쓰지 않는다. R0-와 R0가 같게 나오면 데이터가 작아서지 인덱스가
+//   무의미해서가 아니다(계획서 §4).
 //
 // API로 심는 이유: 주문 생성은 OrderBookRegistrationService가 orderBookStore.addOrder를
 // 호출해 redis·jpa 양쪽에 반영된다. SQL로 직접 넣으면 Redis ZSet에는 안 들어간다
@@ -80,33 +88,55 @@ export function defaultAccountId(token) {
 //   첫 실행 후 execution_count와 zero_execution_rate로 반드시 확인할 것.
 export function seedOrderBook(token, accountId, stockCode, opts) {
   const count = opts.count;
-  const price = opts.price;
+  const basePrice = opts.price;
   const quantity = opts.quantity;
+  const levels = opts.priceLevels || 1;      // 가격 호가 수
+  const batchSize = opts.batchSize || 10;    // 동시 요청 수
   const headers = authHeaders(token);
+  const url = `${BASE_URL}/api/orders/limit`;
 
   let placed = 0;
-  for (let i = 0; i < count; i++) {
-    const res = http.post(
-      `${BASE_URL}/api/orders/limit`,
-      JSON.stringify({
-        account_id: accountId,
-        stock_code: stockCode,
-        price: price,
-        quantity: quantity,
-        order_method: 'SELL',
-      }),
-      { headers },
-    );
-    if (res.status === 200 || res.status === 201) {
-      placed++;
-    } else if (i === 0) {
-      // 첫 주문이 실패하면 나머지도 실패한다. 잔고 부족·종목 미적재가 대부분이다.
-      fail(`시딩 주문 실패 (${res.status}): ${res.body}\n보유분(account_stock)과 종목 적재를 확인할 것`);
+  let firstError = null;
+
+  for (let i = 0; i < count; i += batchSize) {
+    const requests = [];
+    for (let j = 0; j < batchSize && i + j < count; j++) {
+      requests.push({
+        method: 'POST',
+        url: url,
+        // 가격을 여러 호가에 분산한다. 전부 같은 가격이면 정렬할 게 없어
+        // 인덱스의 price 컬럼이 의미를 갖지 못한다.
+        body: JSON.stringify({
+          account_id: accountId,
+          stock_code: stockCode,
+          price: basePrice + ((i + j) % levels),
+          quantity: quantity,
+          order_method: 'SELL',
+        }),
+        params: { headers },
+      });
+    }
+
+    const responses = http.batch(requests);
+    for (const res of responses) {
+      if (res.status === 200 || res.status === 201) {
+        placed++;
+      } else if (firstError === null) {
+        firstError = `${res.status}: ${res.body}`;
+      }
+    }
+
+    if (placed > 0 && placed % 2000 === 0) {
+      console.log(`  시딩 진행: ${placed}/${count}`);
     }
   }
-  console.log(`오더북 시딩: ${placed}/${count}건 (종목=${stockCode} 가격=${price} 수량=${quantity})`);
+
+  console.log(
+    `오더북 시딩: ${placed}/${count}건 ` +
+      `(종목=${stockCode} 가격=${basePrice}~${basePrice + levels - 1} 수량=${quantity})`,
+  );
   if (placed === 0) {
-    fail('시딩된 주문이 0건이다. 종목 마스터 적재와 계좌 잔고를 확인할 것');
+    fail(`시딩된 주문이 0건이다 (${firstError})\n보유분(account_stock)과 종목 적재를 확인할 것`);
   }
   return placed;
 }

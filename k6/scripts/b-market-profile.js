@@ -19,10 +19,11 @@ const PASSWORD = __ENV.LOAD_PASSWORD || 'loadtest1234';
 const STOCKS = (__ENV.STOCK_CODES || '005930,000660,035420,051910,005380').split(',');
 const WEIGHTS = (__ENV.STOCK_WEIGHTS || '40,25,15,12,8').split(',').map(Number);
 
-const SEED_COUNT = Number(__ENV.SEED_COUNT || 100);
+const SEED_COUNT = Number(__ENV.SEED_COUNT || 200);
 const SEED_PRICE = Number(__ENV.SEED_PRICE || 1000);
+const SEED_LEVELS = Number(__ENV.SEED_LEVELS || 50);
 const SEED_QTY = Number(__ENV.SEED_QTY || 100);
-const EVENT_PRICE = Number(__ENV.EVENT_PRICE || 1000);
+const EVENT_PRICE = Number(__ENV.EVENT_PRICE || 200);
 const EVENT_QTY = Number(__ENV.EVENT_QTY || 1);
 
 const PEAK = Number(__ENV.PEAK_RATE || 300);
@@ -69,7 +70,7 @@ export function setup() {
   const token = login(EMAIL, PASSWORD);
   const accountId = defaultAccountId(token);
   for (const stock of STOCKS) {
-    seedOrderBook(token, accountId, stock, { count: SEED_COUNT, price: SEED_PRICE, quantity: SEED_QTY });
+    seedOrderBook(token, accountId, stock, { count: SEED_COUNT, price: SEED_PRICE, quantity: SEED_QTY, priceLevels: SEED_LEVELS });
   }
   return { token };
 }

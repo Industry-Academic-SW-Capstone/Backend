@@ -19,10 +19,11 @@ const PASSWORD = __ENV.LOAD_PASSWORD || 'loadtest1234';
 const SPIKE_RATE = Number(__ENV.SPIKE_RATE || 300);   // ← A의 포화점 × 배수로 설정
 const SPIKE_DURATION = __ENV.SPIKE_DURATION || '5m';
 
-const SEED_COUNT = Number(__ENV.SEED_COUNT || 300);
+const SEED_COUNT = Number(__ENV.SEED_COUNT || 10000);
 const SEED_PRICE = Number(__ENV.SEED_PRICE || 1000);
+const SEED_LEVELS = Number(__ENV.SEED_LEVELS || 100);
 const SEED_QTY = Number(__ENV.SEED_QTY || 100);
-const EVENT_PRICE = Number(__ENV.EVENT_PRICE || 1000);
+const EVENT_PRICE = Number(__ENV.EVENT_PRICE || 200);
 const EVENT_QTY = Number(__ENV.EVENT_QTY || 1);
 
 export const options = {
@@ -45,7 +46,7 @@ export const options = {
 export function setup() {
   const token = login(EMAIL, PASSWORD);
   const accountId = defaultAccountId(token);
-  seedOrderBook(token, accountId, STOCK, { count: SEED_COUNT, price: SEED_PRICE, quantity: SEED_QTY });
+  seedOrderBook(token, accountId, STOCK, { count: SEED_COUNT, price: SEED_PRICE, quantity: SEED_QTY, priceLevels: SEED_LEVELS });
   return { token };
 }
 
