@@ -7,45 +7,16 @@ import java.util.HashMap;
 import java.util.Locale;
 import java.util.Map;
 
-/**
- * 미션 완료 알림의 문구와 페이로드를 조립한다.
- *
- * <h2>코드로 강제되지 않는 제약</h2>
- * <ul>
- *   <li><b>반환 맵은 {@code HashMap} 이어야 한다.</b> 선언 타입이 {@code Map} 이라 다른 구현을
- *       반환해도 컴파일은 통과하지만, {@code detailMap} 의 직렬화 결과가
- *       {@code @JsonRawValue} 로 API 응답에 실리므로 키 순서 변경이 곧 사용자 노출 변경이다.</li>
- *   <li><b>{@link #iconType} 이 {@code MissionTrack} 을 다루지만 트랙 추가는 이 클래스의
- *       변경 축이 아니다.</b> {@code MissionTrack} 참조는 mission 도메인 전역 29곳이고
- *       새 트랙 추가 시 컴파일러가 막는 곳은 이 exhaustive switch 1곳뿐이다.
- *       나머지 28곳(맵 초기화·조건 분기·조회 조건)은 조용히 누락된다.</li>
- *   <li><b>{@link #detailMap} 은 null 을 유지하고 {@link #fcmData} 는 빈 문자열로 치환한다.</b>
- *       두 맵의 null 정책이 다르다.</li>
- * </ul>
- */
+// 미션 완료 알림의 문구와 페이로드 조립
 public final class MissionNotificationMessageFactory {
 
     private MissionNotificationMessageFactory() {
     }
 
-    /** 알림 제목: "첫 거래 완료!" */
     public static String title(String missionName) {
         return String.format("%s 완료!", missionName);
     }
 
-    /**
-     * 알림 내용. 보상 금액과 칭호 유무에 따라 세 갈래다.
-     *
-     * <p><b>금액 포맷에 {@code Locale.ROOT} 를 명시한다.</b> {@code %,d} 는 기본 로케일의
-     * 자릿수 체계와 구분 기호를 따르므로 고정하지 않으면 비latn 로케일에서 숫자 표기가 바뀐다.
-     *
-     * <ul>
-     *   <li>금액만: "보상으로 50,000원을 받았습니다."</li>
-     *   <li>칭호만: "칭호 '주식왕'를 획득했습니다."</li>
-     *   <li>둘 다: 공백으로 이어붙인다</li>
-     *   <li>둘 다 없음: "미션을 완료했습니다!"</li>
-     * </ul>
-     */
     public static String body(long moneyAmount, String titleName) {
         StringBuilder builder = new StringBuilder();
         if (moneyAmount > 0) {
@@ -63,7 +34,6 @@ public final class MissionNotificationMessageFactory {
         return builder.toString();
     }
 
-    /** 미션 트랙에 따른 아이콘 타입. */
     public static String iconType(MissionTrack track) {
         return switch (track) {
             case DAILY -> "mission_daily";
@@ -74,7 +44,6 @@ public final class MissionNotificationMessageFactory {
         };
     }
 
-    /** DB {@code detailData} 로 직렬화될 맵. 6키. 타임스탬프 없음. */
     public static Map<String, Object> detailMap(MissionCompletedEvent event) {
         Map<String, Object> detailMap = new HashMap<>();
         detailMap.put("missionId", event.missionId());
@@ -86,12 +55,7 @@ public final class MissionNotificationMessageFactory {
         return detailMap;
     }
 
-    /**
-     * FCM data-only 페이로드. 10키.
-     *
-     * <p>null 정책이 {@link #detailMap} 과 다르다: 여기서는 {@code rewardId}·{@code titleName} 의
-     * null 을 빈 문자열로 치환하지만 detailMap 은 null 을 그대로 유지한다.
-     */
+    // null 정책이 detailMap 과 반대다. detailMap 은 null 을 그대로 유지한다
     public static Map<String, String> fcmData(MissionCompletedEvent event,
                                               String title,
                                               String body,
