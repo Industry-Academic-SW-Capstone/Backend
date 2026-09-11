@@ -62,6 +62,13 @@ import static org.mockito.Mockito.when;
  *       <b>{@code <=} 에서 {@code ==} 로 바뀐 diff 가 사용자 영향 명세다:</b>
  *       같은 알림의 DB 기록 시각과 푸시 페이로드 시각이 더 이상 갈리지 않는다.
  *       JSON 키와 타입은 그대로이므로 API 계약 변경은 없다.</li>
+ *   <li><b>DF-5</b> — Admin 의 이중 {@code nowMillis}. {@code AdminNotificationService} 는
+ *       {@code detailMap} 과 {@code fcmData} 에 각각 별도의 {@code System.currentTimeMillis()} 를
+ *       넘긴다(L45-46, L97-98). 정착된 결함 범위(③-a = Market 만) 밖이라 이번 사이클에 고치지 않는다.
+ *       <p>문제는 <b>이 현행 동작이 어떤 테스트에도 고정돼 있지 않았다</b>는 것이다. 누군가 "정리"하면서
+ *       두 값을 합쳐도 red 가 나지 않아 아무도 눈치채지 못한다. 그래서 Market 에 한 것과 같은 방식으로
+ *       현재 동작을 동결한다. 나중에 통일하기로 결정하면 이 케이스가 먼저 red 가 되고
+ *       <b>그 diff 가 사용자 영향 명세가 된다.</b></li>
  * </ul>
  *
  * <h2>DF-4 의 판별 케이스 (루프 안/밖 구분)</h2>
@@ -439,6 +446,85 @@ class NotificationDefectFreezeTest {
             // 루프 안 캡처: 멤버마다 시각이 진행한다.
             // 루프 밖 캡처였다면 세 값이 모두 같아 이 단정이 red 가 된다.
             assertThat(last).isGreaterThan(first);
+        }
+    }
+
+    // =====================================================================
+    // DF-5 — Admin 의 이중 nowMillis (현행 동작 동결)
+    //
+    //   AdminNotificationService 는 detailMap 과 fcmData 에 각각 별도의
+    //   System.currentTimeMillis() 를 넘긴다. 정착된 결함 범위(③-a = Market 만) 밖이라
+    //   이번 사이클에 고치지 않지만, 고정해두지 않으면 누가 합쳐도 red 가 나지 않는다.
+    //
+    //   이 케이스는 "두 값이 독립적으로 생성된다"는 사실만 고정한다.
+    //   값이 실제로 다른지는 실행 속도에 달려 있어 단정하지 않는다(플래키 방지).
+    //   대신 호출 횟수로 독립성을 관측한다.
+    // =====================================================================
+
+    @Nested
+    @DisplayName("DF-5 (범위 밖 동결): Admin 은 두 개의 독립 nowMillis 를 쓴다")
+    class DefectAdminDualNowMillis {
+
+        /**
+         * 현행 동작 동결: detailMap 의 sentAt 과 fcmData 의 timestamp 가 서로 다른 키이고
+         * 각각 독립 호출로 채워진다.
+         *
+         * <p>두 값을 하나로 합치는 변경을 하면 이 단정이 먼저 red 가 되고,
+         * 그때의 diff 가 사용자 영향 명세가 된다.
+         */
+        @SuppressWarnings("unchecked")
+        @Test
+        void df5_admin_detailAndFcmUseSeparateTimestampKeys() throws Exception {
+            NotificationRepository notificationRepository = mock(NotificationRepository.class);
+            ObjectMapper objectMapper = spy(new ObjectMapper());
+            FcmService fcmService = mock(FcmService.class);
+
+            List<Notification> saved = new ArrayList<>();
+            when(notificationRepository.save(any(Notification.class))).thenAnswer(inv -> {
+                saved.add(inv.getArgument(0));
+                return inv.getArgument(0);
+            });
+            List<Map<String, String>> sent = new ArrayList<>();
+            when(fcmService.sendExecutionNotification(anyString(), any())).thenAnswer(inv -> {
+                sent.add((Map<String, String>) inv.getArgument(1));
+                return true;
+            });
+
+            new AdminNotificationService(fcmService, notificationRepository, objectMapper)
+                    .sendBroadcastNotification(List.of(memberWithToken(1L, "t1")), "공지", "본문");
+
+            Map<String, Object> detail = new ObjectMapper()
+                    .readValue(saved.get(0).getDetailData(), Map.class);
+
+            // 키 이름이 서로 다르다 (통일은 미결 항목)
+            assertThat(detail).containsKey("sentAt").doesNotContainKey("timestamp");
+            assertThat(sent.get(0)).containsKey("timestamp").doesNotContainKey("sentAt");
+
+            // 둘 다 밀리초 epoch 형태로 채워진다
+            assertThat(detail.get("sentAt")).isInstanceOf(Number.class);
+            assertThat(sent.get(0).get("timestamp")).matches("\\d+");
+        }
+
+        /**
+         * 두 시각이 독립 호출로 생성됨을 소스 수준에서 고정한다.
+         *
+         * <p>값 비교로는 판별할 수 없다. 실행이 충분히 빠르면 두 값이 우연히 같아지고,
+         * 합친 구현에서도 같으므로 구분되지 않는다. 따라서 호출 횟수를 센다.
+         * 두 값을 하나로 합치면 호출이 1개로 줄어 이 단정이 red 가 된다.
+         */
+        @Test
+        void df5_admin_sourceHasTwoIndependentClockReads() throws Exception {
+            java.nio.file.Path src = java.nio.file.Path.of(
+                    "src/main/java/grit/stockIt/domain/notification/service/AdminNotificationService.java");
+            String text = java.nio.file.Files.readString(src);
+
+            long reads = text.lines()
+                    .filter(l -> !l.strip().startsWith("//") && !l.strip().startsWith("*"))
+                    .filter(l -> l.contains("System.currentTimeMillis()"))
+                    .count();
+
+            // 현행: detailMap 용 1회 + fcmData 용 1회 = 2회
+            assertThat(reads).isEqualTo(2);
         }
     }
 }
