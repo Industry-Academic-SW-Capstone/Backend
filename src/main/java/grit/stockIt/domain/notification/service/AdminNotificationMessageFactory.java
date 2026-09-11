@@ -4,24 +4,18 @@ import java.util.HashMap;
 import java.util.Map;
 
 /**
- * 관리자 공지 알림의 페이로드를 조립하는 순수 계산 클래스.
+ * 관리자 공지 알림의 페이로드를 조립한다.
  *
- * <p><b>변경 축: 관리자 공지 알림의 페이로드 맵 구성이 바뀔 때만 이 클래스를 고친다.</b>
- * 문구는 런타임 인자로 들어오므로 축에서 제외한다 — 다른 세 팩토리와 달리
- * 이 서비스는 제목과 본문을 호출자에게서 받는다.
- *
- * <p>협력자 0개. 설계 규약은 {@link ExecutionNotificationMessageFactory} 와 동일하다.
- *
- * <h2>두 개의 독립 {@code nowMillis} (의도된 현행 동작)</h2>
- * 호출부는 {@link #detailMap} 과 {@link #fcmData} 에 <b>서로 다른</b>
- * {@code System.currentTimeMillis()} 값을 넘긴다. 현행 동작이 그렇기 때문이다.
- * 두 값을 하나로 합치면 동작이 바뀌는데 <b>어떤 오라클도 그 변경을 잡지 못한다</b> —
- * 결함 동결 파일의 DF-4 는 Market 만 다루기 때문이다.
- * 정착된 결함 범위(③-a = Market 만)를 넘지 않기 위해 두 값을 그대로 보존한다.
- * 통일은 미결 항목으로 PR 본문에 올린다.
- *
- * <p>키 이름도 갈린다: {@code detailMap} 은 {@code sentAt}, {@code fcmData} 는 {@code timestamp} 다.
- * 이 역시 현행 동작이며 통일은 API 계약 변경이라 미결 항목이다.
+ * <h2>코드로 강제되지 않는 제약</h2>
+ * <ul>
+ *   <li><b>반환 맵은 {@code HashMap} 이어야 한다.</b> 선언 타입이 {@code Map} 이라 다른 구현을
+ *       반환해도 컴파일은 통과하지만, {@code detailMap} 의 직렬화 결과가
+ *       {@code @JsonRawValue} 로 API 응답에 실리므로 키 순서 변경이 곧 사용자 노출 변경이다.</li>
+ *   <li><b>타임스탬프 키 이름이 갈린다.</b> {@link #detailMap} 은 {@code sentAt},
+ *       {@link #fcmData} 는 {@code timestamp} 를 쓴다. 현행 API 계약이다.</li>
+ *   <li><b>두 맵은 서로 다른 시각을 받을 수 있다.</b> 호출부가 각각 독립적으로 시각을 읽는다.
+ *       하나로 합치면 동작이 바뀌므로 결함 동결 테스트가 현행 동작을 고정한다.</li>
+ * </ul>
  */
 public final class AdminNotificationMessageFactory {
 

@@ -8,25 +8,17 @@ import java.util.HashMap;
 import java.util.Map;
 
 /**
- * 체결 알림의 문구와 페이로드를 조립하는 순수 계산 클래스.
+ * 체결 알림의 문구와 페이로드를 조립한다.
  *
- * <p><b>변경 축: 체결 알림의 문구와 페이로드 구성이 바뀔 때만 이 클래스를 고친다.</b>
- *
- * <p>협력자 0개다. {@code FcmService}·{@code MemberRepository}·{@code NotificationRepository}·
- * {@code ObjectMapper} 는 전부 {@link ExecutionNotificationService} 에 남는다.
- * 이 클래스는 값만 받아 값만 돌려준다.
- *
- * <h2>설계 규약</h2>
+ * <h2>코드로 강제되지 않는 제약</h2>
  * <ul>
- *   <li>{@code System.currentTimeMillis()} 를 호출하지 않는다. 시각은 {@code nowMillis} 로 받는다.
- *       {@code now()} 는 호출부에 남기고 순수 함수는 값을 파라미터로 받는다는 원칙이다.</li>
- *   <li>{@code ObjectMapper} 에 의존하지 않는다. 맵까지만 만들고 직렬화는 서비스가 한다.</li>
- *   <li><b>반환 맵은 반드시 {@code new HashMap<>()} 이다.</b> {@code LinkedHashMap}/{@code Map.of}/
- *       {@code TreeMap} 으로 바꾸면 키 집합은 그대로인데 직렬화 JSON 의 순서가 바뀐다.
- *       {@code detailData} 는 {@code NotificationResponse} 에서 {@code @JsonRawValue} 로
- *       API 응답에 그대로 실리므로 순서 변경은 곧 사용자 노출 변경이다.</li>
- *   <li>{@link #body} 의 수량은 {@code Integer} 다. 원시형 {@code int} 로 바꾸면 null 에서 NPE 가 나는데
- *       현재 동작은 {@code "null주가"} 출력이므로 동작 불변이 깨진다.</li>
+ *   <li><b>반환 맵은 {@code HashMap} 이어야 한다.</b> 선언 타입이 {@code Map} 이라
+ *       {@code LinkedHashMap}/{@code Map.of} 를 반환해도 컴파일은 통과하지만,
+ *       {@code detailMap} 의 직렬화 결과는 {@code NotificationResponse} 에서
+ *       {@code @JsonRawValue} 로 API 응답에 그대로 실린다. 맵 구현을 바꾸면
+ *       키 집합은 그대로인 채 JSON 키 순서만 달라져 사용자 노출이 바뀐다.</li>
+ *   <li><b>{@link #body} 의 수량은 {@code Integer} 여야 한다.</b> 원시형 {@code int} 로 바꾸면
+ *       null 에서 NPE 가 나는데, 현재 동작은 {@code "null주가"} 를 출력한다.</li>
  * </ul>
  */
 public final class ExecutionNotificationMessageFactory {

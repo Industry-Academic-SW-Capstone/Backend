@@ -8,21 +8,20 @@ import java.util.Locale;
 import java.util.Map;
 
 /**
- * 미션 완료 알림의 문구와 페이로드를 조립하는 순수 계산 클래스.
+ * 미션 완료 알림의 문구와 페이로드를 조립한다.
  *
- * <p><b>변경 축: 미션 완료 알림의 문구와 페이로드 구성이 바뀔 때만 이 클래스를 고친다.</b>
- *
- * <p><b>{@code MissionTrack} 추가는 이 클래스의 변경 축이 아니다.</b>
- * {@link #iconType} 이 {@code MissionTrack} 을 switch 하므로 "미션 트랙 추가 축"이라 부르고 싶어지지만
- * 실측이 이를 부정한다. {@code MissionTrack} 참조는 mission 도메인 전역 <b>29곳</b>이고,
- * 새 트랙을 추가할 때 컴파일러가 막아주는 곳은 이 exhaustive switch <b>1곳뿐</b>이다.
- * 나머지 28곳(맵 초기화·조건 분기·조회 조건)은 컴파일 에러 없이 조용히 누락된다.
- * 변경 축 판정 기준은 "X 를 바꿀 때 이 클래스만 고치면 되는가"이며 답이 명백히 아니오다.
- * 트랙 추가는 mission 도메인 전역의 축이다.
- *
- * <p>협력자 0개. 설계 규약은 {@link ExecutionNotificationMessageFactory} 와 동일하다:
- * {@code System.currentTimeMillis()} 호출 금지, {@code ObjectMapper} 의존 금지,
- * 반환 맵은 반드시 {@code new HashMap<>()}.
+ * <h2>코드로 강제되지 않는 제약</h2>
+ * <ul>
+ *   <li><b>반환 맵은 {@code HashMap} 이어야 한다.</b> 선언 타입이 {@code Map} 이라 다른 구현을
+ *       반환해도 컴파일은 통과하지만, {@code detailMap} 의 직렬화 결과가
+ *       {@code @JsonRawValue} 로 API 응답에 실리므로 키 순서 변경이 곧 사용자 노출 변경이다.</li>
+ *   <li><b>{@link #iconType} 이 {@code MissionTrack} 을 다루지만 트랙 추가는 이 클래스의
+ *       변경 축이 아니다.</b> {@code MissionTrack} 참조는 mission 도메인 전역 29곳이고
+ *       새 트랙 추가 시 컴파일러가 막는 곳은 이 exhaustive switch 1곳뿐이다.
+ *       나머지 28곳(맵 초기화·조건 분기·조회 조건)은 조용히 누락된다.</li>
+ *   <li><b>{@link #detailMap} 은 null 을 유지하고 {@link #fcmData} 는 빈 문자열로 치환한다.</b>
+ *       두 맵의 null 정책이 다르다.</li>
+ * </ul>
  */
 public final class MissionNotificationMessageFactory {
 

@@ -6,23 +6,18 @@ import java.util.HashMap;
 import java.util.Map;
 
 /**
- * 장 시작·마감 알림의 문구와 페이로드를 조립하는 순수 계산 클래스.
+ * 장 시작·마감 알림의 문구와 페이로드를 조립한다.
  *
- * <p><b>변경 축: 장 시작·마감 알림의 문구와 페이로드 구성이 바뀔 때만 이 클래스를 고친다.</b>
- *
- * <p>문구 리터럴 4개가 이 클래스의 상수로 들어와 있다. 서비스에 남겨두면 축 주장이 거짓이 된다 —
- * 문구가 바뀔 때 서비스도 고쳐야 하기 때문이다. 문자열이 동일하므로 이 이동은 동작 불변이다.
- *
- * <p>협력자 0개. 설계 규약은 {@link ExecutionNotificationMessageFactory} 와 동일하다.
- *
- * <h2>{@code nowMillis} 획득 규약 (중요)</h2>
- * 호출부는 {@code System.currentTimeMillis()} 를 <b>회원 루프 안에서 회원당 1회</b> 캡처해
- * 같은 값을 {@link #detailMap} 과 {@link #fcmData} 에 넘긴다.
- * 루프 <b>밖</b> 캡처는 한 브로드캐스트의 모든 회원이 {@code sentAt} 을 공유하게 만드는
- * <b>별개의 동작 변경</b>이며 결함 ③-a 의 범위 밖이다.
- *
- * <p>{@code long} 파라미터 2개가 동일 값을 <b>강제하지는 않는다</b>.
- * "구조적 보장"이 아니라 이 규약과 결함 동결 파일의 DF-4 오라클이 보장한다.
+ * <h2>코드로 강제되지 않는 제약</h2>
+ * <ul>
+ *   <li><b>반환 맵은 {@code HashMap} 이어야 한다.</b> 선언 타입이 {@code Map} 이라 다른 구현을
+ *       반환해도 컴파일은 통과하지만, {@code detailMap} 의 직렬화 결과가
+ *       {@code @JsonRawValue} 로 API 응답에 실리므로 키 순서 변경이 곧 사용자 노출 변경이다.</li>
+ *   <li><b>호출부는 {@code nowMillis} 를 회원 루프 안에서 회원당 1회 읽어야 한다.</b>
+ *       루프 밖에서 읽으면 한 브로드캐스트의 모든 회원이 같은 {@code sentAt} 을 공유하게 되어
+ *       회원별 알림 시각이라는 의미가 바뀐다. 파라미터 2개가 같은 값을 강제하지는 않으므로
+ *       이 규약과 결함 동결 테스트가 함께 보장한다.</li>
+ * </ul>
  */
 public final class MarketNotificationMessageFactory {
 
