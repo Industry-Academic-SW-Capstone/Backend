@@ -9,6 +9,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
+import java.util.Optional;
 
 /**
  * 종목별 체결 이벤트를 하나씩 꺼내 매칭 정산으로 넘긴다.
@@ -17,10 +18,11 @@ import java.util.List;
  * 두 백엔드를 {@code matching.orderbook.backend}·{@code matching.queue.backend}로
  * 독립 지정할 수 있어, Redis 구성요소를 하나씩 얹으며 각각의 기여를 분리해 측정할 수 있다.
  *
- * <p><b>측정 시 주의:</b> 락 획득에 실패하면 이벤트는 큐에 남고 빈 리스트가 반환된다.
- * 큐를 소비하는 경로는 {@link LimitOrderEventPublisher}의 발행 시점 하나뿐이고 폴링 워커가
- * 없으므로, 같은 종목의 다음 이벤트가 도착할 때까지 처리가 지연된다. 처리량만 보면 적체를
- * 놓치므로 큐 길이({@link MatchingEventQueue#size})를 함께 관측해야 한다.
+ * <p><b>락 획득에 실패하면 이벤트는 큐에 남고 빈 리스트가 반환된다.</b> 호출자는 200을 받으므로
+ * 처리량만 보면 적체를 놓친다. 큐 길이({@link MatchingEventQueue#size})를 함께 관측해야 한다.
+ *
+ * <p>남은 이벤트는 {@code MatchingEventDispatcher}가 {@link #drainQueue}로 비운다.
+ * 발행 시점에만 소비하던 구조에서는 유입이 멈추면 큐에 남은 이벤트가 영구히 방치됐다.
  */
 @Slf4j
 @Service
@@ -30,6 +32,59 @@ public class LimitOrderMatchingService {
     private final LimitOrderExecutionService limitOrderExecutionService;
     private final MatchingLock matchingLock;
     private final MatchingEventQueue matchingEventQueue;
+
+    /**
+     * 큐가 빌 때까지 이벤트를 소비한다. 워커({@code MatchingEventDispatcher})가 호출한다.
+     *
+     * <p>종료 이유를 구분해 돌려준다. <b>락 경합으로 멈춘 것과 큐가 비어 멈춘 것은 후속 조치가
+     * 다르다</b> — 전자는 재시도해야 하고 후자는 끝이다. 구분하지 않으면 워커가 빈 큐를 두고
+     * 영원히 재시도한다.
+     *
+     * <p><b>이벤트 1건마다 락을 다시 잡는다.</b> 락을 쥔 채 전부 처리하면 R0에서는
+     * {@code AdvisoryMatchingLock}이 {@code @Transactional}이라 드레인 전체가 한 트랜잭션이 되어
+     * 커밋이 배치되는데, R3는 락이 트랜잭션 밖이라 그렇지 않다. 백엔드마다 커밋 횟수가 달라지면
+     * 저장소 성능 비교가 오염되므로 건당 커밋을 유지한다.
+     */
+    public DrainResult drainQueue(String stockCode) {
+        int consumed = 0;
+        while (true) {
+            Step step = consumeOne(stockCode);
+            if (step != Step.CONSUMED) {
+                return new DrainResult(consumed, step == Step.LOCK_BUSY);
+            }
+            consumed++;
+        }
+    }
+
+    /**
+     * 드레인 결과.
+     *
+     * @param consumed      이번 호출에서 소비한 이벤트 수
+     * @param lockContended 락을 잡지 못해 멈췄는지. true면 다른 주체가 처리 중이므로 재시도가 필요하다
+     */
+    public record DrainResult(int consumed, boolean lockContended) {
+    }
+
+    private enum Step {
+        CONSUMED,
+        QUEUE_EMPTY,
+        LOCK_BUSY
+    }
+
+    private Step consumeOne(String stockCode) {
+        Optional<Boolean> outcome = matchingLock.tryRun(stockCode, () -> {
+            LimitOrderFillEvent event = matchingEventQueue.dequeue(stockCode);
+            if (event == null) {
+                return Boolean.FALSE;
+            }
+            limitOrderExecutionService.distributeEvent(stockCode, event);
+            return Boolean.TRUE;
+        });
+        if (outcome.isEmpty()) {
+            return Step.LOCK_BUSY;
+        }
+        return Boolean.TRUE.equals(outcome.get()) ? Step.CONSUMED : Step.QUEUE_EMPTY;
+    }
 
     // 락 획득 후 이벤트 1건을 꺼내 정산에 넘긴다. 락 획득 실패 시 이벤트는 큐에 남는다.
     public List<Execution> consumeNextEvent(String stockCode) {

@@ -19,6 +19,7 @@ public class LimitOrderEventPublisher {
 
     private final MatchingEventQueue matchingEventQueue;
     private final LimitOrderMatchingService limitOrderMatchingService;
+    private final MatchingEventDispatcher matchingEventDispatcher;
     private final RedisMarketDataRepository redisMarketDataRepository;
 
     @EventListener
@@ -57,6 +58,10 @@ public class LimitOrderEventPublisher {
         } catch (Exception e) {
             log.error("지정가 이벤트 처리 실패. stockCode={} event={}", stockCode, event, e);
             return List.of();
+        } finally {
+            // 인라인 시도가 락을 못 잡았거나 그 사이 다른 이벤트가 쌓였을 수 있다.
+            // 워커가 큐를 끝까지 비우므로 유입이 멈춰도 이벤트가 방치되지 않는다.
+            matchingEventDispatcher.requestDrain(stockCode);
         }
     }
 }
