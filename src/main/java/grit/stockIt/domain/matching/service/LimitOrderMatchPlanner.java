@@ -7,24 +7,16 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 
-/**
- * 지정가 주문장 후보 목록으로부터 체결 계획({@link FillPlan})을 산출하는 순수 로직.
- * Redis/DB 등 외부 협력자가 없으며 상태를 갖지 않는다(무-인자 생성자).
- *
- * <h2>계약</h2>
- * <ol>
- *     <li>{@link FillPlan#exhaustedEntries()}는 정렬된 전체 후보 목록에서
- *     {@link OrderBookEntry#isExhausted()}가 참인 모든 항목을 정렬 순서 그대로 담는다.
- *     수량 할당 루프가 이벤트 수량 소진으로 중간에 {@code break}하더라도, break 이후에
- *     위치한 소진 항목 역시 반드시 포함된다. 이는 별도의 순회 단계에서 계산하기 때문이며,
- *     production의 Redis 삭제 로직이 정렬된 전체 목록을 무조건(할당 루프의 break와 무관하게)
- *     순회하는 것과 동일한 시맨틱을 보존하기 위함이다.</li>
- *     <li>(AC-8) 이 클래스의 정렬 비교자는 시장가 주문 우선순위를 별도로 구현하지 않는다.
- *     시장가 우선순위는 {@code Order.MARKET_BUY_SENTINEL_PRICE}(999999999)와
- *     {@code Order.MARKET_SELL_SENTINEL_PRICE}(0.01)가 가격 축에 이미 인코딩되어 있어
- *     가격 비교만으로 자연히 실현된다. 비교자에 시장가 분기를 추가하지 말 것.</li>
- * </ol>
- */
+// 지정가 주문장 후보로부터 체결 계획을 산출하는 순수 로직. 협력자 0개, 상태 없음.
+//
+// 계약 1: exhaustedEntries 는 정렬된 전체 후보에서 isExhausted 가 참인 항목을 정렬 순서대로
+// 모두 담는다. 수량 할당 루프가 이벤트 수량 소진으로 break 해도 그 이후의 소진 항목까지
+// 포함된다. 별도 순회로 계산하며, production 의 Redis 삭제 로직이 할당 루프의 break 와
+// 무관하게 정렬 전체를 순회하는 시맨틱을 보존하기 위함이다.
+//
+// 계약 2: 정렬 비교자에 시장가 분기를 추가하지 말 것. 시장가 우선순위는
+// Order.MARKET_BUY_SENTINEL_PRICE(999999999)와 MARKET_SELL_SENTINEL_PRICE(0.01)가
+// 가격 축에 이미 인코딩되어 있어 가격 비교만으로 실현된다.
 public class LimitOrderMatchPlanner {
 
     /**
