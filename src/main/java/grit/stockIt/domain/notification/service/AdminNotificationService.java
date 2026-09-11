@@ -6,13 +6,11 @@ import grit.stockIt.domain.member.entity.Member;
 import grit.stockIt.domain.notification.entity.Notification;
 import grit.stockIt.domain.notification.enums.NotificationType;
 import grit.stockIt.domain.notification.repository.NotificationRepository;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
@@ -44,11 +42,8 @@ public class AdminNotificationService {
         int failCount = 0;
         int savedCount = 0;
         
-        Map<String, String> data = new HashMap<>();
-        data.put("title", title);
-        data.put("body", body);
-        data.put("type", "SYSTEM");
-        data.put("timestamp", String.valueOf(System.currentTimeMillis()));
+        Map<String, String> data = AdminNotificationMessageFactory.fcmData(
+                title, body, System.currentTimeMillis());
         
         String detailData = createDetailData(title, body);
         
@@ -99,11 +94,8 @@ public class AdminNotificationService {
     
     // 알림 상세 데이터를 JSON으로 변환
     private String createDetailData(String title, String body) {
-        Map<String, Object> detailMap = new HashMap<>();
-        detailMap.put("title", title);
-        detailMap.put("body", body);
-        detailMap.put("type", "SYSTEM");
-        detailMap.put("sentAt", System.currentTimeMillis());
+        Map<String, Object> detailMap = AdminNotificationMessageFactory.detailMap(
+                title, body, System.currentTimeMillis());
         
         try {
             return objectMapper.writeValueAsString(detailMap);
