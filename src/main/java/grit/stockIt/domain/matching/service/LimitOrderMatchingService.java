@@ -4,10 +4,13 @@ import grit.stockIt.domain.execution.entity.Execution;
 import grit.stockIt.domain.matching.dto.LimitOrderFillEvent;
 import grit.stockIt.domain.matching.lock.MatchingLock;
 import grit.stockIt.domain.matching.queue.MatchingEventQueue;
-import lombok.RequiredArgsConstructor;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
+import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
 
@@ -26,12 +29,39 @@ import java.util.Optional;
  */
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class LimitOrderMatchingService {
 
     private final LimitOrderExecutionService limitOrderExecutionService;
     private final MatchingLock matchingLock;
     private final MatchingEventQueue matchingEventQueue;
+
+    /** 체결된 주문 수 누적. 요청 응답이 아니라 앱 지표로 센다 — 소비가 워커로 옮겨졌기 때문이다. */
+    private final Counter executionCounter;
+
+    /**
+     * 이벤트 도착부터 체결 완료까지. <b>거래소 관점의 핵심 지표다.</b>
+     *
+     * <p>HTTP 응답 지연은 큐에 넣는 시간일 뿐이라 적체가 생겨도 오르지 않는다.
+     * 밀림은 이 값과 큐 길이에서 드러난다.
+     */
+    private final Timer eventLatency;
+
+    public LimitOrderMatchingService(
+            LimitOrderExecutionService limitOrderExecutionService,
+            MatchingLock matchingLock,
+            MatchingEventQueue matchingEventQueue,
+            MeterRegistry meterRegistry) {
+        this.limitOrderExecutionService = limitOrderExecutionService;
+        this.matchingLock = matchingLock;
+        this.matchingEventQueue = matchingEventQueue;
+        this.executionCounter = Counter.builder("matching.executions")
+                .description("체결된 주문 수")
+                .register(meterRegistry);
+        this.eventLatency = Timer.builder("matching.event.latency")
+                .description("체결 이벤트 도착부터 체결 완료까지")
+                .publishPercentileHistogram()
+                .register(meterRegistry);
+    }
 
     /**
      * 큐가 빌 때까지 이벤트를 소비한다. 워커({@code MatchingEventDispatcher})가 호출한다.
@@ -71,13 +101,25 @@ public class LimitOrderMatchingService {
         LOCK_BUSY
     }
 
+    private void recordMetrics(LimitOrderFillEvent event, List<Execution> executions) {
+        executionCounter.increment(executions.size());
+        Long arrivedAt = event.eventTimestamp();
+        if (arrivedAt != null) {
+            long elapsed = System.currentTimeMillis() - arrivedAt;
+            if (elapsed >= 0) {
+                eventLatency.record(Duration.ofMillis(elapsed));
+            }
+        }
+    }
+
     private Step consumeOne(String stockCode) {
         Optional<Boolean> outcome = matchingLock.tryRun(stockCode, () -> {
             LimitOrderFillEvent event = matchingEventQueue.dequeue(stockCode);
             if (event == null) {
                 return Boolean.FALSE;
             }
-            limitOrderExecutionService.distributeEvent(stockCode, event);
+            List<Execution> executions = limitOrderExecutionService.distributeEvent(stockCode, event);
+            recordMetrics(event, executions);
             return Boolean.TRUE;
         });
         if (outcome.isEmpty()) {

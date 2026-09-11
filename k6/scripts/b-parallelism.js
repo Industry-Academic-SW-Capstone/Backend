@@ -22,7 +22,7 @@
 //   hikaricp_connections_pending > 0        → 커넥션 풀이 병목
 //   pending 0 인데 RDS CPUUtilization 높음   → DB CPU가 병목 (진짜 오프로딩 효과)
 
-import { login, defaultAccountId, seedOrderBook, injectExecution, summaryNote } from './lib/common.js';
+import { login, defaultAccountId, seedOrderBook, injectExecution, summaryNote, appMetrics, reportAppMetrics } from './lib/common.js';
 
 // prepare-stocks.sh 가 만든 목록. SQL과 스크립트의 종목이 어긋나지 않게 파일로 공유한다.
 const ALL_STOCKS = JSON.parse(open('./data/stocks.json'));
@@ -74,7 +74,7 @@ export function setup() {
   for (const stock of STOCKS) {
     seedOrderBook(token, accountId, stock, { count: SEED_COUNT, price: SEED_PRICE, quantity: SEED_QTY, priceLevels: SEED_LEVELS });
   }
-  return { token, stocks: STOCKS };
+  return { token, stocks: STOCKS, before: appMetrics() };
 }
 
 export default function (data) {
@@ -84,6 +84,7 @@ export default function (data) {
   injectExecution(data.token, stock, EVENT_PRICE, EVENT_QTY);
 }
 
-export function teardown() {
+export function teardown(data) {
+  reportAppMetrics(data.before);
   console.log(summaryNote(`B 종목 수 스윕 (N=${STOCK_COUNT})`));
 }

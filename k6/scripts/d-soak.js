@@ -16,7 +16,7 @@
 // ★ 시딩 소진 주의. 2시간 × rate × EVENT_QTY 만큼의 수량이 오더북에 있어야 한다.
 //   부족하면 후반부 체결이 0건이 되고 그 구간이 통째로 무효다.
 
-import { login, defaultAccountId, seedOrderBook, injectExecution, summaryNote } from './lib/common.js';
+import { login, defaultAccountId, seedOrderBook, injectExecution, summaryNote, appMetrics, reportAppMetrics } from './lib/common.js';
 
 const STOCK = __ENV.STOCK_CODE || '005930';
 const EMAIL = __ENV.LOAD_EMAIL || 'loadtest@stockit.local';
@@ -58,13 +58,14 @@ export function setup() {
     console.warn(`시딩 수량 부족 경고: 심은 ${seeded} < 필요 ${needed}. 후반부 체결이 0건이 될 수 있다`);
   }
   seedOrderBook(token, accountId, STOCK, { count: SEED_COUNT, price: SEED_PRICE, quantity: SEED_QTY, priceLevels: SEED_LEVELS });
-  return { token };
+  return { token, before: appMetrics() };
 }
 
 export default function (data) {
   injectExecution(data.token, STOCK, EVENT_PRICE, EVENT_QTY);
 }
 
-export function teardown() {
+export function teardown(data) {
+  reportAppMetrics(data.before);
   console.log(summaryNote('D 지속 부하'));
 }

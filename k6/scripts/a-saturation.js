@@ -11,7 +11,7 @@
 //
 // 판정: 처리량이 평탄해지고 queue_depth가 단조 증가하기 시작하는 지점 = 포화점
 
-import { login, defaultAccountId, seedOrderBook, injectExecution, summaryNote } from './lib/common.js';
+import { login, defaultAccountId, seedOrderBook, injectExecution, summaryNote, appMetrics, reportAppMetrics } from './lib/common.js';
 
 const STOCK = __ENV.STOCK_CODE || '005930';
 const EMAIL = __ENV.LOAD_EMAIL || 'loadtest@stockit.local';
@@ -69,13 +69,14 @@ export function setup() {
   const accountId = defaultAccountId(token);
   console.log(`계단: ${MULTIPLIERS.map((m) => Math.round(STAGE_BASE * m)).join(' -> ')} (STAGE_BASE=${STAGE_BASE})`);
   seedOrderBook(token, accountId, STOCK, { count: SEED_COUNT, price: SEED_PRICE, quantity: SEED_QTY, priceLevels: SEED_LEVELS });
-  return { token };
+  return { token, before: appMetrics() };
 }
 
 export default function (data) {
   injectExecution(data.token, STOCK, EVENT_PRICE, EVENT_QTY);
 }
 
-export function teardown() {
+export function teardown(data) {
+  reportAppMetrics(data.before);
   console.log(summaryNote(`A 한계점 탐색 (STAGE_BASE=${STAGE_BASE})`));
 }

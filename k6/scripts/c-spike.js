@@ -10,7 +10,7 @@
 // fetchSize(100)를 넘으면 ZSet이 orderId를 사전순 정렬해 먼저 접수된 주문이 잘린다.
 // 그래서 SEED_COUNT를 100보다 크게 잡는다.
 
-import { login, defaultAccountId, seedOrderBook, injectExecution, summaryNote } from './lib/common.js';
+import { login, defaultAccountId, seedOrderBook, injectExecution, summaryNote, appMetrics, reportAppMetrics } from './lib/common.js';
 
 const STOCK = __ENV.STOCK_CODE || '005930';
 const EMAIL = __ENV.LOAD_EMAIL || 'loadtest@stockit.local';
@@ -47,13 +47,14 @@ export function setup() {
   const token = login(EMAIL, PASSWORD);
   const accountId = defaultAccountId(token);
   seedOrderBook(token, accountId, STOCK, { count: SEED_COUNT, price: SEED_PRICE, quantity: SEED_QTY, priceLevels: SEED_LEVELS });
-  return { token };
+  return { token, before: appMetrics() };
 }
 
 export default function (data) {
   injectExecution(data.token, STOCK, EVENT_PRICE, EVENT_QTY);
 }
 
-export function teardown() {
+export function teardown(data) {
+  reportAppMetrics(data.before);
   console.log(summaryNote('C 급등주 스파이크'));
 }

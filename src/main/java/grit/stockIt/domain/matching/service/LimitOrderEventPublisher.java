@@ -1,6 +1,5 @@
 package grit.stockIt.domain.matching.service;
 
-import grit.stockIt.domain.execution.entity.Execution;
 import grit.stockIt.domain.matching.dto.LimitOrderFillEvent;
 import grit.stockIt.domain.matching.event.LimitOrderFillEventMessage;
 import grit.stockIt.domain.matching.queue.MatchingEventQueue;
@@ -10,7 +9,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Service;
 
-import java.util.List;
 
 @Slf4j
 @Service
@@ -40,28 +38,25 @@ public class LimitOrderEventPublisher {
      * <p>KIS 피드는 {@link #handleLimitOrderFill}을 통해 들어오고, 부하 테스트는
      * 이 메서드를 직접 호출한다. 두 경로가 같은 코드를 타야 측정이 실제를 반영한다.
      *
-     * <p>적재·소비 실패는 로그만 남기고 빈 목록을 반환한다 — 체결 피드 수신이
-     * 매칭 실패로 중단되면 안 되기 때문이다.
+     * <p><b>큐에 넣기만 하고 즉시 반환한다.</b> 소비는 {@link MatchingEventDispatcher}가
+     * 맡는다. 실제 입력은 KIS 실시간 피드이므로, 수신 경로가 체결 처리를 기다리면
+     * 시세 수신 자체가 밀린다. 적재 실패는 로그만 남긴다.
+     *
+     * <p>체결 건수와 체결 지연은 응답이 아니라 앱 지표({@code matching.executions},
+     * {@code matching.event.latency})로 관측한다.
      */
-    public List<Execution> publish(String stockCode, LimitOrderFillEvent event) {
+    public void publish(String stockCode, LimitOrderFillEvent event) {
         redisMarketDataRepository.updateLastPrice(stockCode, event.price());
 
         try {
             matchingEventQueue.enqueue(stockCode, event);
         } catch (Exception e) {
             log.error("지정가 이벤트 적재 실패. stockCode={} event={}", stockCode, event, e);
-            return List.of();
+            return;
         }
 
-        try {
-            return limitOrderMatchingService.consumeNextEvent(stockCode);
-        } catch (Exception e) {
-            log.error("지정가 이벤트 처리 실패. stockCode={} event={}", stockCode, event, e);
-            return List.of();
-        } finally {
-            // 인라인 시도가 락을 못 잡았거나 그 사이 다른 이벤트가 쌓였을 수 있다.
-            // 워커가 큐를 끝까지 비우므로 유입이 멈춰도 이벤트가 방치되지 않는다.
-            matchingEventDispatcher.requestDrain(stockCode);
-        }
+        // 소비는 워커가 전담한다. 큐를 둔 구조에서 수신 경로가 체결까지 기다리면
+        // 큐의 의미가 없어지고, 실제 입력인 KIS 피드 수신이 매칭 때문에 막힌다.
+        matchingEventDispatcher.requestDrain(stockCode);
     }
 }

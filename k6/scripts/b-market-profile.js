@@ -10,7 +10,7 @@
 //
 // 부하 프로파일도 시간대별 분포를 반영한다 — 장 시작 스파이크 → 소강 → 마감 스파이크.
 
-import { login, defaultAccountId, seedOrderBook, injectExecution, summaryNote } from './lib/common.js';
+import { login, defaultAccountId, seedOrderBook, injectExecution, summaryNote, appMetrics, reportAppMetrics } from './lib/common.js';
 
 const EMAIL = __ENV.LOAD_EMAIL || 'loadtest@stockit.local';
 const PASSWORD = __ENV.LOAD_PASSWORD || 'loadtest1234';
@@ -72,13 +72,14 @@ export function setup() {
   for (const stock of STOCKS) {
     seedOrderBook(token, accountId, stock, { count: SEED_COUNT, price: SEED_PRICE, quantity: SEED_QTY, priceLevels: SEED_LEVELS });
   }
-  return { token };
+  return { token, before: appMetrics() };
 }
 
 export default function (data) {
   injectExecution(data.token, pickStock(), EVENT_PRICE, EVENT_QTY);
 }
 
-export function teardown() {
+export function teardown(data) {
+  reportAppMetrics(data.before);
   console.log(summaryNote('B 실제 시장 프로파일'));
 }

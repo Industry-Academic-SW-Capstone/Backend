@@ -1,6 +1,5 @@
 package grit.stockIt.domain.test.controller;
 
-import grit.stockIt.domain.execution.entity.Execution;
 import grit.stockIt.domain.matching.dto.LimitOrderFillEvent;
 import grit.stockIt.domain.matching.queue.MatchingEventQueue;
 import grit.stockIt.domain.matching.service.LimitOrderEventPublisher;
@@ -18,7 +17,6 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.util.List;
 
 /**
  * 부하 테스트 전용 컨트롤러. {@code @Profile("!prod")}로 프로덕션에서는 비활성이다.
@@ -50,8 +48,8 @@ public class LoadTestController {
     @PostMapping("/mock-execution")
     @Operation(
             summary = "가짜 체결 데이터 주입",
-            description = "체결 이벤트를 큐에 넣고 매칭까지 실행합니다. "
-                    + "종목별 락과 이벤트 큐를 포함한 실제 경로를 그대로 탑니다."
+            description = "체결 이벤트를 큐에 적재합니다. 소비는 매칭 워커가 맡습니다. "
+                    + "KIS 실시간 피드와 같은 경로를 그대로 탑니다."
     )
     public ResponseEntity<MockExecutionResponse> injectMockExecution(
             @Valid @RequestBody MockExecutionRequest request) {
@@ -66,16 +64,15 @@ public class LoadTestController {
 
         long startTime = System.currentTimeMillis();
 
-        List<Execution> executions = limitOrderEventPublisher.publish(request.stockCode(), event);
+        limitOrderEventPublisher.publish(request.stockCode(), event);
 
-        long duration = System.currentTimeMillis() - startTime;
+        long enqueueMs = System.currentTimeMillis() - startTime;
         long queueDepth = matchingEventQueue.size(request.stockCode());
 
-        // 락 획득에 실패하면 이벤트가 큐에 남은 채 빈 리스트가 돌아온다(200 OK).
-        // 처리량만 보면 이 상태를 놓치므로 큐 길이를 함께 응답에 담는다.
-        log.debug("체결 주입 완료: stockCode={} quantity={} executions={} queueDepth={} duration={}ms",
-                request.stockCode(), request.quantity(), executions.size(), queueDepth, duration);
+        // 소비는 워커가 맡으므로 여기서는 적재 결과만 안다. 밀림은 큐 길이로 드러난다.
+        log.debug("체결 이벤트 적재: stockCode={} quantity={} queueDepth={} enqueueMs={}",
+                request.stockCode(), request.quantity(), queueDepth, enqueueMs);
 
-        return ResponseEntity.ok(new MockExecutionResponse(executions.size(), queueDepth, duration));
+        return ResponseEntity.ok(new MockExecutionResponse(queueDepth, enqueueMs));
     }
 }

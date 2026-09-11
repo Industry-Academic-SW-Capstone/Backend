@@ -6,18 +6,22 @@
 
 import http from 'k6/http';
 import { check, fail } from 'k6';
-import { Counter, Trend, Rate } from 'k6/metrics';
+import { Trend } from 'k6/metrics';
 
 export const BASE_URL = __ENV.BASE_URL || 'http://localhost:8080';
 
 // ── 커스텀 지표 ─────────────────────────────────────────────────
-// http_reqs만 보면 "TPS는 높은데 체결은 안 되는" 상태를 놓친다.
-// consumeNextEvent는 락 획득에 실패하면 이벤트를 큐에 남긴 채 빈 리스트를 반환하고
-// 호출자는 200 OK를 받기 때문이다(계획서 §6).
-export const executions = new Counter('execution_count');       // 실제 체결 건수 누적
-export const queueDepth = new Trend('queue_depth');             // 처리 후 남은 큐 길이 ★ 포화 판정
-export const matchDuration = new Trend('match_duration_ms');    // 큐 적재~정산 완료
-export const zeroExecution = new Rate('zero_execution_rate');   // 체결 0건 응답 비율
+// 소비를 워커가 전담하므로 응답에는 체결 결과가 없다. 요청이 아는 건 적재까지다.
+//
+//   queue_depth   적재 후 큐 길이 — 포화 판정의 핵심
+//   enqueue_ms    수신 경로 비용 — 밀려도 오르지 않는다(오르면 적재 자체가 느린 것)
+//
+// 체결 건수와 체결 지연은 앱 지표에서 읽는다(setup/teardown의 appMetrics).
+//
+//   matching_executions_total         체결된 주문 수
+//   matching_event_latency_seconds    이벤트 도착 -> 체결 완료  ★ 거래소 관점의 지연
+export const queueDepth = new Trend('queue_depth');
+export const enqueueMs = new Trend('enqueue_ms');
 
 // ── 인증 ────────────────────────────────────────────────────────
 // /api/test/** 는 SecurityConfig의 anyRequest().authenticated() 대상이라 JWT가 필요하다.
@@ -162,24 +166,63 @@ export function injectExecution(token, stockCode, price, quantity) {
   check(res, { 'status 200': (r) => r.status === 200 });
 
   if (res.status === 200) {
-    const count = res.json('execution_count');
-    const depth = res.json('queue_depth');
-    const ms = res.json('duration_ms');
-    executions.add(count);
-    queueDepth.add(depth);
-    matchDuration.add(ms);
-    zeroExecution.add(count === 0);
+    queueDepth.add(res.json('queue_depth'));
+    enqueueMs.add(res.json('enqueue_ms'));
   }
   return res;
+}
+
+// ── 앱 지표 ─────────────────────────────────────────────────────
+// /actuator/** 는 무인증으로 열려 있다(프로메테우스 스크레이프용).
+export function appMetrics() {
+  const res = http.get(`${BASE_URL}/actuator/prometheus`);
+  if (res.status !== 200) {
+    console.warn(`앱 지표 조회 실패 (${res.status})`);
+    return null;
+  }
+  return {
+    executions: sumMetric(res.body, 'matching_executions_total'),
+    latencyCount: sumMetric(res.body, 'matching_event_latency_seconds_count'),
+    latencySum: sumMetric(res.body, 'matching_event_latency_seconds_sum'),
+  };
+}
+
+function sumMetric(body, name) {
+  let total = 0;
+  for (const line of body.split('\n')) {
+    if (line.startsWith(name)) {
+      const value = Number(line.trim().split(/\s+/).pop());
+      if (!Number.isNaN(value)) {
+        total += value;
+      }
+    }
+  }
+  return total;
+}
+
+/** setup에서 받은 기준값과 비교해 이번 실행의 체결 결과를 출력한다. */
+export function reportAppMetrics(before) {
+  const after = appMetrics();
+  if (!before || !after) {
+    return 0;
+  }
+  const executions = after.executions - before.executions;
+  const consumed = after.latencyCount - before.latencyCount;
+  const latencySec = after.latencySum - before.latencySum;
+  const avgMs = consumed > 0 ? (latencySec / consumed) * 1000 : 0;
+  console.log(
+    `체결 ${executions}건 · 이벤트 소비 ${consumed}건 · 평균 체결 지연 ${avgMs.toFixed(1)}ms`,
+  );
+  return consumed;
 }
 
 // 계획서 §10에 옮겨 적을 값을 실행 끝에 남긴다.
 export function summaryNote(scenario) {
   return `
 [${scenario}] 기록할 것
-  - execution_count 합계 / http_reqs — 요청 대비 실제 체결 비율
   - queue_depth 추이 — 단조 증가 시작 지점이 포화점
-  - zero_execution_rate — 높으면 락 경합으로 밀리는 중
+  - 체결 건수 / 이벤트 소비 수 — 유입 대비 처리 비율
+  - 평균 체결 지연 — 밀리면 이 값이 오른다 (enqueue_ms 는 안 오른다)
   - dropped_iterations — 0이 아니면 부하 생성기가 목표 rate를 못 따라간 것
   - 앱 서버 node-exporter CPU 여유 — 생성기가 병목이 아니었음의 근거
 `;

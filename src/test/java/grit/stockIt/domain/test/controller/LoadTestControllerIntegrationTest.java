@@ -6,6 +6,7 @@ import grit.stockIt.domain.contest.entity.Contest;
 import grit.stockIt.domain.contest.repository.ContestRepository;
 import grit.stockIt.domain.matching.dto.LimitOrderFillEvent;
 import grit.stockIt.domain.matching.queue.MatchingEventQueue;
+import grit.stockIt.domain.matching.service.LimitOrderMatchingService;
 import grit.stockIt.domain.matching.repository.OrderBookStore;
 import grit.stockIt.domain.member.entity.AuthProvider;
 import grit.stockIt.domain.member.entity.Member;
@@ -55,6 +56,8 @@ class LoadTestControllerIntegrationTest extends IntegrationTestSupport {
 
     @Autowired
     private MatchingEventQueue matchingEventQueue;
+    @Autowired
+    private LimitOrderMatchingService limitOrderMatchingService;
 
     @Autowired
     private OrderBookStore orderBookStore;
@@ -124,56 +127,61 @@ class LoadTestControllerIntegrationTest extends IntegrationTestSupport {
     }
 
     @Test
-    @DisplayName("주입한 체결 이벤트가 매칭까지 실행되고 결과가 응답에 담긴다")
-    void injectsEventAndReturnsMatchingResult() {
-        Order buyOrder = saveBuyOrderInOrderBook(new BigDecimal("70000"), 10);
+    @DisplayName("주입한 이벤트가 큐에 적재된다 — 요청은 적재까지만 한다")
+    void enqueuesEventWithoutConsuming() {
+        saveBuyOrderInOrderBook(new BigDecimal("70000"), 10);
 
         ResponseEntity<MockExecutionResponse> response =
                 loadTestController.injectMockExecution(request(OrderMethod.SELL, new BigDecimal("70000"), 10));
 
         MockExecutionResponse body = response.getBody();
         assertThat(body).isNotNull();
-        assertThat(body.executionCount()).isEqualTo(1);
-        assertThat(body.queueDepth()).isZero();
-        assertThat(body.durationMs()).isNotNegative();
+        assertThat(body.enqueueMs()).isNotNegative();
+        assertThat(body.queueDepth())
+                .as("소비는 워커가 맡으므로 요청 시점에는 큐에 남아 있다")
+                .isEqualTo(1);
+    }
 
+    @Test
+    @DisplayName("큐는 FIFO다 — 먼저 쌓인 이벤트가 앞에 있다")
+    void enqueuesInFifoOrder() {
+        matchingEventQueue.enqueue(stockCode, new LimitOrderFillEvent(
+                "pre-existing", OrderMethod.SELL, new BigDecimal("70000"), 4, System.currentTimeMillis()));
+
+        loadTestController.injectMockExecution(request(OrderMethod.SELL, new BigDecimal("70000"), 10));
+
+        assertThat(matchingEventQueue.size(stockCode)).isEqualTo(2);
+        assertThat(matchingEventQueue.dequeue(stockCode).eventId())
+                .as("요청 이벤트는 뒤에 붙어야 한다")
+                .isEqualTo("pre-existing");
+    }
+
+    @Test
+    @DisplayName("적재된 이벤트를 드레인하면 매칭까지 이어진다")
+    void drainingQueueCompletesMatching() {
+        Order buyOrder = saveBuyOrderInOrderBook(new BigDecimal("70000"), 10);
+
+        loadTestController.injectMockExecution(request(OrderMethod.SELL, new BigDecimal("70000"), 10));
+
+        // 워커는 테스트에서 꺼져 있으므로(matching.worker.enabled=false) 직접 드레인한다.
+        LimitOrderMatchingService.DrainResult result = limitOrderMatchingService.drainQueue(stockCode);
+
+        assertThat(result.consumed()).isEqualTo(1);
+        assertThat(result.lockContended()).isFalse();
+        assertThat(matchingEventQueue.size(stockCode)).isZero();
         assertThat(orderRepository.findById(buyOrder.getOrderId()).orElseThrow().getRemainingQuantity())
                 .isZero();
     }
 
     @Test
-    @DisplayName("이벤트가 큐를 거쳐 처리된다 — 먼저 쌓인 이벤트가 먼저 소비된다")
-    void routesThroughQueueInFifoOrder() {
-        saveBuyOrderInOrderBook(new BigDecimal("70000"), 10);
+    @DisplayName("체결 상대가 없어도 이벤트는 소비된다 — 큐에 남지 않는다")
+    void consumesEventEvenWithoutCounterparty() {
+        loadTestController.injectMockExecution(request(OrderMethod.SELL, new BigDecimal("70000"), 10));
 
-        // 요청보다 먼저 큐에 들어 있던 이벤트. 큐를 실제로 거친다면 이쪽이 먼저 소비된다.
-        matchingEventQueue.enqueue(stockCode, new LimitOrderFillEvent(
-                "pre-existing", OrderMethod.SELL, new BigDecimal("70000"), 4, System.currentTimeMillis()));
+        LimitOrderMatchingService.DrainResult result = limitOrderMatchingService.drainQueue(stockCode);
 
-        ResponseEntity<MockExecutionResponse> response =
-                loadTestController.injectMockExecution(request(OrderMethod.SELL, new BigDecimal("70000"), 10));
-
-        MockExecutionResponse body = response.getBody();
-        assertThat(body).isNotNull();
-
-        // 선행 이벤트(4주)가 체결되고, 요청으로 넣은 이벤트는 큐에 남아야 한다.
-        // 큐를 건너뛰는 구현이라면 요청 이벤트가 바로 처리되어 잔여가 0이 된다.
-        assertThat(body.queueDepth())
-                .as("요청 이벤트가 큐에 남아 있어야 큐를 거친 것이다")
-                .isEqualTo(1);
-        assertThat(matchingEventQueue.dequeue(stockCode).quantity()).isEqualTo(10);
-    }
-
-    @Test
-    @DisplayName("체결 상대가 없으면 체결 0건으로 응답한다")
-    void reportsZeroExecutionsWhenNoCounterparty() {
-        ResponseEntity<MockExecutionResponse> response =
-                loadTestController.injectMockExecution(request(OrderMethod.SELL, new BigDecimal("70000"), 10));
-
-        MockExecutionResponse body = response.getBody();
-        assertThat(body).isNotNull();
-        assertThat(body.executionCount()).isZero();
-        assertThat(body.queueDepth()).isZero();
+        assertThat(result.consumed()).isEqualTo(1);
+        assertThat(matchingEventQueue.size(stockCode)).isZero();
     }
 
     // ── 헬퍼 ──
