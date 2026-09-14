@@ -36,6 +36,11 @@ spring:
 kis:
   api:
     url: "https://openapivts.koreainvestment.com:29443"
+    # 테스트에서는 속도 제한을 걸지 않는다.
+    # 리미터는 실제 KIS 호출을 보호하려는 것인데 테스트는 더미 키를 쓰므로 보호할 대상이 없고,
+    # 캐시 미스 종목 수만큼 스레드를 재워 빌드 시간을 지배한다
+    # (실측: 종목 598개 → 테스트 메서드 하나당 약 24초 대기).
+    rate-limit-per-second: 1000000.0
     appkey: ${KIS_API_APPKEY:test_appkey}
     appsecret: ${KIS_API_APPSECRET:test_appsecret}
 
