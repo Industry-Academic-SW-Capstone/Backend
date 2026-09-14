@@ -13,7 +13,6 @@ import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -43,9 +42,9 @@ public class MarketNotificationService {
     public void sendMarketOpenNotification() {
         log.info("=== 장 시작 알림 전송 시작 ===");
         
-        String title = "장 시작 알림";
-        String message = "주식 시장이 시작되었습니다. 오늘도 좋은 하루 되세요!";
-        String iconType = "market_open";
+        String title = MarketNotificationMessageFactory.MARKET_OPEN_TITLE;
+        String message = MarketNotificationMessageFactory.MARKET_OPEN_MESSAGE;
+        String iconType = MarketNotificationMessageFactory.MARKET_OPEN_ICON;
         NotificationType type = NotificationType.MARKET_OPEN;
         
         sendNotificationToAllMembers(title, message, iconType, type);
@@ -59,9 +58,9 @@ public class MarketNotificationService {
     public void sendMarketCloseReminderNotification() {
         log.info("=== 장 마감 30분 전 알림 전송 시작 ===");
         
-        String title = "장 마감 30분 전";
-        String message = "장이 30분 후에 마감됩니다.";
-        String iconType = "market_close";
+        String title = MarketNotificationMessageFactory.MARKET_CLOSE_TITLE;
+        String message = MarketNotificationMessageFactory.MARKET_CLOSE_MESSAGE;
+        String iconType = MarketNotificationMessageFactory.MARKET_CLOSE_ICON;
         NotificationType type = NotificationType.MARKET_CLOSE_REMINDER;
         
         sendNotificationToAllMembers(title, message, iconType, type);
@@ -88,11 +87,16 @@ public class MarketNotificationService {
                         continue;
                     }
 
+                    // 이 회원의 알림 시각. 회원당 1회만 읽어 DB 저장분과 FCM 푸시분이 같은 값을 쓴다.
+                    // 루프 밖에서 읽으면 한 브로드캐스트의 모든 회원이 같은 sentAt 을 공유하게 되어
+                    // 회원별 시각이라는 현재 의미가 바뀐다.
+                    long nowMillis = System.currentTimeMillis();
+
                     // DB에 알림 저장
-                    saveNotificationToDatabase(member, title, message, iconType, notificationType);
+                    saveNotificationToDatabase(member, title, message, iconType, notificationType, nowMillis);
 
                     // FCM 푸시 알림 전송
-                    boolean fcmSuccess = sendFcmPushNotification(member, title, message, notificationType);
+                    boolean fcmSuccess = sendFcmPushNotification(member, title, message, notificationType, nowMillis);
 
                     if (fcmSuccess) {
                         successCount++;
@@ -114,10 +118,11 @@ public class MarketNotificationService {
     }
 
     // Notification 엔티티를 DB에 저장
-    private void saveNotificationToDatabase(Member member, String title, String message, 
-                                           String iconType, NotificationType notificationType) {
+    private void saveNotificationToDatabase(Member member, String title, String message,
+                                           String iconType, NotificationType notificationType,
+                                           long nowMillis) {
         // 상세 데이터 (JSON)
-        String detailData = createDetailData(notificationType);
+        String detailData = createDetailData(notificationType, nowMillis);
 
         // Notification 엔티티 생성
         Notification notification = Notification.builder()
@@ -138,10 +143,9 @@ public class MarketNotificationService {
     }
 
     // 상세 데이터를 JSON으로 변환
-    private String createDetailData(NotificationType notificationType) {
-        Map<String, Object> detailMap = new HashMap<>();
-        detailMap.put("type", notificationType.name());
-        detailMap.put("sentAt", System.currentTimeMillis());
+    private String createDetailData(NotificationType notificationType, long nowMillis) {
+        Map<String, Object> detailMap = MarketNotificationMessageFactory.detailMap(
+                notificationType, nowMillis);
 
         try {
             return objectMapper.writeValueAsString(detailMap);
@@ -152,8 +156,8 @@ public class MarketNotificationService {
     }
 
     // FCM 푸시 알림 전송
-    private boolean sendFcmPushNotification(Member member, String title, String message, 
-                                          NotificationType notificationType) {
+    private boolean sendFcmPushNotification(Member member, String title, String message,
+                                          NotificationType notificationType, long nowMillis) {
         if (fcmService == null) {
             log.debug("FcmService를 사용할 수 없습니다. 알림을 전송하지 않습니다.");
             return false;
@@ -164,12 +168,9 @@ public class MarketNotificationService {
             return false;
         }
 
-        Map<String, String> data = new HashMap<>();
-        // title, body를 data에 포함 (PWA Service Worker에서 사용)
-        data.put("title", title);
-        data.put("body", message);
-        data.put("type", notificationType.name());
-        data.put("sentAt", String.valueOf(System.currentTimeMillis()));
+        // FCM 페이로드 (title, body 는 PWA Service Worker 에서 사용)
+        Map<String, String> data = MarketNotificationMessageFactory.fcmData(
+                title, message, notificationType, nowMillis);
 
         boolean success = fcmService.sendExecutionNotification(
                 member.getFcmToken(),

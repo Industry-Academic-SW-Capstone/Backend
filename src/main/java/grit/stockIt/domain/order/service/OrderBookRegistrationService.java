@@ -19,14 +19,13 @@ public class OrderBookRegistrationService {
     private final RedisOrderBookRepository redisOrderBookRepository;
     private final OrderSubscriptionCoordinator orderSubscriptionCoordinator;
 
-    /**
-     * DB 커밋 후에만 Redis 오더북에 주문을 등록한다(유령 주문 방지).
-     *
-     * <p>계약: 반드시 오케스트레이터의 @Transactional 활성 구간 내에서 동기 호출해야 한다.
-     * REQUIRED join은 안전하지만 REQUIRES_NEW로 새 트랜잭션을 여는 것은 절대 금지 — afterCommit
-     * 불변식(DB 커밋 성공 후에만 오더북 반영)을 파괴한다. 활성 트랜잭션이 없는 상태에서 호출되면
-     * {@link TransactionHandler#afterCommit}의 else 분기가 즉시 실행되어 유령 주문이 발생할 수 있다.
-     */
+    // DB 커밋 후에만 Redis 오더북에 등록한다(유령 주문 방지).
+    //
+    // 계약: 오케스트레이터의 @Transactional 활성 구간 안에서 동기 호출해야 한다.
+    // REQUIRED join 은 안전하지만 REQUIRES_NEW 로 새 트랜잭션을 여는 것은 금지다.
+    // afterCommit 불변식(DB 커밋 성공 후에만 오더북 반영)이 깨진다.
+    // 활성 트랜잭션 없이 호출되면 TransactionHandler.afterCommit 의 else 분기가
+    // 즉시 실행되어 유령 주문이 생긴다.
     public void registerAfterCommit(Order order, Stock stock) {
         if (!TransactionSynchronizationManager.isActualTransactionActive()) {
             log.warn("registerAfterCommit이 활성 트랜잭션 없이 호출됨 - 유령 주문 위험. orderId={} stockCode={}",

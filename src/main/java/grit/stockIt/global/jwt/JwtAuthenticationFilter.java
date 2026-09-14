@@ -19,19 +19,14 @@ import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
 
-/**
- * JWT 인증 필터
- * - HTTP 요청에서 JWT 토큰을 추출하고 인증 처리
- * - Authorization: Bearer &lt;token&gt; 헤더에서 토큰 추출
- * - 토큰 유효성 검증 후 Spring Security 컨텍스트에 인증 정보 설정
- *
- * <p>스프링 빈으로 등록하지 않는다. 빈이 되면 서블릿 필터로 자동 등록되어 시큐리티 체인
- * 밖에서 한 번 더 도는데, 그 실행은 인가 판정 시점보다 늦어 아무 효과가 없다.
- * {@code SecurityConfig}가 직접 생성해 체인에 넣는다.
- *
- * <p>토큰을 세울 수 없으면 인증 없이 다음 필터로 넘긴다. 거절은 이 필터가 아니라
- * 인가 규칙과 AuthenticationEntryPoint가 담당한다.
- */
+// JWT 인증 필터.
+//
+// 스프링 빈으로 등록하지 않는다. 빈이 되면 서블릿 필터로 자동 등록되어 시큐리티 체인
+// 밖에서 한 번 더 도는데, 그 실행은 인가 판정 시점보다 늦어 아무 효과가 없다.
+// SecurityConfig 가 직접 생성해 체인에 넣는다.
+//
+// 토큰을 세울 수 없으면 인증 없이 다음 필터로 넘긴다. 거절은 이 필터가 아니라
+// 인가 규칙과 AuthenticationEntryPoint 가 담당한다.
 @Slf4j
 @RequiredArgsConstructor
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
