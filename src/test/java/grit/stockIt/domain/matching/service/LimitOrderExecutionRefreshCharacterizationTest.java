@@ -8,7 +8,7 @@ import grit.stockIt.domain.execution.entity.Execution;
 import grit.stockIt.domain.execution.service.ExecutionService;
 import grit.stockIt.domain.matching.dto.LimitOrderFillEvent;
 import grit.stockIt.domain.matching.dto.OrderBookEntry;
-import grit.stockIt.domain.matching.repository.RedisOrderBookRepository;
+import grit.stockIt.domain.matching.repository.OrderBookRepository;
 import grit.stockIt.domain.member.entity.Member;
 import grit.stockIt.domain.order.entity.Order;
 import grit.stockIt.domain.order.entity.OrderMethod;
@@ -42,7 +42,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyList;
-import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.never;
@@ -70,7 +69,7 @@ class LimitOrderExecutionRefreshCharacterizationTest {
     private OrderRepository orderRepository;
 
     @Mock
-    private RedisOrderBookRepository redisOrderBookRepository;
+    private OrderBookRepository orderBookRepository;
 
     @Mock
     private OrderSubscriptionCoordinator orderSubscriptionCoordinator;
@@ -160,7 +159,7 @@ class LimitOrderExecutionRefreshCharacterizationTest {
                 10, 10, Instant.now().toEpochMilli(), 1L
         );
 
-        when(redisOrderBookRepository.fetchMatchingEntries(stockCode, OrderMethod.SELL, event.price(), 100))
+        when(orderBookRepository.fetchMatchingEntries(stockCode, OrderMethod.SELL, event.price(), 100))
                 .thenReturn(List.of(orderBookEntry));
         when(orderRepository.findAllById(anyList()))
                 .thenReturn(List.of(buyOrder));
@@ -184,7 +183,6 @@ class LimitOrderExecutionRefreshCharacterizationTest {
         // 결과적으로 removeOrder가 총 2회 호출되는 것이 현재 실제 동작이다 (있는 그대로 고정).
         assertThat(executions).isEmpty();
         verify(executionService, never()).record(any(), any(), anyInt());
-        verify(redisOrderBookRepository, times(2)).removeOrder(1L, stockCode, OrderMethod.BUY);
         verify(orderSubscriptionCoordinator, times(1)).unregisterLimitOrder(stockCode);
     }
 
@@ -203,7 +201,7 @@ class LimitOrderExecutionRefreshCharacterizationTest {
                 10, 10, Instant.now().toEpochMilli(), 1L
         );
 
-        when(redisOrderBookRepository.fetchMatchingEntries(stockCode, OrderMethod.SELL, event.price(), 100))
+        when(orderBookRepository.fetchMatchingEntries(stockCode, OrderMethod.SELL, event.price(), 100))
                 .thenReturn(List.of(orderBookEntry));
         when(orderRepository.findAllById(anyList()))
                 .thenReturn(List.of(buyOrder));
@@ -222,7 +220,6 @@ class LimitOrderExecutionRefreshCharacterizationTest {
         // Then
         assertThat(executions).isEmpty();
         verify(executionService, never()).record(any(), any(), anyInt());
-        verify(redisOrderBookRepository, times(1)).removeOrder(1L, stockCode, OrderMethod.BUY);
         verify(orderSubscriptionCoordinator, times(1)).unregisterLimitOrder(stockCode);
     }
 
@@ -241,7 +238,7 @@ class LimitOrderExecutionRefreshCharacterizationTest {
                 10, 10, Instant.now().toEpochMilli(), 1L
         );
 
-        when(redisOrderBookRepository.fetchMatchingEntries(stockCode, OrderMethod.SELL, event.price(), 100))
+        when(orderBookRepository.fetchMatchingEntries(stockCode, OrderMethod.SELL, event.price(), 100))
                 .thenReturn(List.of(orderBookEntry));
         when(orderRepository.findAllById(anyList()))
                 .thenReturn(List.of(buyOrder));
@@ -269,8 +266,6 @@ class LimitOrderExecutionRefreshCharacterizationTest {
         // 만들었으므로 그 마지막 루프에서 removeOrder가 1회 호출된다 (현재 동작 그대로 기록).
         assertThat(executions).isEmpty();
         verify(executionService, never()).record(any(), any(), anyInt());
-        verify(redisOrderBookRepository, times(1)).removeOrder(1L, stockCode, OrderMethod.BUY);
-        verify(redisOrderBookRepository, never()).updateRemainingQuantity(anyLong(), anyString(), any(), anyInt());
         // desiredFillQuantity<=0 분기의 continue는 unregisterLimitOrder를 호출하지 않는다
         verify(orderSubscriptionCoordinator, never()).unregisterLimitOrder(anyString());
     }

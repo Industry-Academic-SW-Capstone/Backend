@@ -61,6 +61,9 @@ management:
 # KIS API 설정
 kis:
   api:
+    # KIS API 호출 속도 제한(초당). KIS가 초당 30건을 막으므로 여유를 둔 값이다.
+    # 랭킹 배치가 캐시 미스 종목을 이 속도로 순차 조회한다.
+    rate-limit-per-second: ${KIS_API_RATE_LIMIT_PER_SECOND:25.0}
     url: "https://openapi.koreainvestment.com:9443"
     appkey: ${KIS_API_APPKEY}
     appsecret: ${KIS_API_APPSECRET}
@@ -100,3 +103,12 @@ app:
     # 관리자 API(/api/admin/**, /api/batch-jobs/**) 허용 이메일. 쉼표로 구분한다.
     # 비어 있으면 아무도 통과하지 못한다(fail-closed).
     emails: ${APP_ADMIN_EMAILS:}
+
+# 지정가 매칭 엔진
+matching:
+  # 체결 이벤트 1건이 훑을 오더북 후보 최대 개수. 임계 구역 길이에 직접 영향을 준다.
+  limit-order-fetch-size: ${MATCHING_LIMIT_ORDER_FETCH_SIZE:100}
+  lock:
+    # 종목 락 대기 상한. advisory 락은 기본이 무한 대기라 반드시 걸어야 한다.
+    # 초과하면 예외로 떨어지고 matching.lock.timeouts 로 집계된다.
+    timeout: ${MATCHING_LOCK_TIMEOUT:10s}

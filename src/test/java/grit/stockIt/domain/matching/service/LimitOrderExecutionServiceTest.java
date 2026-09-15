@@ -10,7 +10,7 @@ import grit.stockIt.domain.execution.entity.Execution;
 import grit.stockIt.domain.execution.service.ExecutionService;
 import grit.stockIt.domain.matching.dto.LimitOrderFillEvent;
 import grit.stockIt.domain.matching.dto.OrderBookEntry;
-import grit.stockIt.domain.matching.repository.RedisOrderBookRepository;
+import grit.stockIt.domain.matching.repository.OrderBookRepository;
 import grit.stockIt.domain.notification.event.ExecutionFilledEvent;
 import grit.stockIt.domain.order.entity.Order;
 import grit.stockIt.domain.order.entity.OrderHold;
@@ -32,9 +32,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
 import org.springframework.context.ApplicationEventPublisher;
-import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.test.util.ReflectionTestUtils;
-import com.fasterxml.jackson.databind.ObjectMapper;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -45,7 +43,6 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
-import org.springframework.data.redis.core.ListOperations;
 
 @ExtendWith(MockitoExtension.class)
 @MockitoSettings(strictness = Strictness.LENIENT)
@@ -53,16 +50,13 @@ import org.springframework.data.redis.core.ListOperations;
 class LimitOrderExecutionServiceTest {
     
     @Mock
-    private ListOperations<String, String> listOperations;
-
-    @Mock
     private ExecutionService executionService;
 
     @Mock
     private OrderRepository orderRepository;
 
     @Mock
-    private RedisOrderBookRepository redisOrderBookRepository;
+    private OrderBookRepository orderBookRepository;
 
     @Mock
     private OrderSubscriptionCoordinator orderSubscriptionCoordinator;
@@ -78,12 +72,6 @@ class LimitOrderExecutionServiceTest {
 
     @Mock
     private ApplicationEventPublisher eventPublisher;
-
-    @Mock
-    private StringRedisTemplate redisTemplate;
-
-    @Mock
-    private ObjectMapper objectMapper;
 
     @Mock
     private EntityManager entityManager;
@@ -105,19 +93,6 @@ class LimitOrderExecutionServiceTest {
         // fetchSize 설정
         ReflectionTestUtils.setField(limitOrderExecutionService, "fetchSize", 100);
         
-        // ObjectMapper Mock 설정 (잔여 이벤트 재큐잉용)
-        try {
-            doAnswer(invocation -> {
-                // 간단한 JSON 직렬화 (테스트용)
-                return "{\"eventId\":\"test\",\"orderMethod\":\"SELL\",\"price\":100,\"quantity\":10}";
-            }).when(objectMapper).writeValueAsString(any(grit.stockIt.domain.matching.dto.LimitOrderFillEvent.class));
-        } catch (Exception e) {
-            // Mockito가 예외를 처리하므로 무시
-        }
-        
-        // StringRedisTemplate Mock 설정
-        when(redisTemplate.opsForList()).thenReturn(listOperations);
-
         // 테스트 데이터 생성
         testMember = Member.builder()
                 .memberId(1L)
@@ -183,7 +158,7 @@ class LimitOrderExecutionServiceTest {
                 10, 10, Instant.now().toEpochMilli(), 1L
         );
 
-        when(redisOrderBookRepository.fetchMatchingEntries(stockCode, OrderMethod.SELL, event.price(), 100))
+        when(orderBookRepository.fetchMatchingEntries(stockCode, OrderMethod.SELL, event.price(), 100))
                 .thenReturn(List.of(orderBookEntry));
         when(orderRepository.findAllById(anyList()))
                 .thenReturn(List.of(testBuyOrder));
@@ -207,8 +182,6 @@ class LimitOrderExecutionServiceTest {
         ArgumentCaptor<ExecutionFilledEvent> eventCaptor = ArgumentCaptor.forClass(ExecutionFilledEvent.class);
         verify(eventPublisher, times(1)).publishEvent(eventCaptor.capture());
 
-        // Redis 업데이트 확인
-        verify(redisOrderBookRepository, times(1)).removeOrder(1L, stockCode, OrderMethod.BUY);
         verify(orderSubscriptionCoordinator, times(1)).unregisterLimitOrder(stockCode);
     }
 
@@ -230,7 +203,7 @@ class LimitOrderExecutionServiceTest {
                 10, 10, Instant.now().toEpochMilli(), 1L
         );
 
-        when(redisOrderBookRepository.fetchMatchingEntries(stockCode, OrderMethod.BUY, event.price(), 100))
+        when(orderBookRepository.fetchMatchingEntries(stockCode, OrderMethod.BUY, event.price(), 100))
                 .thenReturn(List.of(orderBookEntry));
         when(orderRepository.findAllById(anyList()))
                 .thenReturn(List.of(testSellOrder));
@@ -251,7 +224,6 @@ class LimitOrderExecutionServiceTest {
         assertThat(testAccount.getCash()).isEqualByComparingTo(new BigDecimal("11000")); // 10000 + 1000
         assertThat(testAccountStock.getQuantity()).isEqualTo(0); // 10 - 10
 
-        verify(redisOrderBookRepository, times(1)).removeOrder(2L, stockCode, OrderMethod.SELL);
     }
 
     @Test
@@ -285,7 +257,7 @@ class LimitOrderExecutionServiceTest {
                 .holdAmount(new BigDecimal("1000")) // 전체 주문 금액
                 .build();
 
-        when(redisOrderBookRepository.fetchMatchingEntries(stockCode, OrderMethod.SELL, event.price(), 100))
+        when(orderBookRepository.fetchMatchingEntries(stockCode, OrderMethod.SELL, event.price(), 100))
                 .thenReturn(List.of(orderBookEntry));
         when(orderRepository.findAllById(anyList()))
                 .thenReturn(List.of(testBuyOrder));
@@ -305,10 +277,6 @@ class LimitOrderExecutionServiceTest {
         assertThat(testBuyOrder.getRemainingQuantity()).isEqualTo(5);
         assertThat(testBuyOrder.getStatus()).isEqualTo(OrderStatus.PARTIALLY_FILLED);
 
-        // 부분 체결이므로 Redis에서 수량만 업데이트
-        verify(redisOrderBookRepository, times(1))
-                .updateRemainingQuantity(1L, stockCode, OrderMethod.BUY, 5);
-        verify(redisOrderBookRepository, never()).removeOrder(anyLong(), anyString(), any());
     }
 
     @Test
@@ -354,7 +322,7 @@ class LimitOrderExecutionServiceTest {
         OrderHold hold2 = OrderHold.create(order2, multiOrderAccount, new BigDecimal("1000")); // 100 * 10
         ReflectionTestUtils.setField(hold2, "orderId", 2L);
 
-        when(redisOrderBookRepository.fetchMatchingEntries(stockCode, OrderMethod.SELL, event.price(), 100))
+        when(orderBookRepository.fetchMatchingEntries(stockCode, OrderMethod.SELL, event.price(), 100))
                 .thenReturn(List.of(entry1, entry2));
         when(orderRepository.findAllById(anyList()))
                 .thenAnswer(invocation -> {
@@ -412,7 +380,7 @@ class LimitOrderExecutionServiceTest {
                 Instant.now().toEpochMilli()
         );
 
-        when(redisOrderBookRepository.fetchMatchingEntries(stockCode, OrderMethod.SELL, event.price(), 100))
+        when(orderBookRepository.fetchMatchingEntries(stockCode, OrderMethod.SELL, event.price(), 100))
                 .thenReturn(List.of());
 
         // When
@@ -455,7 +423,7 @@ class LimitOrderExecutionServiceTest {
         OrderHold orderHold = OrderHold.create(buyOrder, poorAccount, new BigDecimal("1000"));
         ReflectionTestUtils.setField(orderHold, "orderId", 1L);
 
-        when(redisOrderBookRepository.fetchMatchingEntries(stockCode, OrderMethod.SELL, event.price(), 100))
+        when(orderBookRepository.fetchMatchingEntries(stockCode, OrderMethod.SELL, event.price(), 100))
                 .thenReturn(List.of(orderBookEntry));
         when(orderRepository.findAllById(anyList()))
                 .thenReturn(List.of(buyOrder));
@@ -470,7 +438,6 @@ class LimitOrderExecutionServiceTest {
         // Then
         assertThat(executions).isEmpty();
         assertThat(buyOrder.getStatus()).isEqualTo(OrderStatus.CANCELLED);
-        verify(redisOrderBookRepository, times(1)).removeOrder(1L, stockCode, OrderMethod.BUY);
         verify(orderSubscriptionCoordinator, times(1)).unregisterLimitOrder(stockCode);
     }
 
@@ -506,7 +473,7 @@ class LimitOrderExecutionServiceTest {
         OrderHold orderHold = OrderHold.create(buyOrder, account, new BigDecimal("1000"));
         ReflectionTestUtils.setField(orderHold, "orderId", 1L);
 
-        when(redisOrderBookRepository.fetchMatchingEntries(stockCode, OrderMethod.SELL, event.price(), 100))
+        when(orderBookRepository.fetchMatchingEntries(stockCode, OrderMethod.SELL, event.price(), 100))
                 .thenReturn(List.of(orderBookEntry));
         when(orderRepository.findAllById(anyList()))
                 .thenReturn(List.of(buyOrder));
@@ -547,7 +514,7 @@ class LimitOrderExecutionServiceTest {
 
         testBuyOrder.markCancelled();
 
-        when(redisOrderBookRepository.fetchMatchingEntries(stockCode, OrderMethod.SELL, event.price(), 100))
+        when(orderBookRepository.fetchMatchingEntries(stockCode, OrderMethod.SELL, event.price(), 100))
                 .thenReturn(List.of(orderBookEntry));
         when(orderRepository.findAllById(anyList()))
                 .thenReturn(List.of(testBuyOrder));
@@ -557,7 +524,6 @@ class LimitOrderExecutionServiceTest {
 
         // Then
         assertThat(executions).isEmpty();
-        verify(redisOrderBookRepository, times(1)).removeOrder(1L, stockCode, OrderMethod.BUY);
         verify(executionService, never()).record(any(), any(), anyInt());
     }
 
@@ -579,7 +545,7 @@ class LimitOrderExecutionServiceTest {
                 10, 10, Instant.now().toEpochMilli(), 1L
         );
 
-        when(redisOrderBookRepository.fetchMatchingEntries(stockCode, OrderMethod.SELL, event.price(), 100))
+        when(orderBookRepository.fetchMatchingEntries(stockCode, OrderMethod.SELL, event.price(), 100))
                 .thenReturn(List.of(orderBookEntry));
         when(orderRepository.findAllById(anyList()))
                 .thenReturn(List.of()); // DB에 주문 없음
@@ -589,7 +555,6 @@ class LimitOrderExecutionServiceTest {
 
         // Then
         assertThat(executions).isEmpty();
-        verify(redisOrderBookRepository, times(1)).removeOrder(1L, stockCode, OrderMethod.BUY);
         verify(orderSubscriptionCoordinator, times(1)).unregisterLimitOrder(stockCode);
     }
 
@@ -611,7 +576,7 @@ class LimitOrderExecutionServiceTest {
 
         // Then
         assertThat(executions).isEmpty();
-        verify(redisOrderBookRepository, never()).fetchMatchingEntries(any(), any(), any(), anyInt());
+        verify(orderBookRepository, never()).fetchMatchingEntries(any(), any(), any(), anyInt());
     }
 
     @Test
@@ -641,7 +606,7 @@ class LimitOrderExecutionServiceTest {
         OrderHold marketOrderHold = OrderHold.create(marketBuyOrder, testAccount, new BigDecimal("1000"));
         ReflectionTestUtils.setField(marketOrderHold, "orderId", 1L);
 
-        when(redisOrderBookRepository.fetchMatchingEntries(stockCode, OrderMethod.SELL, event.price(), 100))
+        when(orderBookRepository.fetchMatchingEntries(stockCode, OrderMethod.SELL, event.price(), 100))
                 .thenReturn(List.of(orderBookEntry));
         when(orderRepository.findAllById(anyList()))
                 .thenReturn(List.of(marketBuyOrder));
@@ -661,7 +626,6 @@ class LimitOrderExecutionServiceTest {
         assertThat(marketBuyOrder.getStatus()).isEqualTo(OrderStatus.FILLED);
         assertThat(testAccount.getCash()).isEqualByComparingTo(new BigDecimal("9000")); // 10000 - 1000
 
-        verify(redisOrderBookRepository, times(1)).removeOrder(1L, stockCode, OrderMethod.BUY);
         verify(orderSubscriptionCoordinator, times(1)).unregisterLimitOrder(stockCode);
     }
 
@@ -689,7 +653,7 @@ class LimitOrderExecutionServiceTest {
                 10, 10, Instant.now().toEpochMilli(), 1L
         );
 
-        when(redisOrderBookRepository.fetchMatchingEntries(stockCode, OrderMethod.BUY, event.price(), 100))
+        when(orderBookRepository.fetchMatchingEntries(stockCode, OrderMethod.BUY, event.price(), 100))
                 .thenReturn(List.of(orderBookEntry));
         when(orderRepository.findAllById(anyList()))
                 .thenReturn(List.of(marketSellOrder));
@@ -710,7 +674,6 @@ class LimitOrderExecutionServiceTest {
         assertThat(testAccount.getCash()).isEqualByComparingTo(new BigDecimal("11000")); // 10000 + 1000
         assertThat(testAccountStock.getQuantity()).isEqualTo(0); // 10 - 10
 
-        verify(redisOrderBookRepository, times(1)).removeOrder(2L, stockCode, OrderMethod.SELL);
     }
 
     @Test
@@ -761,7 +724,7 @@ class LimitOrderExecutionServiceTest {
         OrderHold limitHold = OrderHold.create(limitBuyOrder, multiOrderAccount, new BigDecimal("1000"));
         ReflectionTestUtils.setField(limitHold, "orderId", 2L);
 
-        when(redisOrderBookRepository.fetchMatchingEntries(stockCode, OrderMethod.SELL, event.price(), 100))
+        when(orderBookRepository.fetchMatchingEntries(stockCode, OrderMethod.SELL, event.price(), 100))
                 .thenReturn(List.of(marketEntry, limitEntry));
         when(orderRepository.findAllById(anyList()))
                 .thenAnswer(invocation -> {
@@ -841,7 +804,7 @@ class LimitOrderExecutionServiceTest {
                 .holdAmount(new BigDecimal("1000"))
                 .build();
 
-        when(redisOrderBookRepository.fetchMatchingEntries(stockCode, OrderMethod.SELL, event.price(), 100))
+        when(orderBookRepository.fetchMatchingEntries(stockCode, OrderMethod.SELL, event.price(), 100))
                 .thenReturn(List.of(orderBookEntry));
         when(orderRepository.findAllById(anyList()))
                 .thenReturn(List.of(marketBuyOrder));
@@ -861,9 +824,6 @@ class LimitOrderExecutionServiceTest {
         assertThat(marketBuyOrder.getRemainingQuantity()).isEqualTo(5);
         assertThat(marketBuyOrder.getStatus()).isEqualTo(OrderStatus.PARTIALLY_FILLED);
 
-        verify(redisOrderBookRepository, times(1))
-                .updateRemainingQuantity(1L, stockCode, OrderMethod.BUY, 5);
-        verify(redisOrderBookRepository, never()).removeOrder(anyLong(), anyString(), any());
     }
 
     // Helper 메서드

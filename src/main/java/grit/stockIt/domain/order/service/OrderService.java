@@ -33,7 +33,7 @@ public class OrderService {
     private final OrderAuthorizationService orderAuthorizationService;
     private final OrderPricingService orderPricingService;
     private final OrderHoldService orderHoldService;
-    private final OrderBookRegistrationService orderBookRegistrationService;
+    private final OrderSubscriptionService orderSubscriptionService;
 
     // 지정가 주문 생성
     @Transactional
@@ -79,7 +79,7 @@ public class OrderService {
         }
 
         // DB 커밋 후에만 Redis 오더북에 주문 추가 (유령 주문 방지)
-        orderBookRegistrationService.registerAfterCommit(savedOrder, stock);
+        orderSubscriptionService.subscribeAfterCommit(savedOrder, stock);
 
         log.info("지정가 주문 생성 완료: orderId={} stock={} quantity={}", savedOrder.getOrderId(), stock.getCode(), savedOrder.getQuantity());
         return OrderResponse.from(savedOrder);
@@ -115,7 +115,7 @@ public class OrderService {
 
         // 시장가 주문도 지정가 주문처럼 웹소켓 구독을 먼저 시작
         // 최근 체결가 조회 전에 구독이 시작되어 체결 이벤트를 받을 수 있도록 함
-        orderBookRegistrationService.preSubscribe(stock.getCode());
+        orderSubscriptionService.preSubscribe(stock.getCode());
 
         BigDecimal holdAmount = BigDecimal.ZERO;
         if (orderMethod == OrderMethod.SELL) {
@@ -133,7 +133,7 @@ public class OrderService {
         }
 
         // DB 커밋 후에만 Redis 오더북에 주문 추가 (유령 주문 방지)
-        orderBookRegistrationService.registerAfterCommit(savedOrder, stock);
+        orderSubscriptionService.subscribeAfterCommit(savedOrder, stock);
 
         log.info("시장가 주문 생성 완료: orderId={} stock={} quantity={}", savedOrder.getOrderId(), stock.getCode(), savedOrder.getQuantity());
         return OrderResponse.from(savedOrder);
@@ -158,7 +158,7 @@ public class OrderService {
         orderRepository.save(order);
 
         if (order.getRemainingQuantity() > 0) {
-            orderBookRegistrationService.removeOnCancel(order);
+            orderSubscriptionService.unsubscribeOnCancel(order);
         }
 
         if (order.getOrderMethod() == OrderMethod.BUY) {

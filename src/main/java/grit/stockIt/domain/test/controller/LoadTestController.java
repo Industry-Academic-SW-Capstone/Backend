@@ -1,26 +1,26 @@
 package grit.stockIt.domain.test.controller;
 
 import grit.stockIt.domain.matching.dto.LimitOrderFillEvent;
-import grit.stockIt.domain.matching.service.LimitOrderExecutionService;
-import grit.stockIt.domain.order.entity.OrderMethod;
+import grit.stockIt.domain.matching.service.LimitOrderEventPublisher;
+import grit.stockIt.domain.test.dto.MockExecutionRequest;
+import grit.stockIt.domain.test.dto.MockExecutionResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.http.ResponseEntity;
-import org.springframework.security.core.Authentication;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.context.annotation.Profile;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
 
-import java.math.BigDecimal;
-import java.util.List;
-
-/**
- * 부하 테스트 전용 컨트롤러
- * 스테이징 환경에서만 사용 (프로파일로 제한 권장)
- */
+// 체결 이벤트 주입 진입점. prod 에서는 노출되지 않는다.
+//
+// KIS 피드와 같은 메서드를 탄다. 이전에는 distributeEvent 를 직접 호출해 종목 락을 건너뛰었는데,
+// 그러면 실제 경로에서 가장 비싼 구간인 직렬화가 통째로 빠진다.
 @Slf4j
 @RestController
 @RequestMapping("/api/test")
@@ -29,84 +29,34 @@ import java.util.List;
 @Tag(name = "Load Test", description = "부하 테스트 전용 API (스테이징 환경 전용)")
 public class LoadTestController {
 
-    private final LimitOrderExecutionService limitOrderExecutionService;
+    private final LimitOrderEventPublisher limitOrderEventPublisher;
 
-    /**
-     * 가짜 체결 데이터를 주입하여 체결 로직의 성능을 테스트
-     * 
-     * 요청 예시:
-     * {
-     *   "stock_code": "005930",
-     *   "event_id": "uuid",
-     *   "order_method": "BUY",
-     *   "price": 70000,
-     *   "quantity": 100,
-     *   "event_timestamp": 1234567890
-     * }
-     */
+    // 처리하지 못한 이벤트는 503으로 돌려준다. 200으로 돌려주면 락 대기 초과나 커넥션 고갈이
+    // 호출자의 에러율에 잡히지 않아 포화 상태가 정상으로 보인다.
     @PostMapping("/mock-execution")
     @Operation(
-        summary = "가짜 체결 데이터 주입",
-        description = "부하 테스트를 위한 가짜 체결 데이터를 주입합니다. 실제 체결 로직이 동작합니다."
+            summary = "체결 이벤트 주입",
+            description = "KIS 실시간 피드와 같은 경로(LimitOrderEventPublisher#publish)로 체결 이벤트를 흘려보낸다."
     )
-    public ResponseEntity<String> injectMockExecution(
+    public ResponseEntity<MockExecutionResponse> injectMockExecution(
             @Valid @RequestBody MockExecutionRequest request) {
-        
-        // 인증 확인 (선택사항 - 부하 테스트 시에는 인증 없이도 가능하도록 설정 가능)
-        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-        if (auth == null || !auth.isAuthenticated()) {
-            log.warn("인증되지 않은 체결 데이터 주입 요청");
-            // 부하 테스트를 위해 인증 없이도 허용할 수 있음
-            // return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
-        }
 
-        try {
-            // LimitOrderFillEvent 생성
-            LimitOrderFillEvent event = new LimitOrderFillEvent(
-                    request.eventId(),
-                    request.orderMethod(),
-                    request.price(),
-                    request.quantity(),
-                    request.eventTimestamp()
-            );
+        LimitOrderFillEvent event = new LimitOrderFillEvent(
+                request.eventId(),
+                request.orderMethod(),
+                request.price(),
+                request.quantity(),
+                request.eventTimestamp()
+        );
 
-            // 체결 로직 실행 (성능 측정 대상)
-            long startTime = System.currentTimeMillis();
-            List<?> executions = limitOrderExecutionService.distributeEvent(
-                    request.stockCode(),
-                    event
-            );
-            long duration = System.currentTimeMillis() - startTime;
+        long startNanos = System.nanoTime();
+        LimitOrderEventPublisher.PublishResult result = limitOrderEventPublisher.publish(request.stockCode(), event);
+        long handleMs = (System.nanoTime() - startNanos) / 1_000_000L;
 
-            log.info("체결 처리 완료: stockCode={}, quantity={}, executions={}, duration={}ms",
-                    request.stockCode(), request.quantity(), executions.size(), duration);
+        MockExecutionResponse response = new MockExecutionResponse(result.filledOrders(), handleMs);
 
-            return ResponseEntity.ok(String.format(
-                    "체결 처리 완료: %d건, 처리 시간: %dms",
-                    executions.size(),
-                    duration
-            ));
-
-        } catch (Exception e) {
-            log.error("체결 데이터 주입 실패: stockCode={}", request.stockCode(), e);
-            return ResponseEntity.status(500)
-                    .body("체결 처리 실패: " + e.getMessage());
-        }
-    }
-
-    /**
-     * 체결 데이터 주입 요청 DTO
-     */
-    public record MockExecutionRequest(
-            String stockCode,
-            String eventId,
-            OrderMethod orderMethod,
-            BigDecimal price,
-            Integer quantity,
-            Long eventTimestamp
-    ) {
+        return result.processed()
+                ? ResponseEntity.ok(response)
+                : ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(response);
     }
 }
-
-
-

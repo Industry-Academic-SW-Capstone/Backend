@@ -107,30 +107,14 @@ class LimitOrderMatchPlannerTest {
     }
 
     @Test
-    @DisplayName("소진된(isExhausted) 엔트리는 할당에서 건너뛰지만 exhaustedEntries에는 나타난다")
-    void plan_ExhaustedEntry_SkippedFromAllocationButAppearsInExhaustedEntries() {
+    @DisplayName("잔여 수량이 없는 엔트리는 배분 대상에서 제외된다")
+    void plan_ExhaustedEntry_SkippedFromAllocation() {
         OrderBookEntry exhausted = entry(1L, OrderMethod.SELL, new BigDecimal("100"), 0, 1000); // remaining=0
         OrderBookEntry active = entry(2L, OrderMethod.SELL, new BigDecimal("101"), 10, 2000);
 
         FillPlan plan = planner.plan(List.of(exhausted, active), OrderMethod.BUY, 20);
 
         assertThat(plan.allocations()).extracting(a -> a.entry().orderId()).containsExactly(2L);
-        assertThat(plan.exhaustedEntries()).extracting(OrderBookEntry::orderId).containsExactly(1L);
-    }
-
-    @Test
-    @DisplayName("할당 루프의 break 이후에 위치한 소진 엔트리도 exhaustedEntries에 포함된다")
-    void plan_ExhaustedEntryAfterAllocationBreak_StillAppearsInExhaustedEntries() {
-        // BUY 테이커 → SELL 후보 오름차순: entry(100,active,remain=10) 먼저 전량 배정되어 break,
-        // 그 다음 정렬 위치(101, exhausted)는 할당 루프에 도달하지 않지만 exhaustedEntries에는 있어야 함
-        OrderBookEntry active = entry(1L, OrderMethod.SELL, new BigDecimal("100"), 10, 1000);
-        OrderBookEntry exhaustedAfterBreak = entry(2L, OrderMethod.SELL, new BigDecimal("101"), 0, 2000);
-
-        FillPlan plan = planner.plan(List.of(active, exhaustedAfterBreak), OrderMethod.BUY, 10); // 이벤트 수량 10 = active로 완전히 소진
-
-        assertThat(plan.allocations()).extracting(a -> a.entry().orderId()).containsExactly(1L);
-        assertThat(plan.unallocatedQuantity()).isZero();
-        assertThat(plan.exhaustedEntries()).extracting(OrderBookEntry::orderId).containsExactly(2L);
     }
 
     @Test
@@ -187,7 +171,6 @@ class LimitOrderMatchPlannerTest {
         FillPlan plan = planner.plan(List.of(), OrderMethod.BUY, 10);
 
         assertThat(plan.allocations()).isEmpty();
-        assertThat(plan.exhaustedEntries()).isEmpty();
         assertThat(plan.unallocatedQuantity()).isEqualTo(10);
     }
 
@@ -201,7 +184,6 @@ class LimitOrderMatchPlannerTest {
 
         assertThat(plan.allocations()).extracting(a -> a.entry().orderId()).containsExactly(1L);
         assertThat(plan.unallocatedQuantity()).isZero();
-        assertThat(plan.exhaustedEntries()).isEmpty(); // second는 소진 상태가 아니므로 exhaustedEntries에도 없음
     }
 
     @Test

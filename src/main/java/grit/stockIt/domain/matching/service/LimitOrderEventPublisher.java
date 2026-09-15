@@ -1,26 +1,31 @@
 package grit.stockIt.domain.matching.service;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import grit.stockIt.domain.execution.entity.Execution;
 import grit.stockIt.domain.matching.dto.LimitOrderFillEvent;
 import grit.stockIt.domain.matching.event.LimitOrderFillEventMessage;
 import grit.stockIt.domain.matching.repository.RedisMarketDataRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.event.EventListener;
-import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
+
+import java.util.List;
 
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class LimitOrderEventPublisher {
 
-    private static final String LIMIT_EVENT_QUEUE_KEY_PATTERN = "sim:limit:event:%s";
-
-    private final StringRedisTemplate redisTemplate;
-    private final ObjectMapper objectMapper;
     private final LimitOrderMatchingService limitOrderMatchingService;
     private final RedisMarketDataRepository redisMarketDataRepository;
+
+    // 처리 결과. 실패해도 예외를 던지지 않으므로 호출자가 구분할 수단이 필요하다.
+    public record PublishResult(boolean processed, int filledOrders) {
+
+        static PublishResult failed() {
+            return new PublishResult(false, 0);
+        }
+    }
 
     @EventListener
     public void handleLimitOrderFill(LimitOrderFillEventMessage message) {
@@ -31,29 +36,19 @@ public class LimitOrderEventPublisher {
                 message.quantity(),
                 message.eventTimestamp()
         );
-        redisMarketDataRepository.updateLastPrice(message.stockCode(), message.price());
         publish(message.stockCode(), event);
     }
 
-    private void publish(String stockCode, LimitOrderFillEvent event) {
-        try {
-            String queueKey = queueKey(stockCode);
-            String payload = objectMapper.writeValueAsString(event);
-            redisTemplate.opsForList().rightPush(queueKey, payload);
-        } catch (Exception e) {
-            log.error("지정가 이벤트 직렬화 실패. stockCode={} event={}", stockCode, event, e);
-            return;
-        }
+    // 시세 갱신 → 종목 락 → 체결.
+    public PublishResult publish(String stockCode, LimitOrderFillEvent event) {
+        redisMarketDataRepository.updateLastPrice(stockCode, event.price());
 
         try {
-            limitOrderMatchingService.consumeNextEvent(stockCode);
+            List<Execution> executions = limitOrderMatchingService.match(stockCode, event);
+            return new PublishResult(true, executions.size());
         } catch (Exception e) {
-            log.error("지정가 이벤트 처리 실패. stockCode={} event={}", stockCode, event, e);
+            log.error("체결 이벤트 처리 실패. stockCode={} eventId={}", stockCode, event.eventId(), e);
+            return PublishResult.failed();
         }
-    }
-
-    private String queueKey(String stockCode) {
-        return LIMIT_EVENT_QUEUE_KEY_PATTERN.formatted(stockCode);
     }
 }
-
