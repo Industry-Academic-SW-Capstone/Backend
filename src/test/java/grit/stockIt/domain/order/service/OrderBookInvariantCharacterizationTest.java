@@ -4,7 +4,7 @@ import grit.stockIt.domain.account.entity.Account;
 import grit.stockIt.domain.account.repository.AccountRepository;
 import grit.stockIt.domain.contest.entity.Contest;
 import grit.stockIt.domain.contest.repository.ContestRepository;
-import grit.stockIt.domain.matching.repository.RedisOrderBookRepository;
+import grit.stockIt.domain.matching.repository.OrderBookRepository;
 import grit.stockIt.domain.member.entity.AuthProvider;
 import grit.stockIt.domain.member.entity.Member;
 import grit.stockIt.domain.member.repository.MemberRepository;
@@ -36,7 +36,6 @@ import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
@@ -47,12 +46,12 @@ import static org.mockito.Mockito.verify;
 // 오더북(afterCommit) 불변식은 실 커밋에 의존하므로 테스트 메서드에 @Transactional을 붙이지 않는다
 // (스프링 @Transactional 롤백 테스트는 afterCommit 콜백을 발화시키지 않아 계획에서 금지됨).
 // 격리 경화: 이 클래스는 OrderCancelQueryCharacterizationTest와 동일한
-// @SpyBean(redisOrderBookRepository/orderSubscriptionCoordinator) + @MockBean(StockDetailService) 구성이라
+// @SpyBean(orderBookRepository/orderSubscriptionCoordinator) + @MockBean(StockDetailService) 구성이라
 // 스프링이 캐시된 ApplicationContext(=동일 spy 싱글턴)를 재사용한다. @BeforeEach의 Mockito.reset()만으로는
 // 형제 클래스 간 invocation 누출을 완전히 배제할 수 없으므로, 클래스 종료 시 컨텍스트를 폐기해
 // 다음 클래스가 항상 새 spy 인스턴스를 받도록 구조적으로 격리한다(느리지만 결정적).
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
-@DisplayName("OrderService 오더북(afterCommit) 불변식 특성화 테스트 (Phase A, 프로덕션 무수정)")
+@DisplayName("OrderService 오더북 반영 불변식 특성화 테스트")
 class OrderBookInvariantCharacterizationTest extends IntegrationTestSupport {
 
     @Autowired
@@ -74,7 +73,7 @@ class OrderBookInvariantCharacterizationTest extends IntegrationTestSupport {
     private OrderRepository orderRepository;
 
     @SpyBean
-    private RedisOrderBookRepository redisOrderBookRepository;
+    private OrderBookRepository orderBookRepository;
 
     @SpyBean
     private OrderSubscriptionCoordinator orderSubscriptionCoordinator;
@@ -89,7 +88,7 @@ class OrderBookInvariantCharacterizationTest extends IntegrationTestSupport {
     void setUp() {
         // @SpyBean은 캐시된 컨텍스트에서 테스트 간 공유되므로, 각 테스트 시작 시 stub·호출기록을 초기화해
         // 이전 테스트의 addOrder/register 호출이나 doThrow 스텁이 누출되지 않게 한다(격리).
-        org.mockito.Mockito.reset(redisOrderBookRepository, orderSubscriptionCoordinator);
+        org.mockito.Mockito.reset(orderBookRepository, orderSubscriptionCoordinator);
         String uniqueId = UUID.randomUUID().toString().substring(0, 8);
         testMember = Member.builder()
                 .name("테스트 사용자 " + uniqueId)
@@ -153,7 +152,7 @@ class OrderBookInvariantCharacterizationTest extends IntegrationTestSupport {
 
     // ===== 27a: 정상 커밋 → 오더북 반영 =====
     @Test
-    @DisplayName("27a. 지정가 주문 정상 커밋 시 afterCommit 훅에서 addOrder가 1회 호출되어 오더북에 반영된다")
+    @DisplayName("27a. 지정가 주문이 커밋되면 오더북에서 조회된다")
     void afterCommit_normalCommit_addsOrderToOrderBook() {
         // given: 매수 주문에 필요한 충분한 현금을 가진 계좌
         Account account = createAccount(new BigDecimal("1000000"));
@@ -164,14 +163,13 @@ class OrderBookInvariantCharacterizationTest extends IntegrationTestSupport {
         // when
         var response = orderService.createLimitOrder(request);
 
-        // then: afterCommit이 커밋 시점에 동기 발화되어 addOrder가 정확히 1회 호출됨
-        verify(redisOrderBookRepository, times(1)).addOrder(any(Order.class));
-        assertThat(redisOrderBookRepository.exists(response.orderId(), stock.getCode(), OrderMethod.BUY)).isTrue();
+        // then: 주문 행이 곧 오더북이므로, 커밋되었다는 것이 곧 오더북에 올랐다는 뜻이다
+        assertThat(orderBookRepository.exists(response.orderId(), stock.getCode(), OrderMethod.BUY)).isTrue();
     }
 
     // ===== 27b: 강제(예외 기반) 롤백 → 오더북 미반영 =====
     @Test
-    @DisplayName("27b. 현금 부족으로 트랜잭션이 예외 롤백되면 afterCommit이 발화되지 않아 addOrder가 호출되지 않는다")
+    @DisplayName("27b. 현금 부족으로 롤백되면 주문이 저장되지 않아 오더북에도 없다")
     void afterCommit_exceptionBasedRollback_neverAddsOrderToOrderBook() {
         // given: 홀딩 가능 금액보다 부족한 현금 계좌 (BadRequestException 유발용, @Transactional 롤백 테스트 아님)
         Account account = createAccount(new BigDecimal("1"));
@@ -183,8 +181,7 @@ class OrderBookInvariantCharacterizationTest extends IntegrationTestSupport {
         org.junit.jupiter.api.Assertions.assertThrows(BadRequestException.class,
                 () -> orderService.createLimitOrder(request));
 
-        // then: afterCommit이 등록조차 되지 않으므로(예외가 save 이전에 발생) addOrder 미호출
-        verify(redisOrderBookRepository, never()).addOrder(any(Order.class));
+        // then: 주문 자체가 저장되지 않았으므로 오더북에 나타날 수 없다
         List<Order> orders = orderRepository.findAllPendingOrdersByAccountId(
                 account.getAccountId(),
                 List.of(grit.stockIt.domain.order.entity.OrderStatus.PENDING)
@@ -192,33 +189,29 @@ class OrderBookInvariantCharacterizationTest extends IntegrationTestSupport {
         assertThat(orders).isEmpty();
     }
 
-    // ===== 27c: addOrder 예외 → DB 커밋 유지, 오더북 미반영, 예외 미전파 =====
+    // ===== 27c: 구독 등록 실패 → 주문·오더북에는 영향 없음 =====
     @Test
-    @DisplayName("27c. afterCommit 훅 내 addOrder가 예외를 던져도 주문은 DB에 커밋되고 예외는 삼켜지며 오더북은 미반영된다")
-    void afterCommit_addOrderThrows_orderStillCommitted_exceptionSwallowed() {
+    @DisplayName("27c. 커밋 후 시세 구독 등록이 실패해도 주문은 커밋되고 오더북에 남는다")
+    void afterCommit_subscriptionRegistrationFails_orderStillInOrderBook() {
         // given
         Account account = createAccount(new BigDecimal("1000000"));
         Stock stock = createStock();
         var request = new LimitOrderCreateRequest(account.getAccountId(), stock.getCode(),
                 new BigDecimal("100"), 10, OrderMethod.BUY);
 
-        doThrow(new RuntimeException("simulated redis addOrder failure"))
-                .when(redisOrderBookRepository).addOrder(any(Order.class));
+        doThrow(new RuntimeException("simulated subscription failure"))
+                .when(orderSubscriptionCoordinator).registerLimitOrder(stock.getCode());
 
-        // when: addOrderToRedisAfterCommit의 catch(Exception)가 예외를 삼키므로 서비스 호출은 정상 반환됨
+        // when: 구독 등록 실패는 로그만 남기고 삼켜지므로 서비스 호출은 정상 반환된다
         var response = orderService.createLimitOrder(request);
 
         // then: 주문은 DB에 커밋되어 조회 가능
         Order saved = orderRepository.findById(response.orderId()).orElseThrow();
         assertThat(saved.getOrderId()).isEqualTo(response.orderId());
 
-        // then: addOrder는 호출되었으나(예외 발생) 오더북에는 실제로 반영되지 않음
-        verify(redisOrderBookRepository, times(1)).addOrder(any(Order.class));
-        assertThat(redisOrderBookRepository.exists(response.orderId(), stock.getCode(), OrderMethod.BUY)).isFalse();
-
-        // 특이사항: addOrderToRedisAfterCommit의 try 블록에서 addOrder 예외 시 이후의
-        // registerLimitOrder(stock.getCode()) 호출도 함께 스킵된다 (현재 동작 그대로 동결).
-        verify(orderSubscriptionCoordinator, never()).registerLimitOrder(stock.getCode());
+        // 오더북 반영은 주문 저장과 같은 행위라, 구독이라는 부수 기능의 실패와 무관하다.
+        // 별도 저장소에 오더북을 두던 구조에서는 여기서 오더북만 누락돼 유령 주문이 생겼다.
+        assertThat(orderBookRepository.exists(response.orderId(), stock.getCode(), OrderMethod.BUY)).isTrue();
     }
 
     // ===== 28: 시장가 KIS 실패 롤백 후 선구독 잔존 (버그 의심 a) =====
@@ -252,7 +245,5 @@ class OrderBookInvariantCharacterizationTest extends IntegrationTestSupport {
         Account reloaded = accountRepository.findById(account.getAccountId()).orElseThrow();
         assertThat(reloaded.getHoldAmount()).isEqualByComparingTo(BigDecimal.ZERO);
 
-        // 오더북에도 당연히 반영되지 않음(afterCommit 자체가 발화되지 않음)
-        verify(redisOrderBookRepository, never()).addOrder(any(Order.class));
     }
 }

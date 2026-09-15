@@ -7,7 +7,7 @@ import grit.stockIt.domain.account.repository.AccountStockRepository;
 import grit.stockIt.domain.execution.entity.Execution;
 import grit.stockIt.domain.execution.service.ExecutionService;
 import grit.stockIt.domain.matching.dto.LimitOrderFillEvent;
-import grit.stockIt.domain.matching.repository.RedisOrderBookRepository;
+import grit.stockIt.domain.matching.repository.OrderBookRepository;
 import grit.stockIt.domain.matching.dto.OrderBookEntry;
 import grit.stockIt.domain.order.entity.Order;
 import grit.stockIt.domain.order.entity.OrderMethod;
@@ -21,11 +21,9 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.ApplicationEventPublisher;
-import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import grit.stockIt.domain.order.event.TradeCompletionEvent;
-import com.fasterxml.jackson.databind.ObjectMapper;
 
 import jakarta.persistence.EntityManager;
 
@@ -34,7 +32,6 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.UUID;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -42,19 +39,16 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class LimitOrderExecutionService {
 
-    private static final String LIMIT_EVENT_QUEUE_KEY_PATTERN = "sim:limit:event:%s";
     private static final List<OrderStatus> ELIGIBLE_STATUSES = List.of(OrderStatus.PENDING, OrderStatus.PARTIALLY_FILLED);
 
     private final ExecutionService executionService;
     private final OrderRepository orderRepository;
-    private final RedisOrderBookRepository redisOrderBookRepository;
+    private final OrderBookRepository orderBookRepository;
     private final OrderSubscriptionCoordinator orderSubscriptionCoordinator;
     private final OrderHoldRepository orderHoldRepository;
     private final AccountRepository accountRepository;
     private final AccountStockRepository accountStockRepository;
     private final ApplicationEventPublisher eventPublisher;
-    private final StringRedisTemplate redisTemplate;
-    private final ObjectMapper objectMapper;
     private final EntityManager entityManager;
 
     private final LimitOrderMatchPlanner matchPlanner = new LimitOrderMatchPlanner();
@@ -71,7 +65,7 @@ public class LimitOrderExecutionService {
             return List.of();
         }
 
-        List<OrderBookEntry> candidates = redisOrderBookRepository.fetchMatchingEntries(
+        List<OrderBookEntry> candidates = orderBookRepository.fetchMatchingEntries(
                 stockCode,
                 event.orderMethod(),
                 event.price(),
@@ -84,7 +78,7 @@ public class LimitOrderExecutionService {
             return List.of();
         }
 
-        // Priority policy: LimitOrderMatchPlanner.sortByPriority (in-memory), RedisOrderBookRepository.fetchMatchingEntries (ZSET pre-sort/truncation), Order sentinel prices
+        // Priority policy: LimitOrderMatchPlanner.sortByPriority (in-memory), OrderBookRepository.fetchMatchingEntries (SQL ORDER BY + LIMIT), Order sentinel prices
         FillPlan plan = matchPlanner.plan(candidates, event.orderMethod(), remainingQuantity);
 
         if (plan.allocations().isEmpty()) {
@@ -112,13 +106,11 @@ public class LimitOrderExecutionService {
             if (order == null || command == null) {
                 log.warn("DB에서 주문을 찾을 수 없어 건너뜁니다. orderId={}", orderId);
                 if (command != null) {
-                    redisOrderBookRepository.removeOrder(orderId, stockCode, command.entry().orderMethod());
                     orderSubscriptionCoordinator.unregisterLimitOrder(stockCode);
                 }
                 continue;
             }
             if (!isActive(order)) {
-                redisOrderBookRepository.removeOrder(orderId, stockCode, order.getOrderMethod());
                 orderSubscriptionCoordinator.unregisterLimitOrder(stockCode);
                 continue;
             }
@@ -131,7 +123,6 @@ public class LimitOrderExecutionService {
             entityManager.refresh(order);
             if (!isActive(order)) {
                 log.debug("락 획득 후 주문이 이미 체결/취소됨. orderId={} status={}", orderId, order.getStatus());
-                redisOrderBookRepository.removeOrder(orderId, stockCode, order.getOrderMethod());
                 orderSubscriptionCoordinator.unregisterLimitOrder(stockCode);
                 continue;
             }
@@ -206,7 +197,6 @@ public class LimitOrderExecutionService {
                 }
             } catch (IllegalArgumentException ex) {
                 log.error("주문 체결 처리 중 오류 발생. orderId={} fillQuantity={}", orderId, actualFillQuantity, ex);
-                redisOrderBookRepository.removeOrder(orderId, stockCode, order.getOrderMethod());
                 orderSubscriptionCoordinator.unregisterLimitOrder(order.getStock().getCode());
             }
         }
@@ -215,38 +205,14 @@ public class LimitOrderExecutionService {
             orderRepository.saveAll(updatedOrders);
         }
 
-        // 트랜잭션 내부 마지막 줄로 DB 업데이트가 성공한 후에만 Redis에서 주문 삭제/수량 감소
-        // Redis 실패 시 예외를 던져서 DB 롤백하여 중복 체결 방지
-        try {
-            for (Long orderId : filledOrderIds) {
-                Order order = orderMap.get(orderId);
-                if (order == null) {
-                    continue;
-                }
-
-                if (order.getRemainingQuantity() <= 0) {
-                    // 전량 체결된 주문은 Redis에서 삭제
-                    redisOrderBookRepository.removeOrder(orderId, stockCode, order.getOrderMethod());
-                } else {
-                    // 부분 체결된 주문은 수량 업데이트
-                    redisOrderBookRepository.updateRemainingQuantity(
-                        orderId, stockCode, order.getOrderMethod(), order.getRemainingQuantity()
-                    );
-                }
-            }
-
-            // 소진된 주문도 Redis에서 삭제
-            for (OrderBookEntry entry : plan.exhaustedEntries()) {
-                redisOrderBookRepository.removeOrder(entry.orderId(), stockCode, entry.orderMethod());
-            }
-        } catch (Exception e) {
-            log.error("Redis 업데이트 실패로 DB 롤백: stockCode={} eventId={}", 
-                stockCode, event.eventId(), e);
-            throw e; // 예외를 던져서 DB 롤백
-        }
+        // 오더북에 따로 반영할 것이 없다. trade_order 행이 곧 오더북이라 위의 saveAll 로 끝났다.
+        //
+        // Redis ZSet 오더북을 쓰던 구조에서는 여기서 삭제·수량갱신을 한 번 더 써야 했고,
+        // 그 쓰기가 실패하면 중복 체결을 막으려 DB까지 롤백해야 했다. 이중 쓰기가 없으면
+        // 그 보상 로직도, 둘이 어긋난 상태를 되돌리는 복구 배치도 필요 없다.
 
         if (cancelledQuantity > 0) {
-            enqueueResidualEvent(stockCode, event, cancelledQuantity);
+            dropResidualQuantity(stockCode, event, cancelledQuantity);
         }
 
         if (remainingQuantity > 0) {
@@ -298,7 +264,6 @@ public class LimitOrderExecutionService {
 
     private void cancelDueToInsufficientFunds(Order order, String stockCode, Account account) {
         order.markCancelled();
-        redisOrderBookRepository.removeOrder(order.getOrderId(), stockCode, order.getOrderMethod());
         orderSubscriptionCoordinator.unregisterLimitOrder(stockCode);
         orderHoldRepository.findById(order.getOrderId())
                 .ifPresent(hold -> {
@@ -310,24 +275,17 @@ public class LimitOrderExecutionService {
                 });
     }
 
-    // 잔여 체결 이벤트 재큐잉
-    private void enqueueResidualEvent(String stockCode, LimitOrderFillEvent sourceEvent, int quantity) {
+    // 배분하지 못한 잔여 수량을 버린다.
+    //
+    // 매수 주문이 현금 부족으로 취소되면 그만큼의 체결 수량이 갈 곳을 잃는다. 원래는 새 이벤트로
+    // 만들어 큐 앞쪽에 되돌렸지만 큐가 없으면 되돌릴 곳이 없다. 같은 트랜잭션에서 재귀 처리하면
+    // 임계 구역이 늘어나고 종료 조건도 불분명해진다.
+    private void dropResidualQuantity(String stockCode, LimitOrderFillEvent sourceEvent, int quantity) {
         if (quantity <= 0) {
             return;
         }
-        LimitOrderFillEvent residualEvent = new LimitOrderFillEvent(
-                UUID.randomUUID().toString(),
-                sourceEvent.orderMethod(),
-                sourceEvent.price(),
-                quantity,
-                sourceEvent.eventTimestamp()
-        );
-        try {
-            String payload = objectMapper.writeValueAsString(residualEvent);
-            redisTemplate.opsForList().leftPush(buildEventQueueKey(stockCode), payload);
-        } catch (Exception e) {
-            log.error("잔여 체결 이벤트 재큐잉 실패. stockCode={} event={}", stockCode, residualEvent, e);
-        }
+        log.warn("배분하지 못한 잔여 수량을 버립니다(큐 없음). stockCode={} eventId={} quantity={}",
+                stockCode, sourceEvent.eventId(), quantity);
     }
 
     // 주문 체결 완료 후 주문 해제 처리
@@ -353,10 +311,6 @@ public class LimitOrderExecutionService {
                                 AccountStock.create(account, stock, fillQuantity, price)
                         )
                 );
-    }
-
-    private String buildEventQueueKey(String stockCode) {
-        return LIMIT_EVENT_QUEUE_KEY_PATTERN.formatted(stockCode);
     }
 
     // 체결 완료 이벤트 발행
