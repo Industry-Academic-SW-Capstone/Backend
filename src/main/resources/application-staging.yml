@@ -1,11 +1,5 @@
-# staging: 부하테스트 전용. 앱·RDS·Redis가 서로 다른 인스턴스에 있다.
-#
-# 왜 dev도 prod도 아닌 별도 프로파일인가
-#   dev   접속 대상이 compose 서비스명(db, redis)으로 하드코딩돼 있어
-#         POSTGRES_URL·SPRING_REDIS_HOST를 읽지 않는다 → 분리 인스턴스를 못 가리킨다.
-#   prod  환경변수는 제대로 읽지만 LoadTestController가 @Profile("!prod")다.
-#         부하 진입점이 사라져 측정 자체가 불가능하다.
-#   → "!prod"에 속하면서 접속 대상을 환경변수로 받는 프로파일이 따로 필요하다.
+# staging: 부하테스트 전용.
+
 spring:
   config:
     import: optional:file:.env[.properties]
@@ -23,10 +17,6 @@ spring:
 
   jpa:
     hibernate:
-      # 빈 RDS에 스키마를 만들 주체가 이것뿐이다.
-      # Flyway는 spring.flyway.enabled=false로 꺼져 있어 FlywayConfig 빈이 등록조차 되지 않고,
-      # 마이그레이션(V2·V6~V11)에도 기반 테이블을 만드는 스크립트가 없다.
-      # 실제 prod는 validate로 도는 차이가 있으므로 측정 결과에 기록할 것.
       ddl-auto: update
     show-sql: false
     properties:
@@ -36,13 +26,4 @@ spring:
 
   task:
     scheduling:
-      # 주기 배치가 측정을 오염시킨다. SchedulingDisabledConfig가 이 값을 보고
-      # no-op TaskScheduler를 주입해 @Scheduled 발화를 전부 막는다.
-      #
-      #   RankingService       보유 종목 현재가를 KIS 레이트 리미터(초당 25건)로 순차 조회 → 60초 톱니
-      #   RedisDBSyncService   미체결 주문마다 orderBookStore.exists() 호출.
-      #                        Redis면 ZSCORE, JPA면 DB 조회라 arm마다 비용이 다르다 —
-      #                        RDB arm에만 부하가 더해져 R0 vs R3 비교가 편향된다.
-      #
-      # 스케줄러를 껐다는 사실과 이유를 측정 결과에 함께 기록할 것.
       enabled: false

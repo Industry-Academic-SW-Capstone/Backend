@@ -17,12 +17,6 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
-// trade_order 테이블 자체가 오더북이다. 주문 행의 status와 filled_quantity가 곧 오더북 상태라
-// 등록·제거·잔여수량 갱신이라는 개념이 없고 조회만 있다. 오더북을 따로 관리하면 주문 원본과의
-// 이중 쓰기가 생기고, 어긋난 상태(유령 주문·주문 누락)를 되돌릴 복구 배치가 필요해진다.
-//
-// 대신 조회 비용을 떠안는다. 체결 1건마다 미체결 반대 주문을 가격·시간 우선으로 질의하므로,
-// 오더북이 깊어질수록 이 질의가 임계 구역 길이를 지배한다.
 @Slf4j
 @Repository
 @RequiredArgsConstructor

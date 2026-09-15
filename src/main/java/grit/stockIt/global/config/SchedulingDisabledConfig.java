@@ -13,16 +13,6 @@ import java.time.Instant;
 import java.util.concurrent.Delayed;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
-
-// spring.task.scheduling.enabled=false 일 때 모든 @Scheduled 발화를 막는다.
-// 테스트는 발화 0을 전제로 결정성을 유지하고, 측정 환경은 주기 배치가 수치를 흔들지 않아야 한다.
-//
-// 프로퍼티만으로는 부족하다. spring.task.scheduling.enabled 는 Spring Boot 표준 프로퍼티가 아니라
-// RankingService 가 Environment 에서 직접 읽어 자체 차단할 뿐이다. 그 코드가 없는 스케줄러는 돈다.
-//
-// no-op TaskScheduler 를 주입하는 이유: taskRegistrar.setScheduler(null) 로 두면 getScheduler()가
-// null 로 남아 Spring 이 다른 TaskScheduler 빈(WebSocketConfig 등)으로 폴백하거나 자체
-// ThreadPoolTaskScheduler 를 새로 만들어 결국 @Scheduled 가 발화한다.
 @Configuration
 @ConditionalOnProperty(name = "spring.task.scheduling.enabled", havingValue = "false", matchIfMissing = false)
 public class SchedulingDisabledConfig implements SchedulingConfigurer {

@@ -6,10 +6,6 @@ import java.util.List;
 
 // LimitOrderMatchPlanner.plan 의 결과물. 우선순위 정렬과 수량 배분 결과를 순수 데이터로 담는다.
 //
-// allocations 의 순서는 매칭 우선순위 순서이며, 호출자는 이 순서로 계좌 행 락을 잡는다.
-// 즉 이 순서가 곧 데드락 프로파일이고 반환되는 Execution 순서다. 재정렬하면 안 된다.
-//
-// unallocatedQuantity 는 받아줄 후보가 없어 배분하지 못하고 남은 이벤트 수량이다.
 public record FillPlan(
         List<FillAllocation> allocations,
         int unallocatedQuantity

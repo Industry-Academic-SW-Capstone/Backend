@@ -9,12 +9,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 // 주문이 걸린 종목의 실시간 시세 구독을 켜고 끈다.
-//
-// 오더북 등록은 하지 않는다. 주문 행(trade_order) 자체가 오더북이라 저장한 순간 올라간 것이다.
-//
-// 구독은 참조 카운트로 관리되는 자원이고 KIS WebSocket 구독이라는 외부 부수효과를 동반한다.
-// 커밋 전에 켰다가 롤백되면 카운트를 되돌릴 주체가 없어, 주문이 없는 종목의 구독이 영영 열린 채
-// 남는다. 그래서 커밋 후에만 켠다.
 @Slf4j
 @Service
 @RequiredArgsConstructor

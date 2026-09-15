@@ -11,10 +11,6 @@ import org.springframework.stereotype.Service;
 
 import java.util.List;
 
-// 체결 이벤트의 입구. KIS 실시간 피드와 부하 스크립트가 같은 메서드를 탄다.
-//
-// 시세를 갱신하고 곧바로 매칭을 호출한다. 이벤트를 보관하는 큐가 없어 수신 스레드가 체결이
-// 끝날 때까지 붙들려 있고, 처리 속도를 넘는 유입이 들어오면 수신 경로 자체가 막힌다.
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -44,7 +40,6 @@ public class LimitOrderEventPublisher {
     }
 
     // 시세 갱신 → 종목 락 → 체결.
-    // 락 대기가 상한을 넘기거나 DB 커넥션을 받지 못하면 이벤트를 처리하지 못한 채 끝난다.
     public PublishResult publish(String stockCode, LimitOrderFillEvent event) {
         redisMarketDataRepository.updateLastPrice(stockCode, event.price());
 
