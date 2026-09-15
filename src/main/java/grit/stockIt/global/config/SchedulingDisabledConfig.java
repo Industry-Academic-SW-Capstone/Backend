@@ -14,20 +14,18 @@ import java.util.concurrent.Delayed;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 
-/**
- * 테스트 환경에서 스케줄러를 비활성화하는 설정 클래스
- * application-test.yml의 spring.task.scheduling.enabled=false와 함께 사용
- *
- * 근본 교정(2026-08): 과거 taskRegistrar.setScheduler(null)은 ScheduledTaskRegistrar.getScheduler()가
- * null로 남아, Spring이 (WebSocketConfig 등이 제공하는) 다른 TaskScheduler @Bean으로 폴백하거나
- * 자체 ThreadPoolTaskScheduler를 새로 만들어 백그라운드 @Scheduled(RankingService.updateAllRankings 등)이
- * 테스트 컨텍스트 안에서 실제로 발화하게 만들었다 — 특성화 테스트의 결정성(발화 0)을 깨는 원인.
- * getScheduler()를 non-null로 유지하면서도 아무 것도 실행하지 않는 no-op TaskScheduler를 주입해
- * 폴백과 자체 재생성을 동시에 억제한다.
- */
+// spring.task.scheduling.enabled=false 일 때 모든 @Scheduled 발화를 막는다.
+// 테스트는 발화 0을 전제로 결정성을 유지하고, 측정 환경은 주기 배치가 수치를 흔들지 않아야 한다.
+//
+// 프로퍼티만으로는 부족하다. spring.task.scheduling.enabled 는 Spring Boot 표준 프로퍼티가 아니라
+// RankingService 가 Environment 에서 직접 읽어 자체 차단할 뿐이다. 그 코드가 없는 스케줄러는 돈다.
+//
+// no-op TaskScheduler 를 주입하는 이유: taskRegistrar.setScheduler(null) 로 두면 getScheduler()가
+// null 로 남아 Spring 이 다른 TaskScheduler 빈(WebSocketConfig 등)으로 폴백하거나 자체
+// ThreadPoolTaskScheduler 를 새로 만들어 결국 @Scheduled 가 발화한다.
 @Configuration
 @ConditionalOnProperty(name = "spring.task.scheduling.enabled", havingValue = "false", matchIfMissing = false)
-public class TestSchedulingConfig implements SchedulingConfigurer {
+public class SchedulingDisabledConfig implements SchedulingConfigurer {
 
     @Override
     public void configureTasks(ScheduledTaskRegistrar taskRegistrar) {
@@ -39,12 +37,8 @@ public class TestSchedulingConfig implements SchedulingConfigurer {
         return new NoOpTaskScheduler();
     }
 
-    /**
-     * 어떤 Runnable도 실제로 실행하지 않는 TaskScheduler.
-     * TaskScheduler의 모든 추상 오버로드(Trigger/Instant/Duration 기반)를 구현하며,
-     * 항상 non-null 완료 더미 ScheduledFuture를 반환한다 — 컨텍스트 종료 시
-     * ScheduledTaskRegistrar가 등록된 future.cancel()을 호출해도 NPE가 발생하지 않는다.
-     */
+    // 어떤 Runnable도 실행하지 않는 TaskScheduler. 항상 non-null 더미 ScheduledFuture 를 반환해,
+    // 컨텍스트 종료 시 ScheduledTaskRegistrar 가 future.cancel()을 호출해도 NPE 가 나지 않는다.
     private static final class NoOpTaskScheduler implements TaskScheduler {
 
         @Override
@@ -78,10 +72,7 @@ public class TestSchedulingConfig implements SchedulingConfigurer {
         }
     }
 
-    /**
-     * 항상 완료·취소 상태로 취급되는 더미 ScheduledFuture.
-     * cancel/get 호출이 어떤 상태에서 호출되어도 예외 없이 무해하게 처리된다.
-     */
+    // 항상 완료·취소 상태로 취급되는 더미 ScheduledFuture.
     private static final class NoOpScheduledFuture implements ScheduledFuture<Object> {
 
         static final NoOpScheduledFuture INSTANCE = new NoOpScheduledFuture();

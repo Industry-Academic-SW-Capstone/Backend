@@ -34,7 +34,7 @@ import java.util.List;
 @TestPropertySource(properties = "spring.task.scheduling.enabled=false")
 public abstract class IntegrationTestSupport {
 
-    static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>(DockerImageName.parse("postgres:15"))
+    static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>(DockerImageName.parse("postgres:17"))
             .withDatabaseName("test_database")
             .withUsername("test_user")
             .withPassword("test_password")
