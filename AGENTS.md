@@ -120,6 +120,7 @@ GitHub Actions(`.github/workflows/ci-cd.yml`): JDK 21 Temurin으로 빌드하고
 - **DTO**: `dto/` 패키지에 `{Action}Request` / `{Domain}Response`; Java record 선호; `Dto` 접미사 절대 금지. DTO **필드** 이름 변경은 API 계약을 바꿉니다(전역 SNAKE_CASE Jackson) — 클래스 이름 변경은 안전하지만 필드 이름 변경은 프론트엔드 협의 필요
 - **아키텍처**: 컨트롤러는 레포지토리를 직접 참조하면 안 됩니다(서비스를 경유)
 - **REST 경로**: `/api/{domain}` (예: `/api/members`, `/api/orders`)
+- **주석**: 코드로 표현할 수 없는 제약만 `//` 한 줄로. 클래스·메서드 위 설명 블록과 javadoc 형식(`@param`, `{@link}`, `<p>`) 금지 — 배경·트레이드오프는 PR 본문에
 - **검증**: 요청 바디에 JSR-303 `@Valid`
 - **API 문서**: SpringDoc OpenAPI 애노테이션(`@Operation`, `@Tag`) — Swagger UI는 `/swagger-ui/`
 - **Baseline**: 기존 위반은 억제돼 있습니다(`config/checkstyle/suppressions.xml`, `src/test/resources/archunit_store/`) — 여기에 신규 항목을 절대 추가하지 마세요
