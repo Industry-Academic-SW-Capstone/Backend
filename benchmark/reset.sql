@@ -13,6 +13,26 @@ TRUNCATE TABLE execution, order_hold, trade_order
 UPDATE account SET cash = 100000000000, hold_amount = 0;
 UPDATE account_stock SET quantity = 1000000000, hold_quantity = 0;
 
+-- 죽은 행 버전을 회수한다.
+--
+-- 왜 필요한가: 체결 1건마다 account 와 account_stock 을 갱신하는데, 부하 테스트는 계좌를
+-- 하나만 쓴다. 한 회차에 같은 행을 수만 번 갱신하므로 죽은 버전이 그만큼 쌓인다.
+-- PostgreSQL 의 UPDATE 는 새 버전을 추가하고 이전 버전을 표시만 하기 때문이다.
+-- autovacuum 은 부하 중에 활성 트랜잭션보다 오래된 것만 회수할 수 있어 따라오지 못한다.
+--
+-- 정리하지 않으면 살아 있는 행은 2개인데 테이블이 수백 페이지로 불어나고, 체결마다 하는
+-- 계좌 조회 비용이 회차를 거듭할수록 늘어난다. 실제로 연속 측정에서 단건 처리 시간이
+-- 8ms 에서 15ms 로 늘어 arm 간 비교가 오염됐다.
+--
+-- TRUNCATE 한 테이블은 파일을 통째로 비우므로 대상이 아니다.
+VACUUM (ANALYZE) account, account_stock;
+
 SELECT 'trade_order' AS t, count(*) FROM trade_order
 UNION ALL SELECT 'execution', count(*) FROM execution
 UNION ALL SELECT 'order_hold', count(*) FROM order_hold;
+
+-- 회수됐는지 확인. n_dead_tup 이 0에 가까워야 한다.
+SELECT relname, n_live_tup, n_dead_tup
+FROM pg_stat_user_tables
+WHERE relname IN ('account', 'account_stock')
+ORDER BY relname;
