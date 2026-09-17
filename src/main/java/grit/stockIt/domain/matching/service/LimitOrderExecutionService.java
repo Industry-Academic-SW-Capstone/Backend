@@ -155,14 +155,14 @@ public class LimitOrderExecutionService {
                 }
             }
 
-            // 매도(SELL)라면 로직 실행 전에 현재 평단가를 미리 조회해서 임시 저장
-            BigDecimal currentAvgPrice = BigDecimal.ZERO;
-            if (order.getOrderMethod() == OrderMethod.SELL) {
-                currentAvgPrice = accountStockRepository
-                        .findByAccountAndStock(account, order.getStock())
-                        .map(AccountStock::getAveragePrice)
-                        .orElse(BigDecimal.ZERO);
-            }
+            AccountStock holding = accountStockRepository
+                    .findByAccountAndStock(account, order.getStock())
+                    .orElse(null);
+
+            BigDecimal currentAvgPrice = order.getOrderMethod() == OrderMethod.SELL && holding != null
+                    ? holding.getAveragePrice()
+                    : BigDecimal.ZERO;
+
             try {
                 order.applyFill(actualFillQuantity);
                 Execution execution = executionService.record(order, event.price(), actualFillQuantity);
@@ -172,7 +172,7 @@ public class LimitOrderExecutionService {
                 publishExecutionFilledEvent(execution, order, stockCode, account);
 
                 // 계좌/재고 반영 (여기서 전량 매도 시 AccountStock의 평단가가 0이 될 수 있음)
-                handleAccountOnFill(order, event.price(), actualFillQuantity, account);
+                handleAccountOnFill(order, event.price(), actualFillQuantity, account, holding);
 
                 updatedOrders.add(order);
 
@@ -205,12 +205,6 @@ public class LimitOrderExecutionService {
             orderRepository.saveAll(updatedOrders);
         }
 
-        // 오더북에 따로 반영할 것이 없다. trade_order 행이 곧 오더북이라 위의 saveAll 로 끝났다.
-        //
-        // Redis ZSet 오더북을 쓰던 구조에서는 여기서 삭제·수량갱신을 한 번 더 써야 했고,
-        // 그 쓰기가 실패하면 중복 체결을 막으려 DB까지 롤백해야 했다. 이중 쓰기가 없으면
-        // 그 보상 로직도, 둘이 어긋난 상태를 되돌리는 복구 배치도 필요 없다.
-
         if (cancelledQuantity > 0) {
             dropResidualQuantity(stockCode, event, cancelledQuantity);
         }
@@ -230,8 +224,9 @@ public class LimitOrderExecutionService {
     private record FillCommand(OrderBookEntry entry, int fillQuantity) {
     }
 
-    // 주문 체결 처리
-    private void handleAccountOnFill(Order order, BigDecimal price, int fillQuantity, Account account) {
+    // 주문 체결 처리. holding 은 호출자가 이미 읽은 보유종목이며, 없으면 null 이다.
+    private void handleAccountOnFill(Order order, BigDecimal price, int fillQuantity,
+                                     Account account, AccountStock holding) {
         BigDecimal fillAmount = price.multiply(BigDecimal.valueOf(fillQuantity));
 
         if (order.getOrderMethod() == OrderMethod.BUY) {
@@ -244,21 +239,19 @@ public class LimitOrderExecutionService {
                             },
                             () -> log.warn("OrderHold를 찾을 수 없습니다. orderId={}", order.getOrderId())
                     );
-            updateAccountStockOnBuy(account, order.getStock(), fillQuantity, price);
+            updateAccountStockOnBuy(account, order.getStock(), fillQuantity, price, holding);
             return;
         }
 
         if (order.getOrderMethod() == OrderMethod.SELL) {
             account.increaseCash(fillAmount);
-            accountStockRepository.findByAccountAndStock(account, order.getStock())
-                    .ifPresentOrElse(
-                            accountStock -> {
-                                accountStock.decreaseHoldQuantity(fillQuantity);
-                                accountStock.decreaseQuantity(fillQuantity);
-                            },
-                            () -> log.warn("AccountStock을 찾을 수 없습니다. orderId={} accountId={} stockCode={}",
-                                    order.getOrderId(), account.getAccountId(), order.getStock().getCode())
-                    );
+            if (holding == null) {
+                log.warn("AccountStock을 찾을 수 없습니다. orderId={} accountId={} stockCode={}",
+                        order.getOrderId(), account.getAccountId(), order.getStock().getCode());
+                return;
+            }
+            holding.decreaseHoldQuantity(fillQuantity);
+            holding.decreaseQuantity(fillQuantity);
         }
     }
 
@@ -301,16 +294,13 @@ public class LimitOrderExecutionService {
                 });
     }
 
-    private void updateAccountStockOnBuy(Account account, Stock stock, int fillQuantity, BigDecimal price) {
-        accountStockRepository.findByAccountAndStock(account, stock)
-                .ifPresentOrElse(
-                        accountStock -> {
-                            accountStock.increaseQuantity(fillQuantity, price);
-                        },
-                        () -> accountStockRepository.save(
-                                AccountStock.create(account, stock, fillQuantity, price)
-                        )
-                );
+    private void updateAccountStockOnBuy(Account account, Stock stock, int fillQuantity,
+                                         BigDecimal price, AccountStock holding) {
+        if (holding == null) {
+            accountStockRepository.save(AccountStock.create(account, stock, fillQuantity, price));
+            return;
+        }
+        holding.increaseQuantity(fillQuantity, price);
     }
 
     // 체결 완료 이벤트 발행
