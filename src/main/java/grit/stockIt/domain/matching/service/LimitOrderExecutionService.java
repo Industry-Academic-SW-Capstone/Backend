@@ -92,7 +92,7 @@ public class LimitOrderExecutionService {
         remainingQuantity = plan.unallocatedQuantity();
 
         List<Long> filledOrderIds = new ArrayList<>(fillCommands.keySet());
-        List<Order> orders = orderRepository.findAllById(filledOrderIds);
+        List<Order> orders = orderRepository.findAllByIdInWithStock(filledOrderIds);
         Map<Long, Order> orderMap = orders.stream()
                 .collect(Collectors.toMap(Order::getOrderId, order -> order));
 

@@ -160,7 +160,7 @@ class LimitOrderExecutionServiceTest {
 
         when(orderBookRepository.fetchMatchingEntries(stockCode, OrderMethod.SELL, event.price(), 100))
                 .thenReturn(List.of(orderBookEntry));
-        when(orderRepository.findAllById(anyList()))
+        when(orderRepository.findAllByIdInWithStock(anyList()))
                 .thenReturn(List.of(testBuyOrder));
         when(accountRepository.findByIdWithLock(1L))
                 .thenReturn(Optional.of(testAccount));
@@ -205,7 +205,7 @@ class LimitOrderExecutionServiceTest {
 
         when(orderBookRepository.fetchMatchingEntries(stockCode, OrderMethod.BUY, event.price(), 100))
                 .thenReturn(List.of(orderBookEntry));
-        when(orderRepository.findAllById(anyList()))
+        when(orderRepository.findAllByIdInWithStock(anyList()))
                 .thenReturn(List.of(testSellOrder));
         when(accountRepository.findByIdWithLock(1L))
                 .thenReturn(Optional.of(testAccount));
@@ -259,7 +259,7 @@ class LimitOrderExecutionServiceTest {
 
         when(orderBookRepository.fetchMatchingEntries(stockCode, OrderMethod.SELL, event.price(), 100))
                 .thenReturn(List.of(orderBookEntry));
-        when(orderRepository.findAllById(anyList()))
+        when(orderRepository.findAllByIdInWithStock(anyList()))
                 .thenReturn(List.of(testBuyOrder));
         when(accountRepository.findByIdWithLock(1L))
                 .thenReturn(Optional.of(partialAccount));
@@ -324,7 +324,7 @@ class LimitOrderExecutionServiceTest {
 
         when(orderBookRepository.fetchMatchingEntries(stockCode, OrderMethod.SELL, event.price(), 100))
                 .thenReturn(List.of(entry1, entry2));
-        when(orderRepository.findAllById(anyList()))
+        when(orderRepository.findAllByIdInWithStock(anyList()))
                 .thenAnswer(invocation -> {
                     List<Long> orderIds = invocation.getArgument(0);
                     List<Order> result = new java.util.ArrayList<>();
@@ -388,7 +388,7 @@ class LimitOrderExecutionServiceTest {
 
         // Then
         assertThat(executions).isEmpty();
-        verify(orderRepository, never()).findAllById(any());
+        verify(orderRepository, never()).findAllByIdInWithStock(any());
     }
 
     @Test
@@ -425,7 +425,7 @@ class LimitOrderExecutionServiceTest {
 
         when(orderBookRepository.fetchMatchingEntries(stockCode, OrderMethod.SELL, event.price(), 100))
                 .thenReturn(List.of(orderBookEntry));
-        when(orderRepository.findAllById(anyList()))
+        when(orderRepository.findAllByIdInWithStock(anyList()))
                 .thenReturn(List.of(buyOrder));
         when(accountRepository.findByIdWithLock(1L))
                 .thenReturn(Optional.of(poorAccount));
@@ -475,7 +475,7 @@ class LimitOrderExecutionServiceTest {
 
         when(orderBookRepository.fetchMatchingEntries(stockCode, OrderMethod.SELL, event.price(), 100))
                 .thenReturn(List.of(orderBookEntry));
-        when(orderRepository.findAllById(anyList()))
+        when(orderRepository.findAllByIdInWithStock(anyList()))
                 .thenReturn(List.of(buyOrder));
         when(accountRepository.findByIdWithLock(1L))
                 .thenReturn(Optional.of(account));
@@ -516,7 +516,7 @@ class LimitOrderExecutionServiceTest {
 
         when(orderBookRepository.fetchMatchingEntries(stockCode, OrderMethod.SELL, event.price(), 100))
                 .thenReturn(List.of(orderBookEntry));
-        when(orderRepository.findAllById(anyList()))
+        when(orderRepository.findAllByIdInWithStock(anyList()))
                 .thenReturn(List.of(testBuyOrder));
 
         // When
@@ -547,7 +547,7 @@ class LimitOrderExecutionServiceTest {
 
         when(orderBookRepository.fetchMatchingEntries(stockCode, OrderMethod.SELL, event.price(), 100))
                 .thenReturn(List.of(orderBookEntry));
-        when(orderRepository.findAllById(anyList()))
+        when(orderRepository.findAllByIdInWithStock(anyList()))
                 .thenReturn(List.of()); // DB에 주문 없음
 
         // When
@@ -608,7 +608,7 @@ class LimitOrderExecutionServiceTest {
 
         when(orderBookRepository.fetchMatchingEntries(stockCode, OrderMethod.SELL, event.price(), 100))
                 .thenReturn(List.of(orderBookEntry));
-        when(orderRepository.findAllById(anyList()))
+        when(orderRepository.findAllByIdInWithStock(anyList()))
                 .thenReturn(List.of(marketBuyOrder));
         when(accountRepository.findByIdWithLock(1L))
                 .thenReturn(Optional.of(testAccount));
@@ -655,7 +655,7 @@ class LimitOrderExecutionServiceTest {
 
         when(orderBookRepository.fetchMatchingEntries(stockCode, OrderMethod.BUY, event.price(), 100))
                 .thenReturn(List.of(orderBookEntry));
-        when(orderRepository.findAllById(anyList()))
+        when(orderRepository.findAllByIdInWithStock(anyList()))
                 .thenReturn(List.of(marketSellOrder));
         when(accountRepository.findByIdWithLock(1L))
                 .thenReturn(Optional.of(testAccount));
@@ -726,7 +726,7 @@ class LimitOrderExecutionServiceTest {
 
         when(orderBookRepository.fetchMatchingEntries(stockCode, OrderMethod.SELL, event.price(), 100))
                 .thenReturn(List.of(marketEntry, limitEntry));
-        when(orderRepository.findAllById(anyList()))
+        when(orderRepository.findAllByIdInWithStock(anyList()))
                 .thenAnswer(invocation -> {
                     List<Long> orderIds = invocation.getArgument(0);
                     List<Order> result = new java.util.ArrayList<>();
@@ -806,7 +806,7 @@ class LimitOrderExecutionServiceTest {
 
         when(orderBookRepository.fetchMatchingEntries(stockCode, OrderMethod.SELL, event.price(), 100))
                 .thenReturn(List.of(orderBookEntry));
-        when(orderRepository.findAllById(anyList()))
+        when(orderRepository.findAllByIdInWithStock(anyList()))
                 .thenReturn(List.of(marketBuyOrder));
         when(accountRepository.findByIdWithLock(1L))
                 .thenReturn(Optional.of(partialAccount));

@@ -161,7 +161,7 @@ class LimitOrderExecutionRefreshCharacterizationTest {
 
         when(orderBookRepository.fetchMatchingEntries(stockCode, OrderMethod.SELL, event.price(), 100))
                 .thenReturn(List.of(orderBookEntry));
-        when(orderRepository.findAllById(anyList()))
+        when(orderRepository.findAllByIdInWithStock(anyList()))
                 .thenReturn(List.of(buyOrder));
         when(accountRepository.findByIdWithLock(1L))
                 .thenReturn(Optional.of(testAccount));
@@ -203,7 +203,7 @@ class LimitOrderExecutionRefreshCharacterizationTest {
 
         when(orderBookRepository.fetchMatchingEntries(stockCode, OrderMethod.SELL, event.price(), 100))
                 .thenReturn(List.of(orderBookEntry));
-        when(orderRepository.findAllById(anyList()))
+        when(orderRepository.findAllByIdInWithStock(anyList()))
                 .thenReturn(List.of(buyOrder));
         when(accountRepository.findByIdWithLock(1L))
                 .thenReturn(Optional.of(testAccount));
@@ -240,7 +240,7 @@ class LimitOrderExecutionRefreshCharacterizationTest {
 
         when(orderBookRepository.fetchMatchingEntries(stockCode, OrderMethod.SELL, event.price(), 100))
                 .thenReturn(List.of(orderBookEntry));
-        when(orderRepository.findAllById(anyList()))
+        when(orderRepository.findAllByIdInWithStock(anyList()))
                 .thenReturn(List.of(buyOrder));
         when(accountRepository.findByIdWithLock(1L))
                 .thenReturn(Optional.of(testAccount));
