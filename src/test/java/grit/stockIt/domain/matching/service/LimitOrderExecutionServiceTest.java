@@ -20,7 +20,6 @@ import grit.stockIt.domain.order.repository.OrderHoldRepository;
 import grit.stockIt.domain.order.repository.OrderRepository;
 import grit.stockIt.domain.stock.entity.Stock;
 import grit.stockIt.global.websocket.manager.OrderSubscriptionCoordinator;
-import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -72,9 +71,6 @@ class LimitOrderExecutionServiceTest {
 
     @Mock
     private ApplicationEventPublisher eventPublisher;
-
-    @Mock
-    private EntityManager entityManager;
 
     @InjectMocks
     private LimitOrderExecutionService limitOrderExecutionService;

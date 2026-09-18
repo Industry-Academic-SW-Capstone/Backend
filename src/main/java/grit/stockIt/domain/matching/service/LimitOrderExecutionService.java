@@ -25,8 +25,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import grit.stockIt.domain.order.event.TradeCompletionEvent;
 
-import jakarta.persistence.EntityManager;
-
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -49,7 +47,6 @@ public class LimitOrderExecutionService {
     private final AccountRepository accountRepository;
     private final AccountStockRepository accountStockRepository;
     private final ApplicationEventPublisher eventPublisher;
-    private final EntityManager entityManager;
 
     private final LimitOrderMatchPlanner matchPlanner = new LimitOrderMatchPlanner();
     private final OrderCashConstraintCalculator cashConstraintCalculator = new OrderCashConstraintCalculator();
@@ -119,19 +116,10 @@ public class LimitOrderExecutionService {
             Account account = accountRepository.findByIdWithLock(order.getAccount().getAccountId())
                     .orElseThrow(() -> new IllegalStateException("계좌를 찾을 수 없습니다. accountId=" + order.getAccount().getAccountId()));
 
-            // Account 락 획득 후 Order를 DB에서 다시 읽어 최신 상태 확인 (동시성 보호)
-            entityManager.refresh(order);
-            if (!isActive(order)) {
-                log.debug("락 획득 후 주문이 이미 체결/취소됨. orderId={} status={}", orderId, order.getStatus());
-                orderSubscriptionCoordinator.unregisterLimitOrder(stockCode);
-                continue;
-            }
-
-            // 다른 트랜잭션이 부분 체결했을 수 있으므로 fillQuantity 재계산
-            int freshRemaining = order.getRemainingQuantity();
-            int desiredFillQuantity = Math.min(command.fillQuantity(), freshRemaining);
+            // 배분 계획이 오더북 조회 시점 기준이므로 잔여 수량으로 한 번 더 조인다.
+            int desiredFillQuantity = Math.min(command.fillQuantity(), order.getRemainingQuantity());
             if (desiredFillQuantity <= 0) {
-                log.debug("락 획득 후 잔여 수량 없음. orderId={} remaining={}", orderId, freshRemaining);
+                log.debug("잔여 수량 없음. orderId={} remaining={}", orderId, order.getRemainingQuantity());
                 continue;
             }
             int actualFillQuantity = desiredFillQuantity;
