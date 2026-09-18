@@ -2,11 +2,10 @@ package grit.stockIt.domain.matching.service;
 
 import grit.stockIt.domain.execution.entity.Execution;
 import grit.stockIt.domain.matching.dto.LimitOrderFillEvent;
+import grit.stockIt.domain.matching.lock.StockMatchingLock;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
-import jakarta.persistence.EntityManager;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -18,11 +17,8 @@ import java.util.concurrent.TimeUnit;
 @Service
 public class LimitOrderMatchingService {
 
-    // advisory 락 네임스페이스. 다른 용도의 advisory 락과 키가 겹치지 않게 한다.
-    private static final int MATCHING_LOCK_CLASS_ID = 1001;
-
     private final LimitOrderExecutionService limitOrderExecutionService;
-    private final EntityManager entityManager;
+    private final StockMatchingLock stockMatchingLock;
 
     // 락을 잡기까지 기다린 시간. 유입이 종목당 상한을 넘으면 이 값이 오른다.
     private final Timer lockWaitTimer;
@@ -31,15 +27,12 @@ public class LimitOrderMatchingService {
     // 처리량에서 역산하지 않고 직접 재야 무엇을 줄였을 때 상한이 움직이는지 확인할 수 있다.
     private final Timer settlementTimer;
 
-    @Value("${matching.lock.timeout:10s}")
-    private String lockTimeout;
-
     public LimitOrderMatchingService(
             LimitOrderExecutionService limitOrderExecutionService,
-            EntityManager entityManager,
+            StockMatchingLock stockMatchingLock,
             MeterRegistry meterRegistry) {
         this.limitOrderExecutionService = limitOrderExecutionService;
-        this.entityManager = entityManager;
+        this.stockMatchingLock = stockMatchingLock;
         this.lockWaitTimer = Timer.builder("matching.lock.wait")
                 .description("종목 락을 잡기까지 기다린 시간")
                 .publishPercentileHistogram()
@@ -64,7 +57,7 @@ public class LimitOrderMatchingService {
     public List<Execution> match(String stockCode, LimitOrderFillEvent event) {
         long lockStart = System.nanoTime();
         try {
-            acquireStockLock(stockCode);
+            stockMatchingLock.acquire(stockCode);
         } finally {
             lockWaitTimer.record(System.nanoTime() - lockStart, TimeUnit.NANOSECONDS);
         }
@@ -75,16 +68,5 @@ public class LimitOrderMatchingService {
         } finally {
             settlementTimer.record(System.nanoTime() - settlementStart, TimeUnit.NANOSECONDS);
         }
-    }
-
-    private void acquireStockLock(String stockCode) {
-        entityManager.createNativeQuery("SELECT set_config('lock_timeout', :timeout, true)")
-                .setParameter("timeout", lockTimeout)
-                .getSingleResult();
-
-        entityManager.createNativeQuery("SELECT pg_advisory_xact_lock(:classId, hashtext(:stockCode))")
-                .setParameter("classId", MATCHING_LOCK_CLASS_ID)
-                .setParameter("stockCode", stockCode)
-                .getSingleResult();
     }
 }
