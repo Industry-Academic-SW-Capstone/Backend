@@ -6,6 +6,7 @@ import grit.stockIt.domain.account.repository.AccountRepository;
 import grit.stockIt.domain.account.repository.AccountStockRepository;
 import grit.stockIt.domain.contest.entity.Contest;
 import grit.stockIt.domain.contest.repository.ContestRepository;
+import grit.stockIt.domain.matching.lock.StockMatchingLock;
 import grit.stockIt.domain.matching.repository.OrderBookRepository;
 import grit.stockIt.domain.member.entity.AuthProvider;
 import grit.stockIt.domain.member.entity.Member;
@@ -48,17 +49,18 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
 // OrderService Phase A 특성화: cancelOrder / getOrder / getPendingOrders / 인증 미보유 경로.
 // 현재 관찰 가능한 동작(버그 의심 b, f 포함)을 그대로 동결한다. 프로덕션 코드는 수정하지 않는다.
-// 격리 경화: 이 클래스는 OrderBookInvariantCharacterizationTest와 동일한
-// @SpyBean(orderBookRepository/orderSubscriptionCoordinator) 구성이라 스프링이 캐시된
-// ApplicationContext(=동일 spy 싱글턴)를 재사용한다. @BeforeEach의 Mockito.reset()만으로는 형제
-// 클래스 간 invocation 누출을 완전히 배제할 수 없으므로, 클래스 종료 시 컨텍스트를 폐기해 다음
-// 클래스가 항상 새 spy 인스턴스를 받도록 구조적으로 격리한다(느리지만 결정적).
+// 격리 경화: @SpyBean 구성이 겹치는 형제 클래스가 있으면 스프링이 캐시된 ApplicationContext
+// (=동일 spy 싱글턴)를 재사용한다. @BeforeEach의 Mockito.reset()만으로는 클래스 간 invocation
+// 누출을 완전히 배제할 수 없으므로, 클래스 종료 시 컨텍스트를 폐기해 다음 클래스가 항상 새 spy
+// 인스턴스를 받도록 구조적으로 격리한다(느리지만 결정적).
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 @DisplayName("OrderService 취소·조회·권한 특성화 테스트 (통합 테스트)")
 class OrderCancelQueryCharacterizationTest extends IntegrationTestSupport {
@@ -99,6 +101,9 @@ class OrderCancelQueryCharacterizationTest extends IntegrationTestSupport {
     @SpyBean
     private OrderSubscriptionCoordinator orderSubscriptionCoordinator;
 
+    @SpyBean
+    private StockMatchingLock stockMatchingLock;
+
     private Member member;
     private Account account;
     private Stock stock;
@@ -106,7 +111,7 @@ class OrderCancelQueryCharacterizationTest extends IntegrationTestSupport {
     @BeforeEach
     void setUp() {
         // @SpyBean은 캐시된 컨텍스트에서 테스트 간 공유되므로, 각 테스트 시작 시 호출기록을 초기화한다(격리).
-        org.mockito.Mockito.reset(orderBookRepository, orderSubscriptionCoordinator);
+        org.mockito.Mockito.reset(orderBookRepository, orderSubscriptionCoordinator, stockMatchingLock);
         String uniqueId = UUID.randomUUID().toString().substring(0, 8);
 
         member = memberRepository.save(Member.builder()
@@ -217,6 +222,10 @@ class OrderCancelQueryCharacterizationTest extends IntegrationTestSupport {
 
         // 버그 f 동결: remaining>0 취소 시 removeOrder/unregisterLimitOrder가 커밋 전 동기 호출된다.
         verify(orderSubscriptionCoordinator, times(1)).unregisterLimitOrder(stock.getCode());
+
+        // 취소는 오더북을 바꾸므로 체결과 같은 종목 락 아래에서 이뤄져야 한다.
+        // 이 락이 빠지면 체결 도중에 취소가 끼어들어 체결 커밋이 취소 상태를 덮어쓴다.
+        verify(stockMatchingLock, times(1)).acquire(eq(stock.getCode()), anyString());
     }
 
     // 16. PENDING(remaining>0) SELL 취소 — releaseSellHold로 AccountStock.holdQuantity 감소

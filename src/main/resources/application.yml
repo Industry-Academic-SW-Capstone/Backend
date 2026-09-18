@@ -26,6 +26,13 @@ spring:
     baseline-on-migrate: true
     init-sqls: []
 
+server:
+  tomcat:
+    mbeanregistry:
+      # 톰캣 스레드 지표(tomcat_threads_*)는 MBean 등록을 켜야 노출된다.
+      # 스레드 사용량을 상한(max-threads)과 함께 봐야 고갈 여부를 판단할 수 있다.
+      enabled: true
+
 management:
   endpoints:
     web:
@@ -53,6 +60,17 @@ management:
         http.server.requests: true
         jvm.memory.used: true
         process.cpu.usage: true
+        # 커넥션을 기다린 시간(acquire)과 쥐고 있던 시간(usage).
+        # 둘을 나눠 봐야 풀이 작아서 막힌 것인지, 한 번 잡은 커넥션을 오래 쥐어서 막힌 것인지 갈린다.
+        hikaricp.connections.acquire: true
+        hikaricp.connections.usage: true
+      # 버킷 범위를 커넥션 타임아웃과 맞춘다. 기본값은 범위가 넓어 버킷만 늘어난다.
+      minimum-expected-value:
+        hikaricp.connections.acquire: 1ms
+        hikaricp.connections.usage: 1ms
+      maximum-expected-value:
+        hikaricp.connections.acquire: 30s
+        hikaricp.connections.usage: 30s
       percentiles:
         http.server.requests: 0.5,0.95,0.99
         jvm.memory.used: 0.5,0.95,0.99
@@ -112,3 +130,4 @@ matching:
     # 종목 락 대기 상한. advisory 락은 기본이 무한 대기라 반드시 걸어야 한다.
     # 초과하면 예외로 떨어지고 matching.lock.timeouts 로 집계된다.
     timeout: ${MATCHING_LOCK_TIMEOUT:10s}
+    cancel-timeout: ${MATCHING_CANCEL_LOCK_TIMEOUT:3s}

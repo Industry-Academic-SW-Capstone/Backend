@@ -21,6 +21,11 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
            "WHERE o.orderId = :orderId")
     Optional<Order> findByIdWithStockAndAccount(@Param("orderId") Long orderId);
 
+    @Query("SELECT o FROM Order o " +
+           "JOIN FETCH o.stock s " +
+           "WHERE o.orderId IN :orderIds")
+    List<Order> findAllByIdInWithStock(@Param("orderIds") List<Long> orderIds);
+
     // 계좌의 대기주문 목록 조회
     @Query("SELECT o FROM Order o " +
            "JOIN FETCH o.stock s " +

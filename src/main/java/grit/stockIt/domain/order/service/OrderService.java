@@ -2,6 +2,7 @@ package grit.stockIt.domain.order.service;
 
 import grit.stockIt.domain.account.entity.Account;
 import grit.stockIt.domain.account.repository.AccountRepository;
+import grit.stockIt.domain.matching.lock.StockMatchingLock;
 import grit.stockIt.domain.order.dto.LimitOrderCreateRequest;
 import grit.stockIt.domain.order.dto.MarketOrderCreateRequest;
 import grit.stockIt.domain.order.dto.OrderResponse;
@@ -14,8 +15,10 @@ import grit.stockIt.domain.order.repository.OrderRepository;
 import grit.stockIt.domain.stock.entity.Stock;
 import grit.stockIt.domain.stock.repository.StockRepository;
 import grit.stockIt.global.exception.BadRequestException;
+import jakarta.persistence.EntityManager;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
@@ -34,6 +37,12 @@ public class OrderService {
     private final OrderPricingService orderPricingService;
     private final OrderHoldService orderHoldService;
     private final OrderSubscriptionService orderSubscriptionService;
+    private final StockMatchingLock stockMatchingLock;
+    private final EntityManager entityManager;
+
+    // 취소는 사용자가 기다리는 요청이라 체결보다 짧게 끊는다.
+    @Value("${matching.lock.cancel-timeout:3s}")
+    private String cancelLockTimeout;
 
     // 지정가 주문 생성
     @Transactional
@@ -146,6 +155,11 @@ public class OrderService {
                 .orElseThrow(() -> new BadRequestException("주문을 찾을 수 없습니다."));
 
         orderAuthorizationService.ensureAccountOwner(order.getAccount());
+
+        // 취소도 오더북을 바꾸므로 체결과 같은 락 아래에서 해야 한다. 락을 잡기 전에 읽은
+        // 상태는 그 사이 체결로 바뀌었을 수 있어 다시 읽는다.
+        stockMatchingLock.acquire(order.getStock().getCode(), cancelLockTimeout);
+        entityManager.refresh(order);
 
         if (order.getStatus() == OrderStatus.CANCELLED) {
             throw new BadRequestException("이미 취소된 주문입니다.");
