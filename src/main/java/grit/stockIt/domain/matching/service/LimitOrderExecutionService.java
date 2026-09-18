@@ -165,7 +165,8 @@ public class LimitOrderExecutionService {
                 updatedOrders.add(order);
 
                 if (order.getRemainingQuantity() <= 0) {
-                    finalizeFilledOrder(order, account);
+                    unsubscribeOnFill(order);
+                    releaseRemainingHold(order, account);
 
                     TradeCompletionEvent missionEvent = new TradeCompletionEvent(
                             account.getMember().getMemberId(),
@@ -269,9 +270,11 @@ public class LimitOrderExecutionService {
                 stockCode, sourceEvent.eventId(), quantity);
     }
 
-    // 주문 체결 완료 후 주문 해제 처리
-    private void finalizeFilledOrder(Order order, Account account) {
+    private void unsubscribeOnFill(Order order) {
         orderSubscriptionCoordinator.unregisterLimitOrder(order.getStock().getCode());
+    }
+
+    private void releaseRemainingHold(Order order, Account account) {
         orderHoldRepository.findById(order.getOrderId())
                 .ifPresent(hold -> {
                     BigDecimal remaining = hold.getHoldAmount();
