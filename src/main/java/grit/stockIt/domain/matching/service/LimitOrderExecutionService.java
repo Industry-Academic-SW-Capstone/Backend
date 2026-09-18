@@ -55,6 +55,13 @@ public class LimitOrderExecutionService {
 
     @Transactional
     public List<Execution> distributeEvent(String stockCode, LimitOrderFillEvent event) {
+        List<FillResult> results = fill(stockCode, event);
+        settle(stockCode, event, results);
+        return results.stream().map(FillResult::execution).toList();
+    }
+
+    // 체결. 계좌를 보지 않는다 — 체결 수량은 배분 계획과 주문 잔여 수량만으로 정해진다.
+    private List<FillResult> fill(String stockCode, LimitOrderFillEvent event) {
         int remainingQuantity = event.quantity();
         if (remainingQuantity <= 0) {
             log.warn("체결 이벤트 수량이 0 이하입니다. eventId={} quantity={}", event.eventId(), event.quantity());
@@ -92,7 +99,7 @@ public class LimitOrderExecutionService {
         Map<Long, Order> orderMap = orders.stream()
                 .collect(Collectors.toMap(Order::getOrderId, order -> order));
 
-        List<Execution> executions = new ArrayList<>();
+        List<FillResult> results = new ArrayList<>();
         List<Order> updatedOrders = new ArrayList<>();
 
         for (Long orderId : filledOrderIds) {
@@ -110,10 +117,6 @@ public class LimitOrderExecutionService {
                 continue;
             }
 
-            // 계좌를 한 번만 조회하고 락을 겁니다 (동일 주문 내 중복 락 획득 방지)
-            Account account = accountRepository.findByIdWithLock(order.getAccount().getAccountId())
-                    .orElseThrow(() -> new IllegalStateException("계좌를 찾을 수 없습니다. accountId=" + order.getAccount().getAccountId()));
-
             // 배분 계획이 오더북 조회 시점 기준이므로 잔여 수량으로 한 번 더 조인다.
             int desiredFillQuantity = Math.min(command.fillQuantity(), order.getRemainingQuantity());
             if (desiredFillQuantity <= 0) {
@@ -121,47 +124,17 @@ public class LimitOrderExecutionService {
                 continue;
             }
 
-            AccountStock holding = accountStockRepository
-                    .findByAccountAndStock(account, order.getStock())
-                    .orElse(null);
-
-            BigDecimal currentAvgPrice = order.getOrderMethod() == OrderMethod.SELL && holding != null
-                    ? holding.getAveragePrice()
-                    : BigDecimal.ZERO;
-
             try {
                 order.applyFill(desiredFillQuantity);
                 Execution execution = executionService.record(order, event.price(), desiredFillQuantity);
-                executions.add(execution);
 
-                // 체결 완료 알림 이벤트 발행
-                publishExecutionFilledEvent(execution, order, stockCode, account);
-
-                // 계좌/재고 반영 (여기서 전량 매도 시 AccountStock의 평단가가 0이 될 수 있음)
-                handleAccountOnFill(order, event.price(), desiredFillQuantity, account, holding);
+                boolean fullyFilled = order.getRemainingQuantity() <= 0;
+                if (fullyFilled) {
+                    unsubscribeOnFill(order);
+                }
 
                 updatedOrders.add(order);
-
-                if (order.getRemainingQuantity() <= 0) {
-                    unsubscribeOnFill(order);
-                    releaseRemainingHold(order, account);
-
-                    TradeCompletionEvent missionEvent = new TradeCompletionEvent(
-                            account.getMember().getMemberId(),
-                            account.getAccountId(),
-                            order.getStock().getCode(),
-                            order.getOrderMethod(),
-                            order.getQuantity(),         // 총 주문 수량
-                            event.price(),               // 체결 가격 (매도 단가)
-                            null,
-                            null,
-                            0,
-                            currentAvgPrice
-                    );
-                    // 미션 리스너는 AFTER_COMMIT이라 발행은 커밋 후 처리를 등록만 한다(체결에 영향 없음).
-                    eventPublisher.publishEvent(missionEvent);
-                    log.info("미션 시스템 이벤트 발행 (주문 완료 기준): MemberId={}", missionEvent.getMemberId());
-                }
+                results.add(new FillResult(order, execution, desiredFillQuantity, fullyFilled));
             } catch (IllegalArgumentException ex) {
                 log.error("주문 체결 처리 중 오류 발생. orderId={} fillQuantity={}", orderId, desiredFillQuantity, ex);
                 orderSubscriptionCoordinator.unregisterLimitOrder(order.getStock().getCode());
@@ -177,7 +150,39 @@ public class LimitOrderExecutionService {
                     event.eventId(), remainingQuantity, event.price());
         }
 
-        return executions;
+        return results;
+    }
+
+    // 정산. 계좌를 잠그고 현금·보유종목·홀딩을 반영한다.
+    private void settle(String stockCode, LimitOrderFillEvent event, List<FillResult> results) {
+        for (FillResult result : results) {
+            Order order = result.order();
+            try {
+                Account account = accountRepository.findByIdWithLock(order.getAccount().getAccountId())
+                        .orElseThrow(() -> new IllegalStateException("계좌를 찾을 수 없습니다. accountId=" + order.getAccount().getAccountId()));
+
+                AccountStock holding = accountStockRepository
+                        .findByAccountAndStock(account, order.getStock())
+                        .orElse(null);
+
+                // 전량 매도면 handleAccountOnFill 이 평단가를 0으로 만들므로 그 전에 담아둔다.
+                BigDecimal currentAvgPrice = order.getOrderMethod() == OrderMethod.SELL && holding != null
+                        ? holding.getAveragePrice()
+                        : BigDecimal.ZERO;
+
+                publishExecutionFilledEvent(result.execution(), order, stockCode, account);
+                handleAccountOnFill(order, event.price(), result.fillQuantity(), account, holding);
+
+                if (result.fullyFilled()) {
+                    releaseRemainingHold(order, account);
+                    publishTradeCompletionEvent(order, event, account, currentAvgPrice);
+                }
+            } catch (IllegalArgumentException ex) {
+                log.error("주문 정산 처리 중 오류 발생. orderId={} fillQuantity={}",
+                        order.getOrderId(), result.fillQuantity(), ex);
+                orderSubscriptionCoordinator.unregisterLimitOrder(order.getStock().getCode());
+            }
+        }
     }
 
     private boolean isActive(Order order) {
@@ -185,6 +190,11 @@ public class LimitOrderExecutionService {
     }
 
     private record FillCommand(OrderBookEntry entry, int fillQuantity) {
+    }
+
+    // fill 이 정산에 넘기는 결과. 트랜잭션을 가르면 엔티티가 준영속이 되므로
+    // 정산에 필요한 값은 체결 시점에 담아 넘긴다.
+    private record FillResult(Order order, Execution execution, int fillQuantity, boolean fullyFilled) {
     }
 
     // 주문 체결 처리. holding 은 호출자가 이미 읽은 보유종목이며, 없으면 null 이다.
@@ -240,6 +250,25 @@ public class LimitOrderExecutionService {
             return;
         }
         holding.increaseQuantity(fillQuantity, price);
+    }
+
+    private void publishTradeCompletionEvent(Order order, LimitOrderFillEvent event,
+                                            Account account, BigDecimal currentAvgPrice) {
+        TradeCompletionEvent missionEvent = new TradeCompletionEvent(
+                account.getMember().getMemberId(),
+                account.getAccountId(),
+                order.getStock().getCode(),
+                order.getOrderMethod(),
+                order.getQuantity(),
+                event.price(),
+                null,
+                null,
+                0,
+                currentAvgPrice
+        );
+        // 미션 리스너는 AFTER_COMMIT이라 발행은 커밋 후 처리를 등록만 한다(체결에 영향 없음).
+        eventPublisher.publishEvent(missionEvent);
+        log.info("미션 시스템 이벤트 발행 (주문 완료 기준): MemberId={}", missionEvent.getMemberId());
     }
 
     // 체결 완료 이벤트 발행
