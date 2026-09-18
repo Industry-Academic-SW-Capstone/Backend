@@ -49,7 +49,6 @@ public class LimitOrderExecutionService {
     private final ApplicationEventPublisher eventPublisher;
 
     private final LimitOrderMatchPlanner matchPlanner = new LimitOrderMatchPlanner();
-    private final OrderCashConstraintCalculator cashConstraintCalculator = new OrderCashConstraintCalculator();
 
     @Value("${matching.limit-order-fetch-size:100}")
     private int fetchSize;
@@ -95,7 +94,6 @@ public class LimitOrderExecutionService {
 
         List<Execution> executions = new ArrayList<>();
         List<Order> updatedOrders = new ArrayList<>();
-        int cancelledQuantity = 0;
 
         for (Long orderId : filledOrderIds) {
             Order order = orderMap.get(orderId);
@@ -122,26 +120,6 @@ public class LimitOrderExecutionService {
                 log.debug("잔여 수량 없음. orderId={} remaining={}", orderId, order.getRemainingQuantity());
                 continue;
             }
-            int actualFillQuantity = desiredFillQuantity;
-            BigDecimal fillPrice = event.price();
-
-            if (order.getOrderMethod() == OrderMethod.BUY) {
-                int affordableQuantity = cashConstraintCalculator.calculate(account.getCash(), fillPrice, desiredFillQuantity);
-                if (affordableQuantity <= 0) {
-                    log.warn("계좌 현금 부족으로 주문을 취소합니다. orderId={} accountId={} requiredUnitPrice={} cash={}",
-                            orderId, account.getAccountId(), fillPrice, account.getCash());
-                    cancelDueToInsufficientFunds(order, stockCode, account);
-                    updatedOrders.add(order);
-                    cancelledQuantity += desiredFillQuantity;
-                    continue;
-                }
-                actualFillQuantity = affordableQuantity;
-                
-                // 미체결 수량 처리
-                if (actualFillQuantity < desiredFillQuantity) {
-                    cancelledQuantity += (desiredFillQuantity - actualFillQuantity);
-                }
-            }
 
             AccountStock holding = accountStockRepository
                     .findByAccountAndStock(account, order.getStock())
@@ -152,15 +130,15 @@ public class LimitOrderExecutionService {
                     : BigDecimal.ZERO;
 
             try {
-                order.applyFill(actualFillQuantity);
-                Execution execution = executionService.record(order, event.price(), actualFillQuantity);
+                order.applyFill(desiredFillQuantity);
+                Execution execution = executionService.record(order, event.price(), desiredFillQuantity);
                 executions.add(execution);
 
                 // 체결 완료 알림 이벤트 발행
                 publishExecutionFilledEvent(execution, order, stockCode, account);
 
                 // 계좌/재고 반영 (여기서 전량 매도 시 AccountStock의 평단가가 0이 될 수 있음)
-                handleAccountOnFill(order, event.price(), actualFillQuantity, account, holding);
+                handleAccountOnFill(order, event.price(), desiredFillQuantity, account, holding);
 
                 updatedOrders.add(order);
 
@@ -185,17 +163,13 @@ public class LimitOrderExecutionService {
                     log.info("미션 시스템 이벤트 발행 (주문 완료 기준): MemberId={}", missionEvent.getMemberId());
                 }
             } catch (IllegalArgumentException ex) {
-                log.error("주문 체결 처리 중 오류 발생. orderId={} fillQuantity={}", orderId, actualFillQuantity, ex);
+                log.error("주문 체결 처리 중 오류 발생. orderId={} fillQuantity={}", orderId, desiredFillQuantity, ex);
                 orderSubscriptionCoordinator.unregisterLimitOrder(order.getStock().getCode());
             }
         }
 
         if (!updatedOrders.isEmpty()) {
             orderRepository.saveAll(updatedOrders);
-        }
-
-        if (cancelledQuantity > 0) {
-            dropResidualQuantity(stockCode, event, cancelledQuantity);
         }
 
         if (remainingQuantity > 0) {
@@ -242,32 +216,6 @@ public class LimitOrderExecutionService {
             holding.decreaseHoldQuantity(fillQuantity);
             holding.decreaseQuantity(fillQuantity);
         }
-    }
-
-    private void cancelDueToInsufficientFunds(Order order, String stockCode, Account account) {
-        order.markCancelled();
-        orderSubscriptionCoordinator.unregisterLimitOrder(stockCode);
-        orderHoldRepository.findById(order.getOrderId())
-                .ifPresent(hold -> {
-                    BigDecimal remaining = hold.getHoldAmount();
-                    if (remaining.signum() > 0) {
-                        account.decreaseHoldAmount(remaining);
-                    }
-                    hold.release();
-                });
-    }
-
-    // 배분하지 못한 잔여 수량을 버린다.
-    //
-    // 매수 주문이 현금 부족으로 취소되면 그만큼의 체결 수량이 갈 곳을 잃는다. 원래는 새 이벤트로
-    // 만들어 큐 앞쪽에 되돌렸지만 큐가 없으면 되돌릴 곳이 없다. 같은 트랜잭션에서 재귀 처리하면
-    // 임계 구역이 늘어나고 종료 조건도 불분명해진다.
-    private void dropResidualQuantity(String stockCode, LimitOrderFillEvent sourceEvent, int quantity) {
-        if (quantity <= 0) {
-            return;
-        }
-        log.warn("배분하지 못한 잔여 수량을 버립니다(큐 없음). stockCode={} eventId={} quantity={}",
-                stockCode, sourceEvent.eventId(), quantity);
     }
 
     private void unsubscribeOnFill(Order order) {
