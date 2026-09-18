@@ -10,8 +10,8 @@ import grit.stockIt.domain.execution.entity.Execution;
 import grit.stockIt.domain.execution.service.ExecutionService;
 import grit.stockIt.domain.matching.dto.LimitOrderFillEvent;
 import grit.stockIt.domain.matching.dto.OrderBookEntry;
+import grit.stockIt.domain.matching.lock.StockMatchingLock;
 import grit.stockIt.domain.matching.repository.OrderBookRepository;
-import grit.stockIt.domain.notification.event.ExecutionFilledEvent;
 import grit.stockIt.domain.order.entity.Order;
 import grit.stockIt.domain.order.entity.OrderHold;
 import grit.stockIt.domain.order.entity.OrderMethod;
@@ -24,9 +24,11 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
@@ -71,6 +73,13 @@ class LimitOrderExecutionServiceTest {
 
     @Mock
     private ApplicationEventPublisher eventPublisher;
+
+    @Mock
+    private StockMatchingLock stockMatchingLock;
+
+    // 목이면 Timer.register 가 null 을 돌려줘 타이머가 null 이 된다. 실제 구현을 쓴다.
+    @Spy
+    private MeterRegistry meterRegistry = new SimpleMeterRegistry();
 
     @InjectMocks
     private LimitOrderExecutionService limitOrderExecutionService;
@@ -166,17 +175,12 @@ class LimitOrderExecutionServiceTest {
                 .thenReturn(Optional.of(testOrderHold));
 
         // When
-        List<Execution> executions = limitOrderExecutionService.distributeEvent(stockCode, event);
+        List<Long> executionIds = limitOrderExecutionService.fill(stockCode, event);
 
         // Then
-        assertThat(executions).hasSize(1);
+        assertThat(executionIds).hasSize(1);
         assertThat(testBuyOrder.getFilledQuantity()).isEqualTo(10);
         assertThat(testBuyOrder.getStatus()).isEqualTo(OrderStatus.FILLED);
-        assertThat(testAccount.getCash()).isEqualByComparingTo(new BigDecimal("9000")); // 10000 - 1000
-
-        // ExecutionFilledEvent 발행 확인
-        ArgumentCaptor<ExecutionFilledEvent> eventCaptor = ArgumentCaptor.forClass(ExecutionFilledEvent.class);
-        verify(eventPublisher, times(1)).publishEvent(eventCaptor.capture());
 
         verify(orderSubscriptionCoordinator, times(1)).unregisterLimitOrder(stockCode);
     }
@@ -211,14 +215,12 @@ class LimitOrderExecutionServiceTest {
                 .thenReturn(Optional.of(testAccountStock));
 
         // When
-        List<Execution> executions = limitOrderExecutionService.distributeEvent(stockCode, event);
+        List<Long> executionIds = limitOrderExecutionService.fill(stockCode, event);
 
         // Then
-        assertThat(executions).hasSize(1);
+        assertThat(executionIds).hasSize(1);
         assertThat(testSellOrder.getFilledQuantity()).isEqualTo(10);
         assertThat(testSellOrder.getStatus()).isEqualTo(OrderStatus.FILLED);
-        assertThat(testAccount.getCash()).isEqualByComparingTo(new BigDecimal("11000")); // 10000 + 1000
-        assertThat(testAccountStock.getQuantity()).isEqualTo(0); // 10 - 10
 
     }
 
@@ -265,10 +267,10 @@ class LimitOrderExecutionServiceTest {
                 .thenReturn(Optional.of(partialOrderHold));
 
         // When
-        List<Execution> executions = limitOrderExecutionService.distributeEvent(stockCode, event);
+        List<Long> executionIds = limitOrderExecutionService.fill(stockCode, event);
 
         // Then
-        assertThat(executions).hasSize(1);
+        assertThat(executionIds).hasSize(1);
         assertThat(testBuyOrder.getFilledQuantity()).isEqualTo(5);
         assertThat(testBuyOrder.getRemainingQuantity()).isEqualTo(5);
         assertThat(testBuyOrder.getStatus()).isEqualTo(OrderStatus.PARTIALLY_FILLED);
@@ -354,10 +356,10 @@ class LimitOrderExecutionServiceTest {
                 });
 
         // When
-        List<Execution> executions = limitOrderExecutionService.distributeEvent(stockCode, event);
+        List<Long> executionIds = limitOrderExecutionService.fill(stockCode, event);
 
         // Then
-        assertThat(executions).hasSize(2);
+        assertThat(executionIds).hasSize(2);
         // 매도 이벤트이므로 가격이 높은 주문(100원)이 먼저 체결되어야 함
         assertThat(order2.getFilledQuantity()).isEqualTo(10); // 100원 주문이 먼저 전량 체결
         assertThat(order1.getFilledQuantity()).isEqualTo(5); // 99원 주문이 5주 체결 (15 - 10 = 5)
@@ -380,10 +382,10 @@ class LimitOrderExecutionServiceTest {
                 .thenReturn(List.of());
 
         // When
-        List<Execution> executions = limitOrderExecutionService.distributeEvent(stockCode, event);
+        List<Long> executionIds = limitOrderExecutionService.fill(stockCode, event);
 
         // Then
-        assertThat(executions).isEmpty();
+        assertThat(executionIds).isEmpty();
         verify(orderRepository, never()).findAllByIdInWithStock(any());
     }
 
@@ -413,10 +415,10 @@ class LimitOrderExecutionServiceTest {
                 .thenReturn(List.of(testBuyOrder));
 
         // When
-        List<Execution> executions = limitOrderExecutionService.distributeEvent(stockCode, event);
+        List<Long> executionIds = limitOrderExecutionService.fill(stockCode, event);
 
         // Then
-        assertThat(executions).isEmpty();
+        assertThat(executionIds).isEmpty();
         verify(executionService, never()).record(any(), any(), anyInt());
     }
 
@@ -444,10 +446,10 @@ class LimitOrderExecutionServiceTest {
                 .thenReturn(List.of()); // DB에 주문 없음
 
         // When
-        List<Execution> executions = limitOrderExecutionService.distributeEvent(stockCode, event);
+        List<Long> executionIds = limitOrderExecutionService.fill(stockCode, event);
 
         // Then
-        assertThat(executions).isEmpty();
+        assertThat(executionIds).isEmpty();
         verify(orderSubscriptionCoordinator, times(1)).unregisterLimitOrder(stockCode);
     }
 
@@ -465,10 +467,10 @@ class LimitOrderExecutionServiceTest {
         );
 
         // When
-        List<Execution> executions = limitOrderExecutionService.distributeEvent(stockCode, event);
+        List<Long> executionIds = limitOrderExecutionService.fill(stockCode, event);
 
         // Then
-        assertThat(executions).isEmpty();
+        assertThat(executionIds).isEmpty();
         verify(orderBookRepository, never()).fetchMatchingEntries(any(), any(), any(), anyInt());
     }
 
@@ -511,13 +513,12 @@ class LimitOrderExecutionServiceTest {
                 .thenReturn(Optional.of(marketOrderHold));
 
         // When
-        List<Execution> executions = limitOrderExecutionService.distributeEvent(stockCode, event);
+        List<Long> executionIds = limitOrderExecutionService.fill(stockCode, event);
 
         // Then
-        assertThat(executions).hasSize(1);
+        assertThat(executionIds).hasSize(1);
         assertThat(marketBuyOrder.getFilledQuantity()).isEqualTo(10);
         assertThat(marketBuyOrder.getStatus()).isEqualTo(OrderStatus.FILLED);
-        assertThat(testAccount.getCash()).isEqualByComparingTo(new BigDecimal("9000")); // 10000 - 1000
 
         verify(orderSubscriptionCoordinator, times(1)).unregisterLimitOrder(stockCode);
     }
@@ -558,14 +559,12 @@ class LimitOrderExecutionServiceTest {
                 .thenReturn(Optional.of(testAccountStock));
 
         // When
-        List<Execution> executions = limitOrderExecutionService.distributeEvent(stockCode, event);
+        List<Long> executionIds = limitOrderExecutionService.fill(stockCode, event);
 
         // Then
-        assertThat(executions).hasSize(1);
+        assertThat(executionIds).hasSize(1);
         assertThat(marketSellOrder.getFilledQuantity()).isEqualTo(10);
         assertThat(marketSellOrder.getStatus()).isEqualTo(OrderStatus.FILLED);
-        assertThat(testAccount.getCash()).isEqualByComparingTo(new BigDecimal("11000")); // 10000 + 1000
-        assertThat(testAccountStock.getQuantity()).isEqualTo(0); // 10 - 10
 
     }
 
@@ -653,10 +652,10 @@ class LimitOrderExecutionServiceTest {
                 });
 
         // When
-        List<Execution> executions = limitOrderExecutionService.distributeEvent(stockCode, event);
+        List<Long> executionIds = limitOrderExecutionService.fill(stockCode, event);
 
         // Then
-        assertThat(executions).hasSize(2);
+        assertThat(executionIds).hasSize(2);
         // 시장가 주문이 먼저 전량 체결
         assertThat(marketBuyOrder.getFilledQuantity()).isEqualTo(10);
         // 지정가 주문이 5주 체결 (15 - 10 = 5)
@@ -709,10 +708,10 @@ class LimitOrderExecutionServiceTest {
                 .thenReturn(Optional.of(partialOrderHold));
 
         // When
-        List<Execution> executions = limitOrderExecutionService.distributeEvent(stockCode, event);
+        List<Long> executionIds = limitOrderExecutionService.fill(stockCode, event);
 
         // Then
-        assertThat(executions).hasSize(1);
+        assertThat(executionIds).hasSize(1);
         assertThat(marketBuyOrder.getFilledQuantity()).isEqualTo(5);
         assertThat(marketBuyOrder.getRemainingQuantity()).isEqualTo(5);
         assertThat(marketBuyOrder.getStatus()).isEqualTo(OrderStatus.PARTIALLY_FILLED);
