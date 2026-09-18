@@ -1,19 +1,16 @@
 package grit.stockIt.domain.order.service;
 
-import grit.stockIt.domain.matching.repository.RedisMarketDataRepository;
 import grit.stockIt.domain.order.entity.Order;
 import grit.stockIt.domain.stock.service.StockDetailService;
 import grit.stockIt.global.exception.BadRequestException;
 import grit.stockIt.global.exception.UntradeableStockException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
-import java.util.Optional;
 
 // 주문 pricing + tradeability guard
 @Slf4j
@@ -22,47 +19,29 @@ import java.util.Optional;
 @Transactional(readOnly = true)
 public class OrderPricingService {
 
-    private final RedisMarketDataRepository redisMarketDataRepository;
     private final StockDetailService stockDetailService;
-
-    @Value("${order.market.hold-buffer-rate:0.05}")
-    private BigDecimal marketHoldBufferRate;
 
     public BigDecimal calculateHoldAmount(Order order) {
         return order.getPrice().multiply(BigDecimal.valueOf(order.getRemainingQuantity()));
     }
 
-    // 시장가 주문 홀딩 금액 계산
+    // 시장가는 체결가 상한이 없어 주문 시점에 체결 금액을 알 수 없다. 가격제한폭 상한가로 묶으면
+    // 체결가가 그 위로 갈 수 없으므로 지정가와 같은 "홀딩 >= 체결금액" 보장이 선다.
     public BigDecimal calculateMarketHoldAmount(String stockCode, int quantity) {
-        // 1. Redis 캐시에서 먼저 조회
-        BigDecimal lastPrice = redisMarketDataRepository.getLastPrice(stockCode)
-                .orElseGet(() -> {
-                    // 2. 캐시에 없으면 KIS API 호출
-                    log.info("캐시에 현재가가 없어 KIS API 호출: stockCode={}", stockCode);
-                    try {
-                        BigDecimal price = stockDetailService.getCurrentPrice(stockCode)
-                                .block(java.time.Duration.ofSeconds(5));
-                        if (price == null || price.signum() <= 0) {
-                            throw new BadRequestException("KIS API에서 현재가를 가져올 수 없습니다.");
-                        }
-                        // KIS API 결과는 StockDetailService에서 이미 Redis에 저장됨
-                        return price;
-                    } catch (Exception e) {
-                        log.error("KIS API 현재가 조회 실패: stockCode={}", stockCode, e);
-                        throw new BadRequestException("최근 체결가 정보를 찾을 수 없습니다.");
-                    }
-                });
+        BigDecimal upperLimitPrice;
+        try {
+            upperLimitPrice = stockDetailService.getUpperLimitPrice(stockCode)
+                    .block(java.time.Duration.ofSeconds(5));
+        } catch (Exception e) {
+            log.error("상한가 조회 실패: stockCode={}", stockCode, e);
+            throw new BadRequestException("상한가 정보를 찾을 수 없습니다.");
+        }
 
-        if (lastPrice.signum() <= 0) {
-            throw new BadRequestException("최근 체결가가 유효하지 않습니다.");
+        if (upperLimitPrice == null || upperLimitPrice.signum() <= 0) {
+            throw new BadRequestException("상한가가 유효하지 않습니다.");
         }
-        BigDecimal bufferRate = Optional.ofNullable(marketHoldBufferRate).orElse(BigDecimal.valueOf(0.05));
-        if (bufferRate.signum() < 0) {
-            bufferRate = BigDecimal.ZERO;
-        }
-        BigDecimal bufferFactor = BigDecimal.ONE.add(bufferRate);
-        BigDecimal baseAmount = lastPrice.multiply(BigDecimal.valueOf(quantity));
-        return baseAmount.multiply(bufferFactor).setScale(2, RoundingMode.UP);
+        // 올림한다 — 홀딩은 남는 쪽보다 모자라는 쪽이 위험하다.
+        return upperLimitPrice.multiply(BigDecimal.valueOf(quantity)).setScale(2, RoundingMode.UP);
     }
 
     // 거래 가능 종목인지 검증

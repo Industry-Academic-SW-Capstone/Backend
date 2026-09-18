@@ -6,7 +6,6 @@ import grit.stockIt.domain.account.repository.AccountRepository;
 import grit.stockIt.domain.account.repository.AccountStockRepository;
 import grit.stockIt.domain.contest.entity.Contest;
 import grit.stockIt.domain.contest.repository.ContestRepository;
-import grit.stockIt.domain.matching.repository.RedisMarketDataRepository;
 import grit.stockIt.domain.member.entity.AuthProvider;
 import grit.stockIt.domain.member.entity.Member;
 import grit.stockIt.domain.member.repository.MemberRepository;
@@ -40,7 +39,6 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import reactor.core.publisher.Mono;
 
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.util.List;
 import java.util.UUID;
 
@@ -91,9 +89,6 @@ class OrderCreateCharacterizationTest extends IntegrationTestSupport {
 
     @Autowired
     private AccountStockRepository accountStockRepository;
-
-    @Autowired
-    private RedisMarketDataRepository redisMarketDataRepository;
 
     @MockBean
     private StockDetailService stockDetailService;
@@ -371,17 +366,18 @@ class OrderCreateCharacterizationTest extends IntegrationTestSupport {
                 .hasMessage("존재하지 않는 종목입니다.");
     }
 
-    // ===== 8. 시장가 BUY 캐시적중 =====
+    // ===== 8. 시장가 BUY 성공 =====
 
     @Test
-    @DisplayName("createMarketOrder: BUY 캐시적중 시 lastPrice*qty*(1+buffer)로 홀딩금액이 계산된다")
-    void createMarketOrder_buyCacheHit() {
+    @DisplayName("createMarketOrder: BUY 홀딩금액은 상한가*수량이다")
+    void createMarketOrder_buyHoldsAtUpperLimitPrice() {
         Fixture fx = createFixture(new BigDecimal("1000000"));
         authenticateAs(memberEmail);
 
-        BigDecimal lastPrice = new BigDecimal("12345");
+        BigDecimal upperLimitPrice = new BigDecimal("91000");
         int quantity = 3;
-        redisMarketDataRepository.updateLastPrice(fx.stock().getCode(), lastPrice);
+        when(stockDetailService.getUpperLimitPrice(fx.stock().getCode()))
+                .thenReturn(Mono.just(upperLimitPrice));
 
         MarketOrderCreateRequest request = new MarketOrderCreateRequest(
                 fx.account().getAccountId(), fx.stock().getCode(), quantity, OrderMethod.BUY);
@@ -392,9 +388,7 @@ class OrderCreateCharacterizationTest extends IntegrationTestSupport {
         assertThat(response.status()).isEqualTo(OrderStatus.PENDING);
         assertThat(response.remainingQuantity()).isEqualTo(quantity);
 
-        BigDecimal expectedHold = lastPrice.multiply(BigDecimal.valueOf(quantity))
-                .multiply(new BigDecimal("1.05"))
-                .setScale(2, RoundingMode.UP);
+        BigDecimal expectedHold = upperLimitPrice.multiply(BigDecimal.valueOf(quantity));
 
         Account updated = accountRepository.findById(fx.account().getAccountId()).orElseThrow();
         assertThat(updated.getHoldAmount()).isEqualByComparingTo(expectedHold);
@@ -407,41 +401,15 @@ class OrderCreateCharacterizationTest extends IntegrationTestSupport {
         verify(orderSubscriptionCoordinator, times(2)).registerLimitOrder(fx.stock().getCode());
     }
 
-    // ===== 9. 시장가 BUY 캐시미스 -> KIS성공 =====
+    // ===== 10. 시장가 BUY 상한가 조회 실패 =====
 
     @Test
-    @DisplayName("createMarketOrder: BUY 캐시미스 시 KIS 현재가로 홀딩금액을 계산한다")
-    void createMarketOrder_buyCacheMissKisSuccess() {
+    @DisplayName("createMarketOrder: BUY 상한가 조회 실패 시 BadRequestException('상한가 정보를 찾을 수 없습니다.')")
+    void createMarketOrder_buyUpperLimitLookupFailure() {
         Fixture fx = createFixture(new BigDecimal("1000000"));
         authenticateAs(memberEmail);
 
-        BigDecimal kisPrice = new BigDecimal("20000");
-        int quantity = 2;
-        when(stockDetailService.getCurrentPrice(fx.stock().getCode())).thenReturn(Mono.just(kisPrice));
-
-        MarketOrderCreateRequest request = new MarketOrderCreateRequest(
-                fx.account().getAccountId(), fx.stock().getCode(), quantity, OrderMethod.BUY);
-
-        OrderResponse response = orderService.createMarketOrder(request);
-
-        BigDecimal expectedHold = kisPrice.multiply(BigDecimal.valueOf(quantity))
-                .multiply(new BigDecimal("1.05"))
-                .setScale(2, RoundingMode.UP);
-
-        Account updated = accountRepository.findById(fx.account().getAccountId()).orElseThrow();
-        assertThat(updated.getHoldAmount()).isEqualByComparingTo(expectedHold);
-        assertThat(response.status()).isEqualTo(OrderStatus.PENDING);
-    }
-
-    // ===== 10. 시장가 BUY 캐시미스 -> KIS실패 =====
-
-    @Test
-    @DisplayName("createMarketOrder: BUY 캐시미스 + KIS 실패 시 BadRequestException('최근 체결가 정보를 찾을 수 없습니다.')")
-    void createMarketOrder_buyCacheMissKisFailure() {
-        Fixture fx = createFixture(new BigDecimal("1000000"));
-        authenticateAs(memberEmail);
-
-        when(stockDetailService.getCurrentPrice(fx.stock().getCode()))
+        when(stockDetailService.getUpperLimitPrice(fx.stock().getCode()))
                 .thenReturn(Mono.error(new RuntimeException("KIS 오류")));
 
         MarketOrderCreateRequest request = new MarketOrderCreateRequest(
@@ -449,7 +417,7 @@ class OrderCreateCharacterizationTest extends IntegrationTestSupport {
 
         assertThatThrownBy(() -> orderService.createMarketOrder(request))
                 .isInstanceOf(BadRequestException.class)
-                .hasMessage("최근 체결가 정보를 찾을 수 없습니다.");
+                .hasMessage("상한가 정보를 찾을 수 없습니다.");
 
         assertThat(orderRepository.findByAccountIdAndStockCode(
                 fx.account().getAccountId(), fx.stock().getCode(), true, OrderStatus.CANCELLED)).isEmpty();
@@ -463,8 +431,8 @@ class OrderCreateCharacterizationTest extends IntegrationTestSupport {
         Fixture fx = createFixture(new BigDecimal("100"));
         authenticateAs(memberEmail);
 
-        BigDecimal lastPrice = new BigDecimal("50000");
-        redisMarketDataRepository.updateLastPrice(fx.stock().getCode(), lastPrice);
+        when(stockDetailService.getUpperLimitPrice(fx.stock().getCode()))
+                .thenReturn(Mono.just(new BigDecimal("50000")));
 
         MarketOrderCreateRequest request = new MarketOrderCreateRequest(
                 fx.account().getAccountId(), fx.stock().getCode(), 5, OrderMethod.BUY);
@@ -479,22 +447,23 @@ class OrderCreateCharacterizationTest extends IntegrationTestSupport {
                 fx.account().getAccountId(), fx.stock().getCode(), true, OrderStatus.CANCELLED)).isEmpty();
     }
 
-    // ===== 12. 시장가 BUY 캐시적중 무효가 =====
+    // ===== 12. 시장가 BUY 무효한 상한가 =====
 
     @Test
-    @DisplayName("createMarketOrder: 캐시 최근가가 0 이하이면 BadRequestException('최근 체결가가 유효하지 않습니다.')")
-    void createMarketOrder_buyCacheHitInvalidPrice() {
+    @DisplayName("createMarketOrder: 상한가가 0 이하이면 BadRequestException('상한가가 유효하지 않습니다.')")
+    void createMarketOrder_buyInvalidUpperLimitPrice() {
         Fixture fx = createFixture(new BigDecimal("1000000"));
         authenticateAs(memberEmail);
 
-        redisMarketDataRepository.updateLastPrice(fx.stock().getCode(), BigDecimal.ZERO);
+        when(stockDetailService.getUpperLimitPrice(fx.stock().getCode()))
+                .thenReturn(Mono.just(BigDecimal.ZERO));
 
         MarketOrderCreateRequest request = new MarketOrderCreateRequest(
                 fx.account().getAccountId(), fx.stock().getCode(), 3, OrderMethod.BUY);
 
         assertThatThrownBy(() -> orderService.createMarketOrder(request))
                 .isInstanceOf(BadRequestException.class)
-                .hasMessage("최근 체결가가 유효하지 않습니다.");
+                .hasMessage("상한가가 유효하지 않습니다.");
     }
 
     // ===== 13. 시장가 SELL 성공 =====
@@ -570,9 +539,10 @@ class OrderCreateCharacterizationTest extends IntegrationTestSupport {
 
         // 시장가 (별도 픽스처, 같은 인증 이메일)
         Fixture marketFx = createAdditionalFixture(limitFx.member(), new BigDecimal("1000000"));
-        BigDecimal lastPrice = new BigDecimal("15000");
+        BigDecimal upperLimitPrice = new BigDecimal("15000");
         int marketQty = 4;
-        redisMarketDataRepository.updateLastPrice(marketFx.stock().getCode(), lastPrice);
+        when(stockDetailService.getUpperLimitPrice(marketFx.stock().getCode()))
+                .thenReturn(Mono.just(upperLimitPrice));
         MarketOrderCreateRequest marketRequest = new MarketOrderCreateRequest(
                 marketFx.account().getAccountId(), marketFx.stock().getCode(), marketQty, OrderMethod.BUY);
         OrderResponse marketResponse = orderService.createMarketOrder(marketRequest);
@@ -581,9 +551,7 @@ class OrderCreateCharacterizationTest extends IntegrationTestSupport {
         OrderHold marketHold = orderHoldRepository.findById(marketResponse.orderId()).orElseThrow();
         assertThat(marketHold.getOrderId()).isEqualTo(marketResponse.orderId());
         assertThat(marketHold.getOrder().getOrderId()).isEqualTo(marketResponse.orderId());
-        BigDecimal expectedMarketHold = lastPrice.multiply(BigDecimal.valueOf(marketQty))
-                .multiply(new BigDecimal("1.05"))
-                .setScale(2, RoundingMode.UP);
+        BigDecimal expectedMarketHold = upperLimitPrice.multiply(BigDecimal.valueOf(marketQty));
         assertThat(marketHold.getHoldAmount()).isEqualByComparingTo(expectedMarketHold);
         Account marketAccount = accountRepository.findById(marketFx.account().getAccountId()).orElseThrow();
         assertThat(marketAccount.getHoldAmount()).isEqualByComparingTo(expectedMarketHold);
