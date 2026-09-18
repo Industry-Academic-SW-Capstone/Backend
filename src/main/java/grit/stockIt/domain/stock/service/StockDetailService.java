@@ -123,6 +123,41 @@ public class StockDetailService {
                 .doOnError(e -> log.error("현재가 조회 실패: stockCode={}", stockCode, e));
     }
 
+    // 시장가 주문의 홀딩 산정용. 상한가는 매매일 내내 고정이라 최근가보다 오래 캐시한다.
+    public Mono<BigDecimal> getUpperLimitPrice(String stockCode) {
+        return Mono.fromCallable(() -> redisMarketDataRepository.getUpperLimitPrice(stockCode))
+                .flatMap(cached -> cached
+                        .map(Mono::just)
+                        .orElseGet(() -> fetchUpperLimitPriceFromKis(stockCode)))
+                .doOnError(e -> log.error("상한가 조회 실패: stockCode={}", stockCode, e));
+    }
+
+    private Mono<BigDecimal> fetchUpperLimitPriceFromKis(String stockCode) {
+        return getStockPriceFromKis(stockCode)
+                .map(kisDetail -> {
+                    BigDecimal upperLimitPrice = parsePriceValue(kisDetail.maxPrice());
+                    if (upperLimitPrice == null) {
+                        throw new IllegalStateException("KIS API에서 상한가를 가져올 수 없습니다: " + stockCode);
+                    }
+                    redisMarketDataRepository.updateUpperLimitPrice(stockCode, upperLimitPrice);
+                    return upperLimitPrice;
+                });
+    }
+
+    // 가격은 0 이하일 수 없으므로 파싱 실패와 비정상 값을 모두 null 로 모은다.
+    private BigDecimal parsePriceValue(String value) {
+        if (value == null || value.trim().isEmpty()) {
+            return null;
+        }
+        try {
+            BigDecimal price = new BigDecimal(value.trim());
+            return price.signum() > 0 ? price : null;
+        } catch (NumberFormatException e) {
+            log.warn("가격 파싱 실패: {}", value);
+            return null;
+        }
+    }
+
     // KIS API에서 시장 데이터만 조회
     public Mono<MarketData> getMarketDataFromKis(String stockCode) {
         return getStockPriceFromKis(stockCode)
