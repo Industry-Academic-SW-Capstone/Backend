@@ -70,10 +70,5 @@ public class OrderHold extends BaseEntity {
             this.status = OrderHoldStatus.RELEASED;
         }
     }
-
-    public void release() {
-        this.holdAmount = BigDecimal.ZERO;
-        this.status = OrderHoldStatus.RELEASED;
-    }
 }
 

@@ -219,15 +219,15 @@ class OrderBookInvariantCharacterizationTest extends IntegrationTestSupport {
     @DisplayName("28(버그 a). 시장가 매수 시 registerLimitOrder는 save/afterCommit 이전에 직접 호출되어, "
             + "이후 현재가 조회 실패로 트랜잭션이 롤백돼도 구독 등록 호출은 잔존하고 unregister는 발생하지 않는다")
     void marketOrder_kisFailureRollback_subscriptionRegistrationLeaksAndNeverUnregistered() {
-        // given: 현재가 캐시 없음(신규 종목 코드) + KIS 현재가 조회 실패로 Mono.error
+        // given: 상한가 조회 실패로 Mono.error
         Account account = createAccount(new BigDecimal("1000000"));
         Stock stock = createStock();
         var request = new MarketOrderCreateRequest(account.getAccountId(), stock.getCode(), 10, OrderMethod.BUY);
 
-        org.mockito.Mockito.when(stockDetailService.getCurrentPrice(anyString()))
+        org.mockito.Mockito.when(stockDetailService.getUpperLimitPrice(anyString()))
                 .thenReturn(Mono.error(new RuntimeException("KIS API 장애(시뮬레이션)")));
 
-        // when / then: calculateMarketHoldAmount 내부에서 현재가 조회 실패 → BadRequestException → 트랜잭션 롤백
+        // when / then: calculateMarketHoldAmount 내부에서 상한가 조회 실패 → BadRequestException → 트랜잭션 롤백
         org.junit.jupiter.api.Assertions.assertThrows(BadRequestException.class,
                 () -> orderService.createMarketOrder(request));
 

@@ -44,11 +44,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 // 컨테이너·프로파일 설정은 IntegrationTestSupport 싱글턴을 상속 — 자체 @Container 선언은
 // reuse 활성 환경에서 같은 해시의 공유 컨테이너를 클래스 종료 시 stop시켜, 캐시된 다른
 // 테스트 컨텍스트를 전멸시키는 원인이었다(동일 설정이라 동작은 그대로).
-@DisplayName("LimitOrderMatchingService 동시성 제어 테스트 (통합 테스트)")
-class LimitOrderMatchingServiceConcurrencyTest extends IntegrationTestSupport {
+@DisplayName("LimitOrderFillCoordinator 동시성 제어 테스트 (통합 테스트)")
+class LimitOrderFillCoordinatorConcurrencyTest extends IntegrationTestSupport {
 
     @Autowired
-    private LimitOrderMatchingService limitOrderMatchingService;
+    private LimitOrderFillCoordinator limitOrderFillCoordinator;
 
     @Autowired
     private StringRedisTemplate redisTemplate;
@@ -189,10 +189,10 @@ class LimitOrderMatchingServiceConcurrencyTest extends IntegrationTestSupport {
         );
 
         // When
-        var executions = limitOrderMatchingService.match(stockCode, event);
+        int filledOrders = limitOrderFillCoordinator.processFill(stockCode, event).filledOrders();
 
         // Then
-        assertThat(executions).hasSize(1);
+        assertThat(filledOrders).isEqualTo(1);
         Order reloaded = orderRepository.findById(order.getOrderId()).orElseThrow();
         assertThat(reloaded.getFilledQuantity()).isEqualTo(10);
         assertThat(reloaded.getStatus()).isEqualTo(OrderStatus.FILLED);
@@ -233,9 +233,9 @@ class LimitOrderMatchingServiceConcurrencyTest extends IntegrationTestSupport {
                 ready.countDown();
                 try {
                     start.await();
-                    var executions = limitOrderMatchingService.match(stockCode, event);
+                    int filledOrders = limitOrderFillCoordinator.processFill(stockCode, event).filledOrders();
                     processedEvents.incrementAndGet();
-                    totalExecutions.addAndGet(executions.size());
+                    totalExecutions.addAndGet(filledOrders);
                 } catch (Exception e) {
                     exceptions.add(e);
                 } finally {

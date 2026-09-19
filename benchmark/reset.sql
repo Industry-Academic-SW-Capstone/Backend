@@ -6,7 +6,10 @@
 -- 지우지 않는 것: stock(종목 마스터), member, account, contest, mission 계열.
 -- 회차별 상태가 아니라 환경 구성이다.
 
-TRUNCATE TABLE execution, order_hold, trade_order
+-- settlement 을 명시한다. 운영에는 execution 에 외래키가 있어 CASCADE 가 딸려 지우지만,
+-- 스테이징은 ddl-auto 가 외래키를 만들지 않아 CASCADE 가 닿지 않는다. 빼먹으면 정산 행이
+-- 회차 간에 누적되고, 회차 후 미정산 집계가 이전 회차 찌꺼기까지 센다.
+TRUNCATE TABLE settlement, execution, order_hold, trade_order
     RESTART IDENTITY CASCADE;
 
 -- 시딩 계정 복원. 매도 시딩은 account_stock 보유분을, 매수는 cash를 소모한다.
@@ -29,7 +32,8 @@ VACUUM (ANALYZE) account, account_stock;
 
 SELECT 'trade_order' AS t, count(*) FROM trade_order
 UNION ALL SELECT 'execution', count(*) FROM execution
-UNION ALL SELECT 'order_hold', count(*) FROM order_hold;
+UNION ALL SELECT 'order_hold', count(*) FROM order_hold
+UNION ALL SELECT 'settlement', count(*) FROM settlement;
 
 -- 회수됐는지 확인. n_dead_tup 이 0에 가까워야 한다.
 SELECT relname, n_live_tup, n_dead_tup

@@ -2,6 +2,7 @@ package grit.stockIt.domain.order.repository;
 
 import grit.stockIt.domain.order.entity.Order;
 import grit.stockIt.domain.order.entity.OrderStatus;
+import grit.stockIt.domain.order.entity.OrderType;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
@@ -76,6 +77,17 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
             @Param("since") LocalDateTime since,
             @Param("statuses") List<OrderStatus> statuses,
             Pageable pageable
+    );
+
+    // 당일 만료 대상인 미체결 시장가 주문. 락을 주문마다 따로 잡으므로 식별자만 가져온다.
+    @Query("SELECT o.orderId FROM Order o " +
+           "WHERE o.orderType = :marketType " +
+           "AND o.status IN :statuses " +
+           "AND (o.quantity - o.filledQuantity) > 0 " +
+           "ORDER BY o.orderId ASC")
+    List<Long> findExpirableMarketOrderIds(
+            @Param("marketType") OrderType marketType,
+            @Param("statuses") List<OrderStatus> statuses
     );
 
     // 주문 ID 목록으로 이미 체결된 주문 ID 조회
