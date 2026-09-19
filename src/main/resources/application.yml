@@ -128,7 +128,7 @@ matching:
   limit-order-fetch-size: ${MATCHING_LIMIT_ORDER_FETCH_SIZE:100}
   lock:
     # 종목 락 대기 상한. advisory 락은 기본이 무한 대기라 반드시 걸어야 한다.
-    # 초과하면 예외로 떨어지고 matching.lock.timeouts 로 집계된다.
+    # 초과하면 예외로 떨어진다.
     timeout: ${MATCHING_LOCK_TIMEOUT:10s}
     cancel-timeout: ${MATCHING_CANCEL_LOCK_TIMEOUT:3s}
 
