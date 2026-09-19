@@ -1,8 +1,8 @@
 // 시나리오 A~D가 공유하는 인증·시딩·지표 코드.
 //
 // 부하 진입점은 POST /api/test/mock-execution 하나다. KIS 실시간 피드와 같은 메서드
-// (LimitOrderEventPublisher#publish)를 타므로 시세 갱신 → 종목별 락 → 정산 경로가
-// 그대로 실행된다.
+// (LimitOrderFillCoordinator#processFill)를 타므로 시세 갱신 → 체결(종목 락) → 정산
+// 경로가 그대로 실행된다.
 
 import http from 'k6/http';
 import { check, fail } from 'k6';

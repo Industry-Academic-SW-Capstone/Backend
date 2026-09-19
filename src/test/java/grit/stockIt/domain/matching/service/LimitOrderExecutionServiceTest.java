@@ -25,10 +25,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
-import io.micrometer.core.instrument.MeterRegistry;
-import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.mockito.Mock;
-import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
@@ -76,10 +73,6 @@ class LimitOrderExecutionServiceTest {
 
     @Mock
     private StockMatchingLock stockMatchingLock;
-
-    // 목이면 Timer.register 가 null 을 돌려줘 타이머가 null 이 된다. 실제 구현을 쓴다.
-    @Spy
-    private MeterRegistry meterRegistry = new SimpleMeterRegistry();
 
     @InjectMocks
     private LimitOrderExecutionService limitOrderExecutionService;

@@ -10,23 +10,21 @@ import grit.stockIt.domain.order.entity.Order;
 import grit.stockIt.domain.order.entity.OrderStatus;
 import grit.stockIt.domain.order.repository.OrderRepository;
 import grit.stockIt.global.websocket.manager.OrderSubscriptionCoordinator;
-import io.micrometer.core.instrument.MeterRegistry;
-import io.micrometer.core.instrument.Timer;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.Duration;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 @Slf4j
 @Service
+@RequiredArgsConstructor
 public class LimitOrderExecutionService {
 
     private static final List<OrderStatus> ELIGIBLE_STATUSES = List.of(OrderStatus.PENDING, OrderStatus.PARTIALLY_FILLED);
@@ -39,41 +37,8 @@ public class LimitOrderExecutionService {
 
     private final LimitOrderMatchPlanner matchPlanner = new LimitOrderMatchPlanner();
 
-    // 락을 잡기까지 기다린 시간. 유입이 종목당 상한을 넘으면 이 값이 오른다.
-    private final Timer lockWaitTimer;
-
-    // 락을 잡은 뒤 체결이 끝나기까지. 곧 임계 구역의 길이다.
-    // 정산이 다른 트랜잭션으로 빠지면서 이 타이머가 재는 구간도 체결까지로 좁아졌다.
-    private final Timer criticalSectionTimer;
-
     @Value("${matching.limit-order-fetch-size:100}")
     private int fetchSize;
-
-    public LimitOrderExecutionService(
-            ExecutionService executionService,
-            OrderRepository orderRepository,
-            OrderBookRepository orderBookRepository,
-            OrderSubscriptionCoordinator orderSubscriptionCoordinator,
-            StockMatchingLock stockMatchingLock,
-            MeterRegistry meterRegistry) {
-        this.executionService = executionService;
-        this.orderRepository = orderRepository;
-        this.orderBookRepository = orderBookRepository;
-        this.orderSubscriptionCoordinator = orderSubscriptionCoordinator;
-        this.stockMatchingLock = stockMatchingLock;
-        this.lockWaitTimer = Timer.builder("matching.lock.wait")
-                .description("종목 락을 잡기까지 기다린 시간")
-                .publishPercentileHistogram()
-                .minimumExpectedValue(Duration.ofMillis(1))
-                .maximumExpectedValue(Duration.ofSeconds(30))
-                .register(meterRegistry);
-        this.criticalSectionTimer = Timer.builder("matching.settlement")
-                .description("락을 잡은 뒤 체결이 끝나기까지 — 임계 구역 길이")
-                .publishPercentileHistogram()
-                .minimumExpectedValue(Duration.ofMillis(1))
-                .maximumExpectedValue(Duration.ofSeconds(30))
-                .register(meterRegistry);
-    }
 
     // 종목 락을 잡고 체결한다. 계좌를 보지 않는다 — 체결 수량은 배분 계획과 주문 잔여 수량만으로
     // 정해지므로, 정산에 필요한 계좌 조회·잠금이 이 트랜잭션에 들어오지 않는다.
@@ -81,19 +46,8 @@ public class LimitOrderExecutionService {
     // 락은 이 트랜잭션에 묶여 있어 커밋과 함께 풀린다. 커밋은 프록시가 하므로 반환 뒤에 일어난다.
     @Transactional
     public List<Long> fill(String stockCode, LimitOrderFillEvent event) {
-        long lockStart = System.nanoTime();
-        try {
-            stockMatchingLock.acquire(stockCode);
-        } finally {
-            lockWaitTimer.record(System.nanoTime() - lockStart, TimeUnit.NANOSECONDS);
-        }
-
-        long fillStart = System.nanoTime();
-        try {
-            return doFill(stockCode, event);
-        } finally {
-            criticalSectionTimer.record(System.nanoTime() - fillStart, TimeUnit.NANOSECONDS);
-        }
+        stockMatchingLock.acquire(stockCode);
+        return doFill(stockCode, event);
     }
 
     private List<Long> doFill(String stockCode, LimitOrderFillEvent event) {
