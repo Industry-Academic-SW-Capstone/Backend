@@ -124,3 +124,80 @@ SELECT
     round(avg(EXTRACT(EPOCH FROM (s.created_at - e.created_at)) * 1000)::numeric, 2) AS 평균_ms,
     round(max(EXTRACT(EPOCH FROM (s.created_at - e.created_at)) * 1000)::numeric, 2) AS 최대_ms
 FROM settlement s JOIN execution e ON e.execution_id = s.execution_id;
+
+\echo ''
+\echo '=== 상세 (위에서 0 이 아닌 검사만 행이 나온다) ==='
+
+-- ① 정산되지 않은 체결. 복구 배치가 집어야 할 대상이다.
+\echo '-- ① 미정산 체결'
+SELECT e.execution_id, e.order_id, e.account_id, e.quantity, e.created_at
+FROM execution e
+WHERE NOT EXISTS (SELECT 1 FROM settlement s WHERE s.execution_id = e.execution_id)
+ORDER BY e.execution_id LIMIT 20;
+
+-- ② 현금이 어긋난 계좌.
+--    정산건수가 0 이면 회차에 참여하지 않은 계좌다 — reset.sql 이 초기값을 맞춘 뒤
+--    새로 만들어진 계좌(k6 signup 등)는 기본 잔고를 가지므로 여기 걸린다. 픽스처 문제다.
+--    정산건수가 회차 체결 수와 같으면 거래 계좌이고, 그건 진짜 결함이다.
+\echo '-- ② 현금 불일치 (정산건수 0 이면 픽스처, 아니면 결함)'
+SELECT a.account_id,
+       a.cash                                         AS 현재,
+       100000000000 + COALESCE(s.delta, 0)            AS 기대,
+       a.cash - (100000000000 + COALESCE(s.delta, 0)) AS 차이,
+       COALESCE(s.n, 0)                               AS 정산건수
+FROM account a
+LEFT JOIN (
+    SELECT account_id, sum(cash_delta) AS delta, count(*) AS n
+    FROM settlement GROUP BY account_id
+) s ON s.account_id = a.account_id
+WHERE a.cash <> 100000000000 + COALESCE(s.delta, 0);
+
+-- ③ 보유 수량이 어긋난 행. 판정 기준은 ② 와 같다.
+\echo '-- ③ 보유수량 불일치'
+SELECT ast.account_id, ast.stock_code,
+       ast.quantity                                  AS 현재,
+       1000000000 + COALESCE(x.delta, 0)             AS 기대,
+       ast.quantity - (1000000000 + COALESCE(x.delta, 0)) AS 차이,
+       COALESCE(x.n, 0)                              AS 정산건수
+FROM account_stock ast
+LEFT JOIN (
+    SELECT s.account_id, e.stock_code, sum(s.quantity_delta) AS delta, count(*) AS n
+    FROM settlement s JOIN execution e ON e.execution_id = s.execution_id
+    GROUP BY s.account_id, e.stock_code
+) x ON x.account_id = ast.account_id AND x.stock_code = ast.stock_code
+WHERE ast.quantity <> 1000000000 + COALESCE(x.delta, 0);
+
+-- ④ 매도 홀딩이 샌 행.
+\echo '-- ④ 매도 홀딩 불일치'
+SELECT ast.account_id, ast.stock_code,
+       ast.hold_quantity        AS 현재,
+       COALESCE(o.remaining, 0) AS 살아있는_주문_잔여,
+       ast.hold_quantity - COALESCE(o.remaining, 0) AS 차이
+FROM account_stock ast
+LEFT JOIN (
+    SELECT account_id, stock_code, sum(quantity - filled_quantity) AS remaining
+    FROM trade_order
+    WHERE order_method = 'SELL' AND status IN ('PENDING', 'PARTIALLY_FILLED')
+    GROUP BY account_id, stock_code
+) o ON o.account_id = ast.account_id AND o.stock_code = ast.stock_code
+WHERE ast.hold_quantity <> COALESCE(o.remaining, 0);
+
+-- ⑥ 전량 체결됐는데 홀딩이 살아 있는 주문. 돈이 묶인 채 남는다.
+\echo '-- ⑥ 전량체결 후 홀딩 잔존'
+SELECT h.order_id, h.account_id, h.hold_amount, o.quantity, o.filled_quantity, o.status
+FROM order_hold h
+JOIN trade_order o ON o.order_id = h.order_id
+WHERE o.quantity <= o.filled_quantity AND h.hold_status = 'ACTIVE'
+ORDER BY h.order_id LIMIT 20;
+
+-- ⑦ 주문의 체결 수량이 체결 기록 합과 다른 주문.
+\echo '-- ⑦ 체결수량 불일치'
+SELECT o.order_id, o.status,
+       o.filled_quantity     AS 주문상_체결,
+       COALESCE(e.q, 0)      AS 체결기록_합,
+       o.filled_quantity - COALESCE(e.q, 0) AS 차이
+FROM trade_order o
+LEFT JOIN (SELECT order_id, sum(quantity) AS q FROM execution GROUP BY order_id) e
+       ON e.order_id = o.order_id
+WHERE o.filled_quantity <> COALESCE(e.q, 0)
+ORDER BY o.order_id LIMIT 20;
