@@ -8,6 +8,7 @@ import grit.stockIt.domain.execution.entity.Execution;
 import grit.stockIt.domain.execution.repository.ExecutionRepository;
 import grit.stockIt.domain.notification.event.ExecutionFilledEvent;
 import grit.stockIt.domain.order.entity.Order;
+import grit.stockIt.domain.order.entity.OrderHold;
 import grit.stockIt.domain.order.entity.OrderMethod;
 import grit.stockIt.domain.order.event.TradeCompletionEvent;
 import grit.stockIt.domain.order.repository.OrderHoldRepository;
@@ -109,10 +110,7 @@ public class ExecutionSettlementService {
             account.decreaseCash(fillAmount);
             orderHoldRepository.findById(order.getOrderId())
                     .ifPresentOrElse(
-                            hold -> {
-                                account.decreaseHoldAmount(fillAmount);
-                                hold.decreaseHoldAmount(fillAmount);
-                            },
+                            hold -> deductHold(account, hold, fillAmount),
                             () -> log.warn("OrderHold를 찾을 수 없습니다. orderId={}", order.getOrderId())
                     );
             increaseHolding(account, order.getStock(), fillQuantity, price, holding);
@@ -131,6 +129,22 @@ public class ExecutionSettlementService {
         }
     }
 
+    // 취소·만료가 먼저 홀딩을 풀었으면 뺄 것이 남아 있지 않다. 현금은 위에서 이미 차감했으므로
+    // 원장은 맞는다. 여기서 예외를 던지면 이 체결이 영구 미정산으로 남는다.
+    private void deductHold(Account account, OrderHold hold, BigDecimal fillAmount) {
+        BigDecimal deductible = fillAmount.min(hold.getHoldAmount()).min(account.getHoldAmount());
+        if (deductible.signum() <= 0) {
+            log.warn("정산 시점에 남은 홀딩이 없습니다. orderId={} fillAmount={}", hold.getOrderId(), fillAmount);
+            return;
+        }
+        account.decreaseHoldAmount(deductible);
+        hold.decreaseHoldAmount(deductible);
+        if (deductible.compareTo(fillAmount) < 0) {
+            log.warn("홀딩이 체결 금액보다 적어 남은 만큼만 차감했습니다. orderId={} fillAmount={} 차감={}",
+                    hold.getOrderId(), fillAmount, deductible);
+        }
+    }
+
     private void increaseHolding(Account account, Stock stock, int fillQuantity,
                                  BigDecimal price, AccountStock holding) {
         if (holding == null) {
@@ -140,14 +154,18 @@ public class ExecutionSettlementService {
         holding.increaseQuantity(fillQuantity, price);
     }
 
+    // 이 주문에 아직 정산되지 않은 다른 체결이 있으면 그 몫은 남긴다. 통째로 풀면 뒤늦게
+    // 정산될 체결이 뺄 것을 잃는다.
     private void releaseRemainingHold(Order order, Account account) {
         orderHoldRepository.findById(order.getOrderId())
                 .ifPresent(hold -> {
-                    BigDecimal remaining = hold.getHoldAmount();
-                    if (remaining.signum() > 0) {
-                        account.decreaseHoldAmount(remaining);
+                    BigDecimal pending = settlementRepository.sumUnsettledFillAmount(order.getOrderId());
+                    BigDecimal releasable = hold.getHoldAmount().subtract(pending).max(BigDecimal.ZERO)
+                            .min(account.getHoldAmount());
+                    if (releasable.signum() > 0) {
+                        account.decreaseHoldAmount(releasable);
+                        hold.decreaseHoldAmount(releasable);
                     }
-                    hold.release();
                 });
     }
 
