@@ -131,3 +131,13 @@ matching:
     # 초과하면 예외로 떨어지고 matching.lock.timeouts 로 집계된다.
     timeout: ${MATCHING_LOCK_TIMEOUT:10s}
     cancel-timeout: ${MATCHING_CANCEL_LOCK_TIMEOUT:3s}
+
+# 정산 복구
+settlement:
+  recovery:
+    # 체결은 커밋됐는데 정산이 실패해 남은 건을 다시 처리하는 주기.
+    interval: ${SETTLEMENT_RECOVERY_INTERVAL:60s}
+    # 방금 만들어진 체결은 정산이 아직 돌고 있을 수 있어 건드리지 않는다.
+    # 너무 짧으면 배치와 체결 직후 정산이 같은 건을 두고 부딪혀 한쪽이 헛돈다.
+    grace-period: ${SETTLEMENT_RECOVERY_GRACE_PERIOD:30s}
+    batch-size: ${SETTLEMENT_RECOVERY_BATCH_SIZE:100}

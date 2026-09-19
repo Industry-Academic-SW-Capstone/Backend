@@ -21,6 +21,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
+import java.util.List;
 
 // 체결 하나를 계좌에 반영한다. 체결 트랜잭션이 커밋된 뒤에 돌므로 종목 락 밖이고,
 // 여기서 쓰는 왕복은 종목당 상한에 영향을 주지 않는다.
@@ -40,11 +42,27 @@ public class ExecutionSettlementService {
 
     // 체결 하나가 한 트랜잭션이다. 한 건이 실패해도 나머지 정산이 막히지 않고,
     // 실패한 건만 복구 배치가 다시 집는다.
+    @Transactional(readOnly = true)
+    public List<Long> findUnsettledExecutionIds(LocalDateTime cutoff, int limit) {
+        return settlementRepository.findUnsettledExecutionIds(cutoff, limit);
+    }
+
+    @Transactional(readOnly = true)
+    public long countUnsettled(LocalDateTime cutoff) {
+        return settlementRepository.countUnsettled(cutoff);
+    }
+
     @Transactional
     public void settle(Long executionId) {
         Execution execution = executionRepository.findById(executionId).orElse(null);
         if (execution == null) {
             log.warn("정산할 체결을 찾을 수 없습니다. executionId={}", executionId);
+            return;
+        }
+
+        // 조회와 정산 사이에 다른 경로가 먼저 끝냈을 수 있다. 빠른 반환일 뿐이고
+        // 실제 방어선은 아래 INSERT 의 유니크 제약이다.
+        if (settlementRepository.existsByExecutionId(executionId)) {
             return;
         }
 
