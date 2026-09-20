@@ -54,6 +54,23 @@ export function defaultAccountId(token) {
   return accounts[0].account_id;
 }
 
+// 부하 계정 M개를 로그인해 {token, accountId} 목록으로 돌려준다.
+// benchmark/prepare-accounts.sh 가 만든 계정과 같은 규칙으로 이메일을 조립한다.
+export function loginUsers(count, opts) {
+  const o = opts || {};
+  const prefix = o.prefix || 'loadtest';
+  const domain = o.domain || 'stockit.local';
+  const password = o.password || 'loadtest1234';
+
+  const users = [];
+  for (let i = 1; i <= count; i++) {
+    const token = login(`${prefix}${i}@${domain}`, password);
+    users.push({ token, accountId: defaultAccountId(token) });
+  }
+  console.log(`부하 계정 ${users.length}개 로그인`);
+  return users;
+}
+
 // ── 오더북 시딩 ──────────────────────────────────────────────────
 // 반대 방향 주문이 없으면 체결이 일어나지 않아 측정이 무의미해진다(계획서 §5-A).
 //
@@ -86,13 +103,27 @@ export function defaultAccountId(token) {
 //   부족하면 중간부터 체결이 0건이 되고 그 구간 수치가 통째로 무효다.
 //   첫 실행 후 execution_count 로 반드시 확인할 것.
 export function seedOrderBook(token, accountId, stockCode, opts) {
+  return seedOrderBookAcross([{ token, accountId }], stockCode, opts);
+}
+
+// 한 종목의 오더북을 계좌 여러 개에 나눠 심는다. users 를 1개로 주면 단일 계좌 조건을
+// 그대로 재현하므로 대조군으로 쓸 수 있다.
+//
+// ★ 계좌를 가격과 어긋나게 배정해야 한다. 가격 호가 수(levels)와 계좌 수가 약수 관계면
+//   n % users.length 는 "한 호가 = 한 계좌"가 되어, 체결이 최저가부터 훑는 동안 같은 계좌만
+//   계속 맞는다. 계좌를 나눈 의미가 사라진다. 그래서 호가를 한 바퀴 돈 뒤에 계좌를 넘긴다.
+//
+// ★ accountOffset 은 종목마다 다르게 준다. 모든 종목이 같은 계좌에서 시작하면 종목 N개가
+//   동시에 같은 행을 잠근다 — 흩으려던 경합이 그대로 남는다.
+export function seedOrderBookAcross(users, stockCode, opts) {
   const count = opts.count;
   const basePrice = opts.price;
   const quantity = opts.quantity;
   const levels = opts.priceLevels || 1;      // 가격 호가 수
   const batchSize = opts.batchSize || 10;    // 동시 요청 수
-  const headers = authHeaders(token);
+  const offset = opts.accountOffset || 0;
   const url = `${BASE_URL}/api/orders/limit`;
+  const headersOf = users.map((u) => authHeaders(u.token));
 
   let placed = 0;
   let firstError = null;
@@ -100,19 +131,21 @@ export function seedOrderBook(token, accountId, stockCode, opts) {
   for (let i = 0; i < count; i += batchSize) {
     const requests = [];
     for (let j = 0; j < batchSize && i + j < count; j++) {
+      const n = i + j;
+      const u = (Math.floor(n / levels) + offset) % users.length;
       requests.push({
         method: 'POST',
         url: url,
         // 가격을 여러 호가에 분산한다. 전부 같은 가격이면 정렬할 게 없어
         // 인덱스의 price 컬럼이 의미를 갖지 못한다.
         body: JSON.stringify({
-          account_id: accountId,
+          account_id: users[u].accountId,
           stock_code: stockCode,
-          price: basePrice + ((i + j) % levels),
+          price: basePrice + (n % levels),
           quantity: quantity,
           order_method: 'SELL',
         }),
-        params: { headers },
+        params: { headers: headersOf[u] },
       });
     }
 
@@ -132,7 +165,7 @@ export function seedOrderBook(token, accountId, stockCode, opts) {
 
   console.log(
     `오더북 시딩: ${placed}/${count}건 ` +
-      `(종목=${stockCode} 가격=${basePrice}~${basePrice + levels - 1} 수량=${quantity})`,
+      `(종목=${stockCode} 가격=${basePrice}~${basePrice + levels - 1} 수량=${quantity} 계좌=${users.length})`,
   );
   if (placed === 0) {
     fail(`시딩된 주문이 0건이다 (${firstError})\n보유분(account_stock)과 종목 적재를 확인할 것`);
