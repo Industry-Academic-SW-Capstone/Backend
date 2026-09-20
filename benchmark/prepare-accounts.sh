@@ -20,7 +20,13 @@
 set -euo pipefail
 
 N="${1:-50}"
-BASE_URL="${BASE_URL:-http://localhost:8080}"
+ENV_FILE="${ENV_FILE:-.env}"
+[ -f "$ENV_FILE" ] || { echo "$ENV_FILE 없음. 저장소 루트에서 실행할 것"; exit 1; }
+get() { grep "^$1=" "$ENV_FILE" | cut -d= -f2-; }
+
+# ops 서버에서 도는 스크립트라 앱은 사설 IP 로 찾아간다. reset.sh · prepare-stocks.sh 와
+# 같은 방식으로 .env 의 APP_HOST 를 읽는다.
+BASE_URL="${BASE_URL:-http://$(get APP_HOST):8080}"
 PREFIX="${LOAD_EMAIL_PREFIX:-loadtest}"
 DOMAIN="${LOAD_EMAIL_DOMAIN:-stockit.local}"
 PASSWORD="${LOAD_PASSWORD:-loadtest1234}"
