@@ -72,3 +72,30 @@ q "SELECT 'trade_order ' || count(*) FROM trade_order
    UNION ALL SELECT 'execution   ' || count(*) FROM execution
    UNION ALL SELECT 'settlement  ' || count(*) FROM settlement;" | sed 's/^/  /'
 echo "  (0 이 아니면 reset.sh 를 돌릴 것)"
+
+echo
+echo "== ⑦ RDS 왕복 =="
+# 왜 매번 재는가: 인스턴스를 껐다 켜면 같은 AZ 안에서도 다른 물리 호스트에 배치되고,
+# 그때마다 앱↔RDS 왕복이 0.2~0.5ms 사이에서 달라진다. 사설 IP 는 그대로라 겉으로는
+# 아무것도 안 바뀐 것처럼 보인다.
+#
+# 이 값이 상한을 직접 깎는다. 체결 트랜잭션은 락을 쥔 채 DB 에 약 4.3회 다녀오므로
+# 왕복 0.28ms 차이가 임계 구역 1.2ms 로 증폭되고, 상한이 280 → 210/s 로 움직였다
+# (2026-09-21 측정). 두 세션의 값으로 회귀하면
+#
+#     락 보유 = 2.73ms + 4.27 × 왕복
+#
+# 이라 왕복을 알면 배치에 안 흔들리는 W(순수 작업 시간)를 뽑을 수 있다.
+# 디스크를 안 건드리는 SELECT 1 로 재야 커밋 비용이 안 섞인다.
+RTT_SQL=$(mktemp)
+{ echo "BEGIN;"; seq 1000 | sed 's/.*/SELECT 1;/'; echo "COMMIT;"; } > "$RTT_SQL"
+rtt_t0=$(date +%s%N)
+psql -h "$RDS_HOST" -U "$PGUSER" -d "$PGDATABASE" -q -f "$RTT_SQL" > /dev/null
+rtt_t1=$(date +%s%N)
+rm -f "$RTT_SQL"
+
+awk -v a="$rtt_t0" -v b="$rtt_t1" 'BEGIN {
+    rtt = (b - a) / 1e6 / 1000
+    printf "  %.3f ms/왕복   (임계 구역 기여 %.2f ms = 4.27 × 왕복)\n", rtt, rtt * 4.27
+    printf "  회차 기록에 적을 것.  W = 1÷상한(ms) − %.2f\n", rtt * 4.27
+}'
