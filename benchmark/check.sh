@@ -59,8 +59,9 @@ echo "  loadtest 계정 $accounts 개"
 
 echo
 echo "== ⑤ 앱 응답 =="
-if curl -sf -m 5 "http://$APP_HOST:8080/actuator/health" > /dev/null; then
-  echo "  http://$APP_HOST:8080 OK"
+# 액추에이터는 8081(관리 포트)이다. 8080 은 부하 진입점만 받는다.
+if curl -sf -m 5 "http://$APP_HOST:8081/actuator/health" > /dev/null; then
+  echo "  관리 http://$APP_HOST:8081 OK  (부하 진입점은 8080)"
 else
   echo "  ⚠ 앱이 응답하지 않는다"
 fi

@@ -22,6 +22,9 @@ services:
     container_name: backend
     ports:
       - "8080:8080"
+      # 관리 포트(액추에이터). 부하 요청과 스레드 풀을 나누려고 분리했다
+      # — application-staging.yml 의 management.server.port 참고.
+      - "8081:8081"
     restart: unless-stopped
     # 힙을 인스턴스 크기에서 분리한다.
     # Dockerfile이 MaxRAMPercentage=75라 제한이 없으면 힙 상한이 "호스트 메모리의 75%"가 되어,

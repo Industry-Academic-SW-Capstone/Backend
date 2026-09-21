@@ -29,3 +29,8 @@ spring:
   task:
     scheduling:
       enabled: false
+
+# 액추에이터를 별도 커넥터·별도 스레드 풀로 분리한다.
+management:
+  server:
+    port: 8081

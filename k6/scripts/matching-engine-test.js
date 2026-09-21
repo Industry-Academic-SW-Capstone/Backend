@@ -66,7 +66,9 @@ export function setup() {
   console.log(`총 주문 수: ${NUM_ACCOUNTS * ORDERS_PER_ACCOUNT}`);
 
   // 헬스 체크
-  const healthRes = http.get(`${BASE_URL}/actuator/health`);
+  // 액추에이터는 관리 포트(8081)로 분리돼 있다 — application-staging.yml 참고.
+  const mgmtUrl = __ENV.MGMT_URL || BASE_URL.replace(':8080', ':8081');
+  const healthRes = http.get(`${mgmtUrl}/actuator/health`);
   if (healthRes.status !== 200) {
     console.error('서버 헬스 체크 실패!');
     return null;
