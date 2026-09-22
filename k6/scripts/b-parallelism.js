@@ -65,6 +65,9 @@ const EVENT_QTY = Number(__ENV.EVENT_QTY || 1);
 
 const PEAK = Number(__ENV.PEAK_RATE || 800);
 
+// 'api' 면 setup 이 HTTP 로 심고, 'sql' 이면 benchmark/seed-orderbook.sql 이 이미 심었다고 본다.
+const SEED_MODE = (__ENV.SEED_MODE || 'api').toLowerCase();
+
 export const options = {
   scenarios: {
     parallelism: {
@@ -94,6 +97,15 @@ export const options = {
 
 export function setup() {
   const users = loginUsers(ACCOUNT_COUNT, { password: PASSWORD });
+
+  // SQL 로 미리 심었으면 건너뛴다. API 시딩은 주문 1건당 HTTP 1회라
+  // "이벤트 하나가 주문 하나를 비우는" 조건(주문 수 = 이벤트 수)을 만들 수 없다.
+  //   ./benchmark/seed-orderbook.sql 참고
+  if (SEED_MODE === 'sql') {
+    console.log(`종목 ${STOCKS.length}개 × 계좌 ${users.length}개 — 시딩은 SQL 로 이미 완료`);
+    return { tokens: users.map((u) => u.token), stocks: STOCKS };
+  }
+
   console.log(`종목 ${STOCKS.length}개 × 계좌 ${users.length}개, 종목당 ${SEED_COUNT}건 시딩`);
 
   STOCKS.forEach((stock, index) => {
