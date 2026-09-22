@@ -89,11 +89,9 @@ public interface AccountRepository extends JpaRepository<Account, Long> {
     Optional<Account> findByMemberIdAndContestId(@Param("memberId") Long memberId, 
                                                  @Param("contestId") Long contestId);
 
-    // 계좌 조회 (비관적 락, Member와 Contest 함께 조회하여 N+1 문제 방지)
+    // 연관을 조인하지 않는다. PostgreSQL 은 잠글 테이블을 명시하지 않은 행 잠금을 FROM 절의 모든
+    // 테이블에 적용하므로, 조인하면 참가자 전원이 공유하는 대회 행까지 잠겨 전역 직렬화가 된다.
     @Lock(LockModeType.PESSIMISTIC_WRITE)
-    @Query("SELECT a FROM Account a " +
-           "JOIN FETCH a.member m " +
-           "JOIN FETCH a.contest c " +
-           "WHERE a.accountId = :accountId")
+    @Query("SELECT a FROM Account a WHERE a.accountId = :accountId")
     Optional<Account> findByIdWithLock(@Param("accountId") Long accountId);
 }
