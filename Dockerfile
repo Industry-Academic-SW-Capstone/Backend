@@ -1,3 +1,10 @@
+# 런타임 베이스. 기본은 JRE 이고 운영 배포는 이 값을 그대로 쓴다.
+# 프로파일링 회차만 JDK 로 덮어쓴다(jcmd·jfr 이 JRE 에는 없다) — docker-compose.profile.yml 참고.
+#
+# ★ FROM 에서 쓰는 ARG 는 첫 FROM 앞에 선언해야 한다. 빌드 스테이지 안에서 선언하면
+#   그 스테이지에만 유효해서 뒤쪽 FROM 에서는 빈 값이 된다.
+ARG RUNTIME_IMAGE=eclipse-temurin:21-jre-alpine
+
 FROM eclipse-temurin:21-jdk AS build
 WORKDIR /app
 
@@ -12,9 +19,6 @@ RUN chmod +x ./gradlew && ./gradlew dependencies
 COPY . .
 RUN ./gradlew build -x test
 
-# 런타임 베이스. 기본은 JRE 이고 운영 배포는 이 값을 그대로 쓴다.
-# 프로파일링 회차만 JDK 로 덮어쓴다(jcmd·jfr 이 JRE 에는 없다) — docker-compose.profile.yml 참고.
-ARG RUNTIME_IMAGE=eclipse-temurin:21-jre-alpine
 FROM ${RUNTIME_IMAGE}
 WORKDIR /app
 
