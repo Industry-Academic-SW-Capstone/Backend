@@ -12,7 +12,10 @@ RUN chmod +x ./gradlew && ./gradlew dependencies
 COPY . .
 RUN ./gradlew build -x test
 
-FROM eclipse-temurin:21-jre-alpine
+# 런타임 베이스. 기본은 JRE 이고 운영 배포는 이 값을 그대로 쓴다.
+# 프로파일링 회차만 JDK 로 덮어쓴다(jcmd·jfr 이 JRE 에는 없다) — docker-compose.profile.yml 참고.
+ARG RUNTIME_IMAGE=eclipse-temurin:21-jre-alpine
+FROM ${RUNTIME_IMAGE}
 WORKDIR /app
 
 # 보안을 위해 non-root 유저 생성 및 사용
