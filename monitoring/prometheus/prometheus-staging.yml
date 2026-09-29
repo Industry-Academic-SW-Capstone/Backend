@@ -8,7 +8,8 @@
 #   postgres-exporter / redis-exporter는 이 호스트(모니터링 서버)에서 함께 돌므로
 #   서비스명 그대로 둔다.
 #
-# 보안 그룹: 모니터링 호스트 → 앱 서버의 8080(actuator), 9100(node-exporter) 허용 필요.
+# 보안 그룹: 모니터링 호스트 → 앱 서버의 8081(액추에이터), 9100(node-exporter) 허용 필요.
+#   8080(부하 진입점)은 스크레이프에 쓰지 않는다 — 액추에이터를 별도 커넥터로 분리했다.
 
 global:
   scrape_interval: 15s
@@ -21,7 +22,8 @@ scrape_configs:
     scrape_interval: 5s
     metrics_path: '/actuator/prometheus'
     static_configs:
-      - targets: ['<APP_HOST>:8080']
+      # 8080 이 아니라 관리 포트다. 부하가 톰캣 워커를 다 써도 스크레이프가 굶지 않는다.
+      - targets: ['<APP_HOST>:8081']
 
   # 앱 서버 호스트 지표. "부하 생성기가 병목이 아니었다"를 증명하는 근거.
   - job_name: 'node-exporter'

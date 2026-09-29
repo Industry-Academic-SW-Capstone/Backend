@@ -7,6 +7,7 @@ import grit.stockIt.domain.member.repository.MemberRepository;
 import grit.stockIt.domain.notification.entity.Notification;
 import grit.stockIt.domain.notification.enums.NotificationType;
 import grit.stockIt.domain.notification.repository.NotificationRepository;
+import grit.stockIt.global.config.AsyncConfig;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.scheduling.annotation.Async;
@@ -37,7 +38,7 @@ public class MarketNotificationService {
     }
 
     // 장 시작 알림을 모든 사용자에게 전송
-    @Async
+    @Async(AsyncConfig.NOTIFICATION_EXECUTOR)
     @Transactional
     public void sendMarketOpenNotification() {
         log.info("=== 장 시작 알림 전송 시작 ===");
@@ -53,7 +54,7 @@ public class MarketNotificationService {
     }
 
     // 장 마감 30분 전 알림을 모든 사용자에게 전송
-    @Async
+    @Async(AsyncConfig.NOTIFICATION_EXECUTOR)
     @Transactional
     public void sendMarketCloseReminderNotification() {
         log.info("=== 장 마감 30분 전 알림 전송 시작 ===");

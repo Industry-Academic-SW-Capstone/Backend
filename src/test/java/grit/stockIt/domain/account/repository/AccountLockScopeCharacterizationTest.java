@@ -27,9 +27,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 // findByIdWithLock 이 실제로 어느 행을 잠그는지 고정한다.
 //
-// 이 쿼리는 member·contest 를 JOIN FETCH 하고 비관적 락을 건다. PostgreSQL 은 잠글 테이블을
-// 명시하지 않은 행 잠금을 FROM 절의 모든 테이블에 적용하므로, 조인된 행까지 잠길 수 있다.
-// 대회 행은 모든 참가자가 공유하므로 그렇다면 체결이 종목·계좌와 무관하게 직렬화된다.
+// PostgreSQL 은 잠글 테이블을 명시하지 않은 행 잠금을 FROM 절의 모든 테이블에 적용한다. 그래서
+// 이 쿼리가 member·contest 를 JOIN FETCH 하던 동안에는 조인된 행까지 잠겼고, 대회 행은 참가자
+// 전원이 공유하므로 체결·정산이 종목·계좌와 무관하게 그 한 행에서 직렬화됐다. 연관을 조인에서
+// 빼서 잠금이 계좌 행에서 멈추게 했고, 이 테스트가 그 범위를 고정한다.
 //
 // 스레드 경합 대신 NOWAIT 탐침을 쓴다. 잠겨 있으면 기다리지 않고 즉시 예외가 나므로 결정적이다.
 @DisplayName("계좌 비관적 락의 잠금 범위 특성화 (통합 테스트)")
@@ -94,8 +95,8 @@ class AccountLockScopeCharacterizationTest extends IntegrationTestSupport {
     }
 
     @Test
-    @DisplayName("계좌 락이 조인된 대회·회원 행까지 잠그는지 확인한다")
-    void findByIdWithLock_locksJoinedRows() {
+    @DisplayName("계좌 락이 대상 계좌 행에서 멈추는지 확인한다")
+    void findByIdWithLock_locksOnlyTargetAccountRow() {
         TransactionTemplate template = new TransactionTemplate(transactionManager);
         template.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
 
@@ -122,10 +123,10 @@ class AccountLockScopeCharacterizationTest extends IntegrationTestSupport {
         assertThat(locked[0]).as("대상 계좌 행은 잠긴다").isTrue();
         assertThat(locked[3]).as("다른 계좌 행은 잠기지 않는다").isFalse();
 
-        // 잠글 테이블을 명시하지 않아 조인된 행까지 잠긴다. 대회 행은 참가자 전원이 공유하므로
-        // 체결이 종목·계좌와 무관하게 이 행에서 직렬화된다. 현재 동작 그대로 고정한다.
-        assertThat(locked[1]).as("조인된 대회 행도 잠긴다").isTrue();
-        assertThat(locked[2]).as("조인된 회원 행도 잠긴다").isTrue();
+        // 대회 행이 풀린 것이 이 테스트의 핵심이다. 참가자 전원이 공유하는 행이라 잠기는 순간
+        // 종목별 락으로 만든 병렬이 그 아래에서 전부 다시 직렬화된다.
+        assertThat(locked[1]).as("대회 행은 잠기지 않는다").isFalse();
+        assertThat(locked[2]).as("회원 행은 잠기지 않는다").isFalse();
     }
 
     // 별도 커넥션에서 NOWAIT 으로 잠가본다. 이미 잠겨 있으면 예외가 나므로 즉시 판정된다.

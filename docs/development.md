@@ -72,7 +72,7 @@ SPRING_PROFILES_ACTIVE=local
   ```bash
   docker-compose --profile load-test run --rm k6 run /scripts/matching-engine-test.js
   ```
-  스크립트: `k6/scripts/`
+  스크립트는 저장소에 없습니다. `k6/`와 `benchmark/`는 개인 측정용이라 `.gitignore`에 들어 있으니 로컬에 두고 씁니다.
 
 ## 데이터베이스 마이그레이션
 

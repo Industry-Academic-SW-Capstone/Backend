@@ -8,6 +8,7 @@ import grit.stockIt.domain.notification.entity.Notification;
 import grit.stockIt.domain.notification.enums.NotificationType;
 import grit.stockIt.domain.notification.event.MissionCompletedEvent;
 import grit.stockIt.domain.notification.repository.NotificationRepository;
+import grit.stockIt.global.config.AsyncConfig;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.event.EventListener;
@@ -38,7 +39,7 @@ public class MissionNotificationService {
     }
 
     // 미션 완료 이벤트 수신
-    @Async
+    @Async(AsyncConfig.NOTIFICATION_EXECUTOR)
     @EventListener
     @Transactional
     public void handleMissionCompletedEvent(MissionCompletedEvent event) {

@@ -5,6 +5,7 @@ import grit.stockIt.domain.mission.event.PortfolioAnalyzedEvent;
 import grit.stockIt.domain.mission.event.RankerAchievedEvent;
 import grit.stockIt.domain.mission.event.StockAnalyzedEvent;
 import grit.stockIt.domain.order.event.TradeCompletionEvent;
+import grit.stockIt.global.config.AsyncConfig;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.event.EventListener;
@@ -26,7 +27,7 @@ public class MissionEventListener {
      * 체결 트랜잭션 커밋 후(AFTER_COMMIT) 별도 스레드(@Async)에서 실행하여, 미션 로직의 실패가
      * 체결 트랜잭션을 롤백시키지 못하게 한다. 단, 커밋 이후 실행이라 실패 시 갱신은 유실될 수 있다.
      */
-    @Async
+    @Async(AsyncConfig.MISSION_EXECUTOR)
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void handleTradeCompletionEvent(TradeCompletionEvent event) {
         try {
@@ -59,7 +60,7 @@ public class MissionEventListener {
      * [신규] 종목 분석 완료 이벤트 수신
      * @Async를 붙여 WebFlux의 Non-blocking 스레드가 JPA(Blocking) 로직을 기다리지 않게 함
      */
-    @Async
+    @Async(AsyncConfig.MISSION_EXECUTOR)
     @EventListener
     public void handleStockAnalyzedEvent(StockAnalyzedEvent event) {
         log.info("Event Received: Stock Analysis for {}", event.getEmail());
@@ -73,7 +74,7 @@ public class MissionEventListener {
     /**
      * [신규] 포트폴리오 분석 완료 이벤트 수신
      */
-    @Async
+    @Async(AsyncConfig.MISSION_EXECUTOR)
     @EventListener
     public void handlePortfolioAnalyzedEvent(PortfolioAnalyzedEvent event) {
         log.info("Event Received: Portfolio Analysis for {}", event.getEmail());

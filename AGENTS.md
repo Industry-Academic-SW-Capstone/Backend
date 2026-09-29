@@ -46,7 +46,7 @@ docker-compose up -d          # 전체 서비스 시작 (Traefik, PostgreSQL, Re
 docker-compose down           # 전체 서비스 중지
 docker-compose build          # 백엔드 이미지 재빌드
 
-# 부하 테스트 (k6)
+# 부하 테스트 (k6) — 스크립트는 저장소에 없다. 로컬 k6/scripts/ 에 둘 것
 docker-compose --profile load-test run --rm k6 run /scripts/matching-engine-test.js
 ```
 
@@ -102,7 +102,7 @@ docker-compose --profile load-test run --rm k6 run /scripts/matching-engine-test
 
 - **단위/통합**: JUnit 5 + Testcontainers(PostgreSQL) — 외부 DB 불필요
 - **동시성 테스트**: `LimitOrderMatchingServiceConcurrencyTest`가 동시 주문 매칭 하에서 데이터 정합성을 검증
-- **부하 테스트**: `/k6/scripts/`의 k6 스크립트 (주문 API, 체결, 통합 워크플로)
+- **부하 테스트**: k6 스크립트(`k6/`)와 측정 보조 스크립트(`benchmark/`)는 개인 측정용이라 저장소에 올리지 않습니다(`.gitignore`). 부하 진입점 `POST /api/test/mock-execution`(`LoadTestController`, prod 제외)만 코드에 있습니다
 
 ## 데이터베이스 마이그레이션
 

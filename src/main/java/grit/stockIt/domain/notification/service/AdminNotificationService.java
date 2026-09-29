@@ -6,6 +6,7 @@ import grit.stockIt.domain.member.entity.Member;
 import grit.stockIt.domain.notification.entity.Notification;
 import grit.stockIt.domain.notification.enums.NotificationType;
 import grit.stockIt.domain.notification.repository.NotificationRepository;
+import grit.stockIt.global.config.AsyncConfig;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
@@ -33,7 +34,7 @@ public class AdminNotificationService {
     }
 
     // 모든 회원에게 알림을 전송
-    @Async
+    @Async(AsyncConfig.NOTIFICATION_EXECUTOR)
     @Transactional
     public CompletableFuture<BroadcastResult> sendBroadcastNotification(
             List<Member> members, String title, String body) {
