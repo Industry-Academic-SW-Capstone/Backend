@@ -60,3 +60,7 @@ traefik/letsencrypt/acme.json
 .gjc/
 ### Understand Agent (code analysis cache) ###
 .ua/
+
+### 부하 측정 스크립트 (개인 측정용, 저장소에 올리지 않음) ###
+/k6/
+/benchmark/
