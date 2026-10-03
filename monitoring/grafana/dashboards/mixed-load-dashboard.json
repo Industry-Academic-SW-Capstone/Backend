@@ -36,7 +36,7 @@
       "id": 2,
       "type": "timeseries",
       "title": "Assets API Latency",
-      "description": "자산 조회 API(GET /api/accounts/{id}/assets)의 응답 시간. k6(사용자 쪽)에서 잰 값이라 톰캣 대기열에서 기다린 시간까지 포함한다. 선: SLO p95 300ms(주황), p99 500ms(빨강). 주의: k6 백분위는 회차 시작부터 누적한 값이다.",
+      "description": "자산 조회 API(GET /api/accounts/{id}/assets) 중 성공한 요청의 응답 시간. k6(사용자 쪽)에서 잰 값이라 톰캣 대기열에서 기다린 시간까지 포함한다. 실패한 요청은 옆의 Error Rate 패널에서 본다. 선: SLO p95 300ms(주황), p99 500ms(빨강). 주의: k6 백분위는 회차 시작부터 누적한 값이다.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -99,7 +99,7 @@
             "uid": "prometheus"
           },
           "refId": "A",
-          "expr": "k6_http_req_duration_p50{scenario=\"user\"}",
+          "expr": "k6_http_req_duration_p50{scenario=\"user\",expected_response=\"true\"}",
           "legendFormat": "p50"
         },
         {
@@ -108,7 +108,7 @@
             "uid": "prometheus"
           },
           "refId": "B",
-          "expr": "k6_http_req_duration_p95{scenario=\"user\"}",
+          "expr": "k6_http_req_duration_p95{scenario=\"user\",expected_response=\"true\"}",
           "legendFormat": "p95"
         },
         {
@@ -117,7 +117,7 @@
             "uid": "prometheus"
           },
           "refId": "C",
-          "expr": "k6_http_req_duration_p99{scenario=\"user\"}",
+          "expr": "k6_http_req_duration_p99{scenario=\"user\",expected_response=\"true\"}",
           "legendFormat": "p99"
         }
       ]
@@ -185,7 +185,7 @@
             "uid": "prometheus"
           },
           "refId": "A",
-          "expr": "sum(rate(k6_http_reqs_total{scenario=\"user\",status!~\"2..\"}[1m])) / sum(rate(k6_http_reqs_total{scenario=\"user\"}[1m]))",
+          "expr": "(sum(rate(k6_http_reqs_total{scenario=\"user\",status!~\"2..\"}[1m])) or vector(0)) / sum(rate(k6_http_reqs_total{scenario=\"user\"}[1m]))",
           "legendFormat": "error rate"
         }
       ]
@@ -302,7 +302,7 @@
             "uid": "prometheus"
           },
           "refId": "A",
-          "expr": "sum(rate(k6_http_reqs_total{scenario=\"fill\",status!~\"2..\"}[1m])) / sum(rate(k6_http_reqs_total{scenario=\"fill\"}[1m]))",
+          "expr": "(sum(rate(k6_http_reqs_total{scenario=\"fill\",status!~\"2..\"}[1m])) or vector(0)) / sum(rate(k6_http_reqs_total{scenario=\"fill\"}[1m]))",
           "legendFormat": "error rate"
         }
       ]
