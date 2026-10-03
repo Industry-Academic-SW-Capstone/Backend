@@ -258,8 +258,8 @@
     {
       "id": 6,
       "type": "timeseries",
-      "title": "Matching Error Rate",
-      "description": "체결 이벤트 중 처리하지 못한 비율. 503(락 10초·커넥션 1초 초과)과 k6 타임아웃을 포함한다. 503 은 이벤트 유실이다.",
+      "title": "Matching Lost Events",
+      "description": "회차 시작부터 처리하지 못한 체결 이벤트의 누적 건수. 목표는 0건. 503 = 체결 처리 중 커넥션·락 타임아웃, 500 = JWT 필터(인증) 단계의 커넥션 타임아웃. 둘 다 유실이다. k6 를 다시 실행하면 0 부터 다시 센다.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -272,12 +272,13 @@
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "percentunit",
+          "unit": "short",
           "custom": {
             "lineWidth": 2,
             "fillOpacity": 0,
             "spanNulls": true
-          }
+          },
+          "decimals": 0
         },
         "overrides": []
       },
@@ -286,8 +287,7 @@
           "displayMode": "table",
           "placement": "bottom",
           "calcs": [
-            "max",
-            "mean"
+            "lastNotNull"
           ]
         },
         "tooltip": {
@@ -302,8 +302,8 @@
             "uid": "prometheus"
           },
           "refId": "A",
-          "expr": "(sum(rate(k6_http_reqs_total{scenario=\"fill\",status!~\"2..\"}[1m])) or vector(0)) / sum(rate(k6_http_reqs_total{scenario=\"fill\"}[1m]))",
-          "legendFormat": "error rate"
+          "expr": "sum(k6_http_reqs_total{scenario=\"fill\",status!~\"2..\"}) or vector(0)",
+          "legendFormat": "lost events"
         }
       ]
     },
