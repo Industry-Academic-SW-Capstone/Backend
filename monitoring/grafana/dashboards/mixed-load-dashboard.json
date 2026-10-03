@@ -1,8 +1,8 @@
 {
-  "title": "혼합 부하 — 체결 vs 일반 API",
+  "title": "Mixed Load — Matching vs Assets API",
   "uid": "mixed-load",
   "schemaVersion": 39,
-  "version": 1,
+  "version": 2,
   "editable": true,
   "time": {
     "from": "now-30m",
@@ -22,7 +22,7 @@
     {
       "id": 1,
       "type": "row",
-      "title": "사용자 관점 (k6)",
+      "title": "Assets API — 사용자 영향",
       "collapsed": false,
       "gridPos": {
         "x": 0,
@@ -35,8 +35,8 @@
     {
       "id": 2,
       "type": "timeseries",
-      "title": "잔고 조회 지연 — 사용자가 겪은 시간 (k6)",
-      "description": "1편 목표선: p95 300ms(주황), p99 500ms(빨강). k6 실행 시 -o experimental-prometheus-rw 와 K6_PROMETHEUS_RW_TREND_STATS 가 필요하다.",
+      "title": "Assets API Latency",
+      "description": "자산 조회 API(GET /api/accounts/{id}/assets)의 응답 시간. k6(사용자 쪽)에서 잰 값이라 톰캣 대기열에서 기다린 시간까지 포함한다. 선: SLO p95 300ms(주황), p99 500ms(빨강). 주의: k6 백분위는 회차 시작부터 누적한 값이다.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -125,8 +125,8 @@
     {
       "id": 3,
       "type": "timeseries",
-      "title": "요청 결과 — 시나리오·상태 코드별 (k6)",
-      "description": "status 0 = k6 가 기다리다 포기(타임아웃). 서버 지표에는 잡히지 않는다.",
+      "title": "Assets API Error Rate",
+      "description": "자산 조회 중 2xx 가 아닌 응답의 비율. 5xx 와 k6 타임아웃(status 0)을 포함한다. 빨간 선: SLO 0.1%.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -139,68 +139,7 @@
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "reqps",
-          "custom": {
-            "lineWidth": 2,
-            "fillOpacity": 0,
-            "spanNulls": true
-          }
-        },
-        "overrides": []
-      },
-      "options": {
-        "legend": {
-          "displayMode": "table",
-          "placement": "bottom",
-          "calcs": [
-            "max",
-            "mean"
-          ]
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "refId": "A",
-          "expr": "sum by (scenario, status) (rate(k6_http_reqs_total[1m]))",
-          "legendFormat": "{{scenario}} {{status}}"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "refId": "B",
-          "expr": "sum(rate(k6_dropped_iterations_total[1m]))",
-          "legendFormat": "보내지 못함 (dropped)"
-        }
-      ]
-    },
-    {
-      "id": 4,
-      "type": "timeseries",
-      "title": "잔고 조회 p99 — 서버 지표 vs 사용자 (k6)",
-      "description": "두 선의 차이 = 톰캣 스레드를 얻기 전 accept 대기열에서 기다린 시간.",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "gridPos": {
-        "x": 0,
-        "y": 9,
-        "w": 12,
-        "h": 8
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "s",
+          "unit": "percentunit",
           "custom": {
             "lineWidth": 2,
             "fillOpacity": 0,
@@ -218,7 +157,7 @@
               },
               {
                 "color": "red",
-                "value": 0.5
+                "value": 0.001
               }
             ]
           }
@@ -246,38 +185,42 @@
             "uid": "prometheus"
           },
           "refId": "A",
-          "expr": "histogram_quantile(0.99, sum by (le) (rate(http_server_requests_seconds_bucket{job=\"spring-boot\", uri=\"/api/accounts/{accountId}/assets\"}[1m])))",
-          "legendFormat": "서버 p99"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "refId": "B",
-          "expr": "k6_http_req_duration_p99{scenario=\"user\"}",
-          "legendFormat": "사용자 p99 (k6)"
+          "expr": "sum(rate(k6_http_reqs_total{scenario=\"user\",status!~\"2..\"}[1m])) / sum(rate(k6_http_reqs_total{scenario=\"user\"}[1m]))",
+          "legendFormat": "error rate"
         }
       ]
     },
     {
+      "id": 4,
+      "type": "row",
+      "title": "Matching — 부하",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 9,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
+    },
+    {
       "id": 5,
       "type": "timeseries",
-      "title": "VU 수 (k6)",
-      "description": "",
+      "title": "Matching Throughput",
+      "description": "처리에 성공한 체결 이벤트 수(초당). 더 오르지 않고 평평해지는 지점이 천장이다.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
       },
       "gridPos": {
-        "x": 12,
-        "y": 9,
+        "x": 0,
+        "y": 10,
         "w": 12,
         "h": 8
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "short",
+          "unit": "reqps",
           "custom": {
             "lineWidth": 2,
             "fillOpacity": 0,
@@ -307,103 +250,29 @@
             "uid": "prometheus"
           },
           "refId": "A",
-          "expr": "k6_vus",
-          "legendFormat": "VUs"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "refId": "B",
-          "expr": "k6_vus_max",
-          "legendFormat": "maxVUs"
+          "expr": "sum(rate(k6_http_reqs_total{scenario=\"fill\",status=\"200\"}[1m]))",
+          "legendFormat": "success"
         }
       ]
     },
     {
       "id": 6,
-      "type": "row",
-      "title": "서버 응답",
-      "collapsed": false,
-      "gridPos": {
-        "x": 0,
-        "y": 17,
-        "w": 24,
-        "h": 1
-      },
-      "panels": []
-    },
-    {
-      "id": 7,
       "type": "timeseries",
-      "title": "체결 처리 결과 — 200 / 503",
-      "description": "503 = 락 10초 또는 커넥션 1초를 넘겨 처리하지 못한 체결 이벤트(유실).",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "gridPos": {
-        "x": 0,
-        "y": 18,
-        "w": 12,
-        "h": 8
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "reqps",
-          "custom": {
-            "lineWidth": 2,
-            "fillOpacity": 0,
-            "spanNulls": true
-          }
-        },
-        "overrides": []
-      },
-      "options": {
-        "legend": {
-          "displayMode": "table",
-          "placement": "bottom",
-          "calcs": [
-            "max",
-            "mean"
-          ]
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "refId": "A",
-          "expr": "sum by (status) (rate(http_server_requests_seconds_count{job=\"spring-boot\", uri=\"/api/test/mock-execution\"}[1m]))",
-          "legendFormat": "체결 {{status}}"
-        }
-      ]
-    },
-    {
-      "id": 8,
-      "type": "timeseries",
-      "title": "5xx 응답 — URI·상태별",
-      "description": "JWT 필터에서 난 커넥션 타임아웃은 컨트롤러 전이라 uri 가 UNKNOWN 이나 /error 로 잡힐 수 있다.",
+      "title": "Matching Error Rate",
+      "description": "체결 이벤트 중 처리하지 못한 비율. 503(락 10초·커넥션 1초 초과)과 k6 타임아웃을 포함한다. 503 은 이벤트 유실이다.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
       },
       "gridPos": {
         "x": 12,
-        "y": 18,
+        "y": 10,
         "w": 12,
         "h": 8
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "reqps",
+          "unit": "percentunit",
           "custom": {
             "lineWidth": 2,
             "fillOpacity": 0,
@@ -433,88 +302,36 @@
             "uid": "prometheus"
           },
           "refId": "A",
-          "expr": "sum by (uri, status) (rate(http_server_requests_seconds_count{job=\"spring-boot\", status=~\"5..\"}[1m]))",
-          "legendFormat": "{{status}} {{uri}}"
+          "expr": "sum(rate(k6_http_reqs_total{scenario=\"fill\",status!~\"2..\"}[1m])) / sum(rate(k6_http_reqs_total{scenario=\"fill\"}[1m]))",
+          "legendFormat": "error rate"
         }
       ]
     },
     {
-      "id": 9,
-      "type": "timeseries",
-      "title": "전체 응답 — URI·상태별",
-      "description": "",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "gridPos": {
-        "x": 0,
-        "y": 26,
-        "w": 24,
-        "h": 8
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "reqps",
-          "custom": {
-            "lineWidth": 2,
-            "fillOpacity": 0,
-            "spanNulls": true
-          }
-        },
-        "overrides": []
-      },
-      "options": {
-        "legend": {
-          "displayMode": "table",
-          "placement": "bottom",
-          "calcs": [
-            "max",
-            "mean"
-          ]
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "refId": "A",
-          "expr": "sum by (uri, status) (rate(http_server_requests_seconds_count{job=\"spring-boot\"}[1m]))",
-          "legendFormat": "{{status}} {{uri}}"
-        }
-      ]
-    },
-    {
-      "id": 10,
+      "id": 7,
       "type": "row",
-      "title": "원인 — 스레드·커넥션·CPU",
+      "title": "Saturation — 병목 자원",
       "collapsed": false,
       "gridPos": {
         "x": 0,
-        "y": 34,
+        "y": 18,
         "w": 24,
         "h": 1
       },
       "panels": []
     },
     {
-      "id": 11,
+      "id": 8,
       "type": "timeseries",
-      "title": "톰캣 스레드",
-      "description": "",
+      "title": "Tomcat Threads",
+      "description": "요청을 처리 중인 톰캣 스레드. busy 가 max 에 닿으면 새 요청은 톰캣 대기열에서 기다린다(타임아웃 없음).",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
       },
       "gridPos": {
         "x": 0,
-        "y": 35,
+        "y": 19,
         "w": 12,
         "h": 8
       },
@@ -551,7 +368,7 @@
           },
           "refId": "A",
           "expr": "tomcat_threads_busy_threads{job=\"spring-boot\"}",
-          "legendFormat": "Busy {{name}}"
+          "legendFormat": "busy"
         },
         {
           "datasource": {
@@ -560,22 +377,22 @@
           },
           "refId": "B",
           "expr": "tomcat_threads_config_max_threads{job=\"spring-boot\"}",
-          "legendFormat": "Max {{name}}"
+          "legendFormat": "max"
         }
       ]
     },
     {
-      "id": 12,
+      "id": 9,
       "type": "timeseries",
-      "title": "커넥션 풀",
-      "description": "",
+      "title": "DB Connection Pool",
+      "description": "pending = 스레드를 얻었지만 커넥션을 기다리는 수. 최대치는 톰캣 스레드 수로 묶인다.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
       },
       "gridPos": {
         "x": 12,
-        "y": 35,
+        "y": 19,
         "w": 12,
         "h": 8
       },
@@ -612,7 +429,7 @@
           },
           "refId": "A",
           "expr": "hikaricp_connections_active{job=\"spring-boot\"}",
-          "legendFormat": "Active"
+          "legendFormat": "active"
         },
         {
           "datasource": {
@@ -621,7 +438,7 @@
           },
           "refId": "B",
           "expr": "hikaricp_connections_pending{job=\"spring-boot\"}",
-          "legendFormat": "Pending"
+          "legendFormat": "pending"
         },
         {
           "datasource": {
@@ -630,22 +447,22 @@
           },
           "refId": "C",
           "expr": "hikaricp_connections_max{job=\"spring-boot\"}",
-          "legendFormat": "Max"
+          "legendFormat": "max"
         }
       ]
     },
     {
-      "id": 13,
+      "id": 10,
       "type": "timeseries",
-      "title": "커넥션 획득 시간",
-      "description": "빨간 선 = 커넥션 획득 타임아웃(1초).",
+      "title": "DB Connection Acquire Time",
+      "description": "커넥션을 얻기까지 기다린 시간. 빨간 선 = 커넥션 획득 타임아웃(1초). 넘으면 500.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
       },
       "gridPos": {
         "x": 0,
-        "y": 43,
+        "y": 27,
         "w": 12,
         "h": 8
       },
@@ -699,30 +516,21 @@
           "refId": "A",
           "expr": "histogram_quantile(0.99, sum by (le) (rate(hikaricp_connections_acquire_seconds_bucket{job=\"spring-boot\"}[1m])))",
           "legendFormat": "p99"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "refId": "B",
-          "expr": "histogram_quantile(0.50, sum by (le) (rate(hikaricp_connections_acquire_seconds_bucket{job=\"spring-boot\"}[1m])))",
-          "legendFormat": "p50"
         }
       ]
     },
     {
-      "id": 14,
+      "id": 11,
       "type": "timeseries",
-      "title": "커넥션 획득 타임아웃",
-      "description": "",
+      "title": "DB Connection Timeouts",
+      "description": "커넥션 획득 타임아웃이 난 횟수(초당).",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
       },
       "gridPos": {
         "x": 12,
-        "y": 43,
+        "y": 27,
         "w": 12,
         "h": 8
       },
@@ -759,22 +567,22 @@
           },
           "refId": "A",
           "expr": "sum(rate(hikaricp_connections_timeout_total{job=\"spring-boot\"}[1m]))",
-          "legendFormat": "타임아웃/초"
+          "legendFormat": "timeouts"
         }
       ]
     },
     {
-      "id": 15,
+      "id": 12,
       "type": "timeseries",
-      "title": "CPU",
-      "description": "",
+      "title": "CPU Usage",
+      "description": "앱 프로세스 CPU 사용률. 높으면 CPU 가 병목, 낮은데 막혔다면 무언가를 기다리는 것.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
       },
       "gridPos": {
         "x": 0,
-        "y": 51,
+        "y": 35,
         "w": 24,
         "h": 8
       },
@@ -784,7 +592,23 @@
           "custom": {
             "lineWidth": 2,
             "fillOpacity": 0,
-            "spanNulls": true
+            "spanNulls": true,
+            "thresholdsStyle": {
+              "mode": "line"
+            }
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "transparent",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 0.9
+              }
+            ]
           }
         },
         "overrides": []
@@ -811,16 +635,7 @@
           },
           "refId": "A",
           "expr": "process_cpu_usage{job=\"spring-boot\"}",
-          "legendFormat": "앱 프로세스"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "refId": "B",
-          "expr": "system_cpu_usage{job=\"spring-boot\"}",
-          "legendFormat": "앱 서버 전체"
+          "legendFormat": "app process"
         }
       ]
     }
