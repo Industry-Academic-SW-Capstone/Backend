@@ -13,6 +13,7 @@
 #   APP_CORS_ALLOWED_ORIGINS  비면 기동 실패(fail-fast)
 #   APP_ADMIN_EMAILS          비면 종목 마스터 적재 불가
 #   KIS_API_APPKEY / _APPSECRET, JWT_SECRET 등
+#   큐 측정 시: MATCHING_QUEUE_ENABLED=true, KAFKA_BOOTSTRAP_SERVERS=<Kafka 사설 IP>:9092, DB_POOL_SIZE=60
 
 services:
   backend:
@@ -58,6 +59,13 @@ services:
       - MATCHING_CANCEL_LOCK_TIMEOUT=${MATCHING_CANCEL_LOCK_TIMEOUT:-3s}
       - DB_POOL_SIZE=${DB_POOL_SIZE:-10}
       - DB_CONNECTION_TIMEOUT=${DB_CONNECTION_TIMEOUT:-1000}
+      # ── 체결 큐 (docker-compose.staging-kafka.yml) ──
+      # false 면 요청 스레드가 바로 체결한다(큐 도입 전과 같은 경로). 같은 빌드로 전후를 비교한다.
+      - MATCHING_QUEUE_ENABLED=${MATCHING_QUEUE_ENABLED:-false}
+      - KAFKA_BOOTSTRAP_SERVERS=${KAFKA_BOOTSTRAP_SERVERS:-localhost:9092}
+      - MATCHING_QUEUE_ACK_TIMEOUT=${MATCHING_QUEUE_ACK_TIMEOUT:-1s}
+      - MATCHING_QUEUE_FILL_CONCURRENCY=${MATCHING_QUEUE_FILL_CONCURRENCY:-24}
+      - SETTLEMENT_QUEUE_CONCURRENCY=${SETTLEMENT_QUEUE_CONCURRENCY:-8}
       # ── 정산 복구 ──
       # staging 은 스케줄링이 꺼져 있어 부하 측정 중에는 돌지 않는다. 회차 후 SQL 로 확인한다.
       - SETTLEMENT_RECOVERY_INTERVAL=${SETTLEMENT_RECOVERY_INTERVAL:-60s}
