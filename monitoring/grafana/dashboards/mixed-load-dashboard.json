@@ -2,7 +2,7 @@
   "title": "Mixed Load — Matching vs Assets API",
   "uid": "mixed-load",
   "schemaVersion": 39,
-  "version": 2,
+  "version": 3,
   "editable": true,
   "time": {
     "from": "now-30m",
@@ -193,7 +193,7 @@
     {
       "id": 4,
       "type": "row",
-      "title": "Matching — 부하",
+      "title": "Matching — 부하와 처리",
       "collapsed": false,
       "gridPos": {
         "x": 0,
@@ -207,7 +207,7 @@
       "id": 5,
       "type": "timeseries",
       "title": "Matching Throughput",
-      "description": "처리에 성공한 체결 이벤트 수(초당). 더 오르지 않고 평평해지는 지점이 천장이다.",
+      "description": "받은 속도(k6 가 2xx 를 받은 요청)와 처리한 속도. 큐를 켜면 받은 것 = 큐에 넣은 것(202), 처리한 것 = 체결 워커가 끝낸 것. 두 선의 차이만큼 lag 이 쌓인다. 큐를 끄면 받은 것 = 처리한 것(200)이라 두 선이 겹친다.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -250,16 +250,25 @@
             "uid": "prometheus"
           },
           "refId": "A",
-          "expr": "sum(rate(k6_http_reqs_total{scenario=\"fill\",status=\"200\"}[1m]))",
-          "legendFormat": "success"
+          "expr": "sum(rate(k6_http_reqs_total{scenario=\"fill\",status=~\"2..\"}[1m]))",
+          "legendFormat": "received"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "refId": "B",
+          "expr": "sum(rate(spring_kafka_listener_seconds_count{job=\"spring-boot\",name=~\"matching-fill-.*\",result=\"success\"}[1m])) or sum(rate(k6_http_reqs_total{scenario=\"fill\",status=\"200\"}[1m]))",
+          "legendFormat": "processed"
         }
       ]
     },
     {
-      "id": 6,
+      "id": 13,
       "type": "timeseries",
-      "title": "Matching Lost Events",
-      "description": "회차 시작부터 처리하지 못한 체결 이벤트의 누적 건수. 목표는 0건. 503 = 체결 처리 중 커넥션·락 타임아웃, 500 = JWT 필터(인증) 단계의 커넥션 타임아웃. 둘 다 유실이다. k6 를 다시 실행하면 0 부터 다시 센다.",
+      "title": "Consumer Lag",
+      "description": "큐에 쌓여 아직 처리하지 못한 메시지 수(브로커 기준, 컨슈머가 죽어도 보인다). 처리 한계를 넘으면 오르고, 부하가 끝나면 0 으로 내려와야 한다. 0 으로 돌아오는 데 걸린 시간 = 비우는 시간. 정산 lag 이 계속 오르면 정산 워커가 체결을 못 따라가는 것이다.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -267,6 +276,145 @@
       "gridPos": {
         "x": 12,
         "y": 10,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 0,
+            "spanNulls": true
+          },
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "refId": "A",
+          "expr": "sum(kafka_consumergroup_lag{consumergroup=\"matching-fill\"}) or vector(0)",
+          "legendFormat": "fill"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "refId": "B",
+          "expr": "sum(kafka_consumergroup_lag{consumergroup=\"settlement\"}) or vector(0)",
+          "legendFormat": "settlement"
+        }
+      ]
+    },
+    {
+      "id": 14,
+      "type": "timeseries",
+      "title": "Fill End-to-End Latency",
+      "description": "체결 명령을 큐에 넣은 뒤 체결이 커밋될 때까지(p99, 그 순간의 값 — k6 패널처럼 누적값이 아니다). queue wait = 그중 큐에서 기다린 시간. 빨간 선 = 1초(천장 아래 구간의 목표). 천장 위에서는 lag 만큼 길어진다.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 18,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 0,
+            "spanNulls": true,
+            "thresholdsStyle": {
+              "mode": "line"
+            }
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "transparent",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "max",
+            "mean"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "refId": "A",
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(matching_fill_e2e_seconds_bucket{job=\"spring-boot\"}[1m])))",
+          "legendFormat": "end-to-end p99"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "refId": "B",
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(matching_fill_queue_wait_seconds_bucket{job=\"spring-boot\"}[1m])))",
+          "legendFormat": "queue wait p99"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Matching Lost Events",
+      "description": "회차 시작부터 처리하지도 큐에 넣지도 못한 체결 이벤트의 누적 건수(k6 의 2xx 가 아닌 응답). 목표는 0건. 큐를 켜면 503 = 1초 안에 브로커 기록 확인을 못 받음 — 늦게라도 기록됐을 수 있어 최종 판정은 회차 후 SQL 대조로 한다. 500 = JWT 필터(인증) 단계의 커넥션 타임아웃. k6 를 다시 실행하면 0 부터 다시 센다.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 18,
         "w": 12,
         "h": 8
       },
@@ -308,13 +456,144 @@
       ]
     },
     {
+      "id": 15,
+      "type": "timeseries",
+      "title": "Settlement Delay",
+      "description": "체결이 커밋된 뒤 정산이 커밋될 때까지(p99) = 잔고에 늦게 반영되는 시간. 정산 워커가 따로 돌아서 생기는 대가.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 26,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 0,
+            "spanNulls": true
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "max",
+            "mean"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "refId": "A",
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(settlement_e2e_seconds_bucket{job=\"spring-boot\"}[1m])))",
+          "legendFormat": "p99"
+        }
+      ]
+    },
+    {
+      "id": 16,
+      "type": "timeseries",
+      "title": "Duplicates · Failures · DLT",
+      "description": "평소 모두 0 이어야 하는 누적 건수(앱 재시작 시 앱 지표는 0 부터 다시). duplicate = 재전달을 워터마크가 걸러냄(재시작·리밸런싱 때만), failure = 워커 처리 실패(재시도 중이면 계속 오른다), dlt = 처리할 수 없어 DLT 로 보낸 메시지, enqueue fail = 큐에 못 넣은 체결 이벤트.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 26,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 0,
+            "spanNulls": true
+          },
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "refId": "A",
+          "expr": "sum(matching_fill_duplicate_total{job=\"spring-boot\"}) or vector(0)",
+          "legendFormat": "duplicate"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "refId": "B",
+          "expr": "sum(spring_kafka_listener_seconds_count{job=\"spring-boot\",result=\"failure\"}) or vector(0)",
+          "legendFormat": "failure"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "refId": "C",
+          "expr": "sum(kafka_topic_partition_current_offset{topic=~\".+\\\\.DLT\"}) or vector(0)",
+          "legendFormat": "dlt"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "refId": "D",
+          "expr": "sum(matching_enqueue_total{job=\"spring-boot\",result=\"fail\"}) or vector(0)",
+          "legendFormat": "enqueue fail"
+        }
+      ]
+    },
+    {
       "id": 7,
       "type": "row",
       "title": "Saturation — 병목 자원",
       "collapsed": false,
       "gridPos": {
         "x": 0,
-        "y": 18,
+        "y": 34,
         "w": 24,
         "h": 1
       },
@@ -331,7 +610,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 19,
+        "y": 35,
         "w": 12,
         "h": 8
       },
@@ -392,7 +671,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 19,
+        "y": 35,
         "w": 12,
         "h": 8
       },
@@ -462,7 +741,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 27,
+        "y": 43,
         "w": 12,
         "h": 8
       },
@@ -530,7 +809,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 27,
+        "y": 43,
         "w": 12,
         "h": 8
       },
@@ -572,9 +851,113 @@
       ]
     },
     {
+      "id": 17,
+      "type": "timeseries",
+      "title": "Fill Worker Processing Time",
+      "description": "체결 워커가 명령 하나를 처리한 시간(p99, Spring Kafka 기본 지표). 체결 트랜잭션(종목 락 + 워터마크 + 체결) + 정산 요청 전송. 종목당 처리량의 역수에 가깝다 — 워터마크 왕복 비용이 여기서 드러난다.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 51,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 0,
+            "spanNulls": true
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "max",
+            "mean"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "refId": "A",
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(spring_kafka_listener_seconds_bucket{job=\"spring-boot\",name=~\"matching-fill-.*\"}[1m])))",
+          "legendFormat": "p99"
+        }
+      ]
+    },
+    {
+      "id": 18,
+      "type": "timeseries",
+      "title": "Kafka Send Ack Time",
+      "description": "보낸 메시지를 브로커가 기록했다고 답할 때까지(p99, Spring Kafka 기본 지표). 체결 명령(요청 스레드가 기다림)과 정산 요청(기다리지 않음)이 섞여 있다. 측정은 브로커 1대·같은 AZ·복제 없음 — 운영(복제 3, 다중 AZ)이면 이 값이 수 ms 늘어난다.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 51,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 0,
+            "spanNulls": true
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "max",
+            "mean"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "refId": "A",
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(spring_kafka_template_seconds_bucket{job=\"spring-boot\"}[1m])))",
+          "legendFormat": "p99"
+        }
+      ]
+    },
+    {
       "id": 12,
       "type": "timeseries",
-      "title": "CPU Usage",
+      "title": "App CPU Usage",
       "description": "앱 프로세스 CPU 사용률. 높으면 CPU 가 병목, 낮은데 막혔다면 무언가를 기다리는 것.",
       "datasource": {
         "type": "prometheus",
@@ -582,8 +965,8 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 35,
-        "w": 24,
+        "y": 59,
+        "w": 8,
         "h": 8
       },
       "fieldConfig": {
@@ -636,6 +1019,110 @@
           "refId": "A",
           "expr": "process_cpu_usage{job=\"spring-boot\"}",
           "legendFormat": "app process"
+        }
+      ]
+    },
+    {
+      "id": 19,
+      "type": "timeseries",
+      "title": "Kafka Broker CPU",
+      "description": "Kafka 서버 호스트 CPU. 측정은 브로커 1대라 브로커가 병목이 아니었음을 회차마다 기록한다.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 8,
+        "y": 59,
+        "w": 8,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 0,
+            "spanNulls": true
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "max",
+            "mean"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "refId": "A",
+          "expr": "1 - avg(rate(node_cpu_seconds_total{job=\"kafka-node-exporter\",mode=\"idle\"}[1m]))",
+          "legendFormat": "broker host"
+        }
+      ]
+    },
+    {
+      "id": 20,
+      "type": "timeseries",
+      "title": "Kafka Broker Disk Write",
+      "description": "Kafka 서버 디스크 쓰기량. 메시지가 작아(약 200바이트) 낮아야 정상이다.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 16,
+        "y": 59,
+        "w": 8,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "Bps",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 0,
+            "spanNulls": true
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "max",
+            "mean"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "refId": "A",
+          "expr": "sum(rate(node_disk_written_bytes_total{job=\"kafka-node-exporter\"}[1m]))",
+          "legendFormat": "write"
         }
       ]
     }

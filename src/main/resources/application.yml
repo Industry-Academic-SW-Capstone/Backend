@@ -73,6 +73,8 @@ management:
         settlement.e2e: true
         # 워커 처리 시간·횟수·실패는 Spring Kafka 기본 지표로 본다(리스너 id 가 name 태그).
         spring.kafka.listener: true
+        # 브로커가 기록을 확인해 줄 때까지(체결 명령 + 정산 요청). 측정 환경 브로커의 몫을 따로 보인다.
+        spring.kafka.template: true
       # 버킷 범위를 커넥션 타임아웃과 맞춘다. 기본값은 범위가 넓어 버킷만 늘어난다.
       minimum-expected-value:
         hikaricp.connections.acquire: 1ms
@@ -81,6 +83,7 @@ management:
         matching.fill.e2e: 1ms
         settlement.e2e: 1ms
         spring.kafka.listener: 1ms
+        spring.kafka.template: 1ms
       maximum-expected-value:
         hikaricp.connections.acquire: 30s
         hikaricp.connections.usage: 30s
@@ -88,6 +91,7 @@ management:
         matching.fill.e2e: 10m
         settlement.e2e: 10m
         spring.kafka.listener: 30s
+        spring.kafka.template: 10s
       percentiles:
         http.server.requests: 0.5,0.95,0.99
         jvm.memory.used: 0.5,0.95,0.99
