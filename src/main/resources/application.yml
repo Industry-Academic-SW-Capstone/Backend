@@ -151,3 +151,6 @@ settlement:
     # 너무 짧으면 배치와 체결 직후 정산이 같은 건을 두고 부딪혀 한쪽이 헛돈다.
     grace-period: ${SETTLEMENT_RECOVERY_GRACE_PERIOD:30s}
     batch-size: ${SETTLEMENT_RECOVERY_BATCH_SIZE:100}
+  queue:
+    # 정산 워커 스레드 수
+    concurrency: ${SETTLEMENT_QUEUE_CONCURRENCY:8}

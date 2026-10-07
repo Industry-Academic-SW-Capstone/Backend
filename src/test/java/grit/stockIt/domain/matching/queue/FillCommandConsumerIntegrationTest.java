@@ -7,15 +7,10 @@ import grit.stockIt.domain.matching.service.FillCommandPublisher;
 import grit.stockIt.domain.matching.service.FillDispatchResult;
 import grit.stockIt.domain.order.entity.OrderMethod;
 import grit.stockIt.global.support.KafkaIntegrationTestSupport;
-import org.apache.kafka.clients.consumer.ConsumerConfig;
-import org.apache.kafka.clients.consumer.ConsumerRecord;
-import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
-import org.apache.kafka.common.serialization.ByteArrayDeserializer;
 import org.apache.kafka.common.serialization.ByteArraySerializer;
-import org.apache.kafka.common.serialization.StringDeserializer;
 import org.apache.kafka.common.serialization.StringSerializer;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -23,11 +18,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
-import java.time.Duration;
-import java.util.List;
 import java.util.Map;
 import java.util.UUID;
-import java.util.function.Predicate;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
@@ -36,7 +28,6 @@ import static org.awaitility.Awaitility.await;
 class FillCommandConsumerIntegrationTest extends KafkaIntegrationTestSupport {
 
     private static final String STOCK_CODE = "005930";
-    private static final Duration WAIT = Duration.ofSeconds(30);
 
     @Autowired
     private FillCommandPublisher fillCommandPublisher;
@@ -64,7 +55,7 @@ class FillCommandConsumerIntegrationTest extends KafkaIntegrationTestSupport {
         FillDispatchResult.Queued next = (FillDispatchResult.Queued) fillCommandPublisher.publish(STOCK_CODE, fillEvent(1));
 
         awaitWatermarkReaches(next);
-        assertThat(findDeadLetter(value -> value.equals(garbage))).isTrue();
+        assertThat(findDeadLetter(MatchingTopics.COMMANDS, value -> value.equals(garbage))).isTrue();
     }
 
     @Test
@@ -77,7 +68,7 @@ class FillCommandConsumerIntegrationTest extends KafkaIntegrationTestSupport {
         FillDispatchResult.Queued next = (FillDispatchResult.Queued) fillCommandPublisher.publish(STOCK_CODE, fillEvent(1));
 
         awaitWatermarkReaches(next);
-        assertThat(findDeadLetter(value -> value.contains(invalidEventId))).isTrue();
+        assertThat(findDeadLetter(MatchingTopics.COMMANDS, value -> value.contains(invalidEventId))).isTrue();
     }
 
     private void awaitWatermarkReaches(FillDispatchResult.Queued queued) {
@@ -105,25 +96,5 @@ class FillCommandConsumerIntegrationTest extends KafkaIntegrationTestSupport {
                 ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, ByteArraySerializer.class))) {
             producer.send(new ProducerRecord<>(MatchingTopics.COMMANDS, STOCK_CODE, value)).get();
         }
-    }
-
-    private boolean findDeadLetter(Predicate<String> matcher) {
-        try (KafkaConsumer<String, byte[]> consumer = new KafkaConsumer<>(Map.of(
-                ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, KAFKA.getBootstrapServers(),
-                ConsumerConfig.GROUP_ID_CONFIG, "dlt-reader-" + UUID.randomUUID(),
-                ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest",
-                ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class,
-                ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, ByteArrayDeserializer.class))) {
-            consumer.subscribe(List.of(MatchingTopics.COMMANDS + ".DLT"));
-            long deadline = System.currentTimeMillis() + WAIT.toMillis();
-            while (System.currentTimeMillis() < deadline) {
-                for (ConsumerRecord<String, byte[]> record : consumer.poll(Duration.ofMillis(500))) {
-                    if (matcher.test(new String(record.value(), StandardCharsets.UTF_8))) {
-                        return true;
-                    }
-                }
-            }
-        }
-        return false;
     }
 }

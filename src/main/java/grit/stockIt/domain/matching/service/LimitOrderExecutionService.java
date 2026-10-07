@@ -51,13 +51,15 @@ public class LimitOrderExecutionService {
     @Transactional
     public List<Long> fill(String stockCode, LimitOrderFillEvent event) {
         stockMatchingLock.acquire(stockCode);
-        return doFill(stockCode, event);
+        return doFill(stockCode, event).stream()
+                .map(FilledExecution::executionId)
+                .toList();
     }
 
     // 큐에서 온 명령용. 위치 기록과 체결이 한 트랜잭션이라 함께 커밋되거나 함께 롤백된다.
     // 비어 있으면 이미 반영한 위치다(재전달). 락 뒤에 기록하므로 같은 위치를 쥔 두 워커도 한 줄로 선다.
     @Transactional
-    public Optional<List<Long>> fillOnce(String stockCode, LimitOrderFillEvent event, CommandPosition position) {
+    public Optional<List<FilledExecution>> fillOnce(String stockCode, LimitOrderFillEvent event, CommandPosition position) {
         stockMatchingLock.acquire(stockCode);
         int advanced = consumerWatermarkRepository.advance(position.topic(), position.partition(), position.offset());
         if (advanced == 0) {
@@ -66,7 +68,7 @@ public class LimitOrderExecutionService {
         return Optional.of(doFill(stockCode, event));
     }
 
-    private List<Long> doFill(String stockCode, LimitOrderFillEvent event) {
+    private List<FilledExecution> doFill(String stockCode, LimitOrderFillEvent event) {
         int remainingQuantity = event.quantity();
         if (remainingQuantity <= 0) {
             log.warn("체결 이벤트 수량이 0 이하입니다. eventId={} quantity={}", event.eventId(), event.quantity());
@@ -104,7 +106,7 @@ public class LimitOrderExecutionService {
         Map<Long, Order> orderMap = orders.stream()
                 .collect(Collectors.toMap(Order::getOrderId, order -> order));
 
-        List<Long> executionIds = new ArrayList<>();
+        List<FilledExecution> executions = new ArrayList<>();
         List<Order> updatedOrders = new ArrayList<>();
 
         for (Long orderId : filledOrderIds) {
@@ -138,7 +140,7 @@ public class LimitOrderExecutionService {
                 }
 
                 updatedOrders.add(order);
-                executionIds.add(execution.getExecutionId());
+                executions.add(new FilledExecution(execution.getExecutionId(), order.getAccount().getAccountId()));
             } catch (IllegalArgumentException ex) {
                 log.error("주문 체결 처리 중 오류 발생. orderId={} fillQuantity={}", orderId, desiredFillQuantity, ex);
                 orderSubscriptionCoordinator.unregisterLimitOrder(order.getStock().getCode());
@@ -154,7 +156,7 @@ public class LimitOrderExecutionService {
                     event.eventId(), remainingQuantity, event.price());
         }
 
-        return executionIds;
+        return executions;
     }
 
     private boolean isActive(Order order) {

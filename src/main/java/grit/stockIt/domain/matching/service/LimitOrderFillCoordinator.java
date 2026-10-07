@@ -32,7 +32,15 @@ public class LimitOrderFillCoordinator {
     }
 
     // 큐 워커 경로의 결과. duplicate 면 이미 반영한 위치라 아무것도 하지 않았다.
-    public record QueuedFillOutcome(boolean duplicate, int filledOrders) {
+    public record QueuedFillOutcome(boolean duplicate, List<FilledExecution> executions) {
+
+        static QueuedFillOutcome alreadyApplied() {
+            return new QueuedFillOutcome(true, List.of());
+        }
+
+        public int filledOrders() {
+            return executions.size();
+        }
     }
 
     public FillOutcome processFill(String stockCode, LimitOrderFillEvent event) {
@@ -51,17 +59,16 @@ public class LimitOrderFillCoordinator {
     }
 
     // 큐 워커 경로. 체결 실패를 삼키지 않고 던진다 — 워커가 같은 위치를 다시 시도해야 유실이 없다.
+    // 정산은 하지 않는다. 워커가 체결 결과를 정산 큐로 넘긴다.
     public QueuedFillOutcome processQueuedFill(String stockCode, LimitOrderFillEvent event, CommandPosition position) {
         redisMarketDataRepository.updateLastPrice(stockCode, event.price());
 
-        Optional<List<Long>> executionIds = limitOrderExecutionService.fillOnce(stockCode, event, position);
-        if (executionIds.isEmpty()) {
+        Optional<List<FilledExecution>> executions = limitOrderExecutionService.fillOnce(stockCode, event, position);
+        if (executions.isEmpty()) {
             log.info("이미 반영한 명령이라 건너뜁니다. eventId={} position={}", event.eventId(), position);
-            return new QueuedFillOutcome(true, 0);
+            return QueuedFillOutcome.alreadyApplied();
         }
-
-        settleAll(executionIds.get());
-        return new QueuedFillOutcome(false, executionIds.get().size());
+        return new QueuedFillOutcome(false, executions.get());
     }
 
     private void settleAll(List<Long> executionIds) {
