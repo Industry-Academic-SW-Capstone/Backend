@@ -24,6 +24,7 @@ import grit.stockIt.domain.settlement.repository.SettlementRepository;
 import grit.stockIt.domain.stock.entity.Stock;
 import grit.stockIt.domain.stock.repository.StockRepository;
 import grit.stockIt.global.support.KafkaIntegrationTestSupport;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -56,6 +57,7 @@ class MatchingQueueFlowIntegrationTest extends KafkaIntegrationTestSupport {
     @Autowired private MemberRepository memberRepository;
     @Autowired private ContestRepository contestRepository;
     @Autowired private TransactionTemplate transactionTemplate;
+    @Autowired private MeterRegistry meterRegistry;
 
     @Test
     @DisplayName("입구에 넣은 체결 명령이 체결되고, 정산 워커가 계좌에 반영한다")
@@ -74,6 +76,8 @@ class MatchingQueueFlowIntegrationTest extends KafkaIntegrationTestSupport {
         assertThat(account.getCash()).isEqualByComparingTo(INITIAL_CASH.subtract(PRICE));
         assertThat(accountStockRepository.findByAccountAndStock(account, stockRepository.findById(buy.stockCode()).orElseThrow()))
                 .hasValueSatisfying(holding -> assertThat(holding.getQuantity()).isEqualTo(1));
+        // 지표는 정산 커밋 직후에 기록된다. 정산 행이 보인 순간에는 아직일 수 있다.
+        await().atMost(WAIT).until(() -> meterRegistry.get("settlement.e2e").timer().count() > 0);
     }
 
     @Test

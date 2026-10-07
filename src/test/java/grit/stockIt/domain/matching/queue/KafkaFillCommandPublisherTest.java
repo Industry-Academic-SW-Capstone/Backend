@@ -3,6 +3,7 @@ package grit.stockIt.domain.matching.queue;
 import grit.stockIt.domain.matching.dto.LimitOrderFillEvent;
 import grit.stockIt.domain.matching.service.FillDispatchResult;
 import grit.stockIt.domain.order.entity.OrderMethod;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.clients.producer.RecordMetadata;
 import org.apache.kafka.common.TopicPartition;
@@ -34,8 +35,10 @@ class KafkaFillCommandPublisherTest {
     @SuppressWarnings("unchecked")
     private final KafkaTemplate<String, MatchingCommand> kafkaTemplate = mock(KafkaTemplate.class);
 
+    private final SimpleMeterRegistry registry = new SimpleMeterRegistry();
+
     private final KafkaFillCommandPublisher publisher =
-            new KafkaFillCommandPublisher(kafkaTemplate, Duration.ofMillis(200));
+            new KafkaFillCommandPublisher(kafkaTemplate, Duration.ofMillis(200), new MatchingQueueMetrics(registry));
 
     @Test
     @DisplayName("종목 코드를 키로 matching.commands 에 보내고, 브로커 확인을 받으면 기록 위치를 돌려준다")
@@ -53,6 +56,7 @@ class KafkaFillCommandPublisherTest {
         assertThat(command.toFillEvent()).isEqualTo(EVENT);
         assertThat(command.stockCode()).isEqualTo(STOCK_CODE);
         assertThat(command.enqueuedAt()).isPositive();
+        assertThat(enqueueCount("ok")).isEqualTo(1.0);
     }
 
     @Test
@@ -62,6 +66,7 @@ class KafkaFillCommandPublisherTest {
                 .thenReturn(CompletableFuture.failedFuture(new IllegalStateException("broker down")));
 
         assertThat(publisher.publish(STOCK_CODE, EVENT)).isInstanceOf(FillDispatchResult.Failed.class);
+        assertThat(enqueueCount("fail")).isEqualTo(1.0);
     }
 
     @Test
@@ -84,6 +89,10 @@ class KafkaFillCommandPublisherTest {
                 .thenThrow(new IllegalStateException("max.block.ms exceeded"));
 
         assertThat(publisher.publish(STOCK_CODE, EVENT)).isInstanceOf(FillDispatchResult.Failed.class);
+    }
+
+    private double enqueueCount(String result) {
+        return registry.get("matching.enqueue").tag("result", result).counter().count();
     }
 
     private SendResult<String, MatchingCommand> sendResult(int partition, long offset) {

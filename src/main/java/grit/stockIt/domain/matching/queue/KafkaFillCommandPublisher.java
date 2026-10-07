@@ -22,11 +22,14 @@ public class KafkaFillCommandPublisher implements FillCommandPublisher {
 
     private final KafkaTemplate<String, MatchingCommand> kafkaTemplate;
     private final Duration ackTimeout;
+    private final MatchingQueueMetrics metrics;
 
     public KafkaFillCommandPublisher(KafkaTemplate<String, MatchingCommand> kafkaTemplate,
-                                     @Value("${matching.queue.ack-timeout:1s}") Duration ackTimeout) {
+                                     @Value("${matching.queue.ack-timeout:1s}") Duration ackTimeout,
+                                     MatchingQueueMetrics metrics) {
         this.kafkaTemplate = kafkaTemplate;
         this.ackTimeout = ackTimeout;
+        this.metrics = metrics;
     }
 
     // 브로커 기록 확인까지 기다린다. 버퍼에만 넣고 돌아가면 그 사이 사라진 이벤트가 보이지 않는다.
@@ -37,6 +40,7 @@ public class KafkaFillCommandPublisher implements FillCommandPublisher {
             RecordMetadata metadata = kafkaTemplate.send(MatchingTopics.COMMANDS, stockCode, command)
                     .get(ackTimeout.toMillis(), TimeUnit.MILLISECONDS)
                     .getRecordMetadata();
+            metrics.enqueued(true);
             return new FillDispatchResult.Queued(metadata.partition(), metadata.offset());
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
@@ -44,6 +48,7 @@ public class KafkaFillCommandPublisher implements FillCommandPublisher {
         } catch (ExecutionException | TimeoutException | RuntimeException e) {
             log.error("체결 명령 전송 실패. stockCode={} eventId={}", stockCode, event.eventId(), e);
         }
+        metrics.enqueued(false);
         return new FillDispatchResult.Failed();
     }
 }

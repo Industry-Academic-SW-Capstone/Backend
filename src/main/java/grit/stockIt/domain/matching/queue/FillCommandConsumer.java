@@ -18,6 +18,7 @@ public class FillCommandConsumer {
 
     private final LimitOrderFillCoordinator limitOrderFillCoordinator;
     private final SettlementRequestPublisher settlementRequestPublisher;
+    private final MatchingQueueMetrics metrics;
 
     @KafkaListener(
             id = "matching-fill",
@@ -29,6 +30,7 @@ public class FillCommandConsumer {
     public void consume(ConsumerRecord<String, MatchingCommand> record) {
         MatchingCommand command = record.value();
         command.validate();
+        metrics.pickedUp(command.enqueuedAt());
         CommandPosition position = new CommandPosition(record.topic(), record.partition(), record.offset());
 
         // switch 식이라 명령 종류가 늘면 여기서 컴파일이 깨진다. 문(statement)이면 빠뜨린 종류가 조용히 넘어가 유실된다.
@@ -36,10 +38,15 @@ public class FillCommandConsumer {
             case FILL -> limitOrderFillCoordinator.processQueuedFill(
                     command.stockCode(), command.toFillEvent(), position);
         };
+        if (outcome.duplicate()) {
+            metrics.skippedAsDuplicate();
+            return;
+        }
 
         long filledAt = System.currentTimeMillis();
         for (FilledExecution execution : outcome.executions()) {
             settlementRequestPublisher.publish(execution.executionId(), execution.accountId(), filledAt);
         }
+        metrics.filled(command.enqueuedAt());
     }
 }

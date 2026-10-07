@@ -67,13 +67,27 @@ management:
         # 둘을 나눠 봐야 풀이 작아서 막힌 것인지, 한 번 잡은 커넥션을 오래 쥐어서 막힌 것인지 갈린다.
         hikaricp.connections.acquire: true
         hikaricp.connections.usage: true
+        # 큐 지연. 처리 한계를 넘으면 lag 만큼 길어지므로 상한을 넉넉히 둔다.
+        matching.fill.queue.wait: true
+        matching.fill.e2e: true
+        settlement.e2e: true
+        # 워커 처리 시간·횟수·실패는 Spring Kafka 기본 지표로 본다(리스너 id 가 name 태그).
+        spring.kafka.listener: true
       # 버킷 범위를 커넥션 타임아웃과 맞춘다. 기본값은 범위가 넓어 버킷만 늘어난다.
       minimum-expected-value:
         hikaricp.connections.acquire: 1ms
         hikaricp.connections.usage: 1ms
+        matching.fill.queue.wait: 1ms
+        matching.fill.e2e: 1ms
+        settlement.e2e: 1ms
+        spring.kafka.listener: 1ms
       maximum-expected-value:
         hikaricp.connections.acquire: 30s
         hikaricp.connections.usage: 30s
+        matching.fill.queue.wait: 10m
+        matching.fill.e2e: 10m
+        settlement.e2e: 10m
+        spring.kafka.listener: 30s
       percentiles:
         http.server.requests: 0.5,0.95,0.99
         jvm.memory.used: 0.5,0.95,0.99
