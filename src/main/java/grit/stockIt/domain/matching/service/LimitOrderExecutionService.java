@@ -5,6 +5,8 @@ import grit.stockIt.domain.execution.service.ExecutionService;
 import grit.stockIt.domain.matching.dto.LimitOrderFillEvent;
 import grit.stockIt.domain.matching.dto.OrderBookEntry;
 import grit.stockIt.domain.matching.lock.StockMatchingLock;
+import grit.stockIt.domain.matching.queue.CommandPosition;
+import grit.stockIt.domain.matching.repository.ConsumerWatermarkRepository;
 import grit.stockIt.domain.matching.repository.OrderBookRepository;
 import grit.stockIt.domain.order.entity.Order;
 import grit.stockIt.domain.order.entity.OrderStatus;
@@ -20,6 +22,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -34,6 +37,7 @@ public class LimitOrderExecutionService {
     private final OrderBookRepository orderBookRepository;
     private final OrderSubscriptionCoordinator orderSubscriptionCoordinator;
     private final StockMatchingLock stockMatchingLock;
+    private final ConsumerWatermarkRepository consumerWatermarkRepository;
 
     private final LimitOrderMatchPlanner matchPlanner = new LimitOrderMatchPlanner();
 
@@ -48,6 +52,18 @@ public class LimitOrderExecutionService {
     public List<Long> fill(String stockCode, LimitOrderFillEvent event) {
         stockMatchingLock.acquire(stockCode);
         return doFill(stockCode, event);
+    }
+
+    // 큐에서 온 명령용. 위치 기록과 체결이 한 트랜잭션이라 함께 커밋되거나 함께 롤백된다.
+    // 비어 있으면 이미 반영한 위치다(재전달). 락 뒤에 기록하므로 같은 위치를 쥔 두 워커도 한 줄로 선다.
+    @Transactional
+    public Optional<List<Long>> fillOnce(String stockCode, LimitOrderFillEvent event, CommandPosition position) {
+        stockMatchingLock.acquire(stockCode);
+        int advanced = consumerWatermarkRepository.advance(position.topic(), position.partition(), position.offset());
+        if (advanced == 0) {
+            return Optional.empty();
+        }
+        return Optional.of(doFill(stockCode, event));
     }
 
     private List<Long> doFill(String stockCode, LimitOrderFillEvent event) {

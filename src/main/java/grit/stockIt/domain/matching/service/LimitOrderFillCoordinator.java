@@ -1,6 +1,7 @@
 package grit.stockIt.domain.matching.service;
 
 import grit.stockIt.domain.matching.dto.LimitOrderFillEvent;
+import grit.stockIt.domain.matching.queue.CommandPosition;
 import grit.stockIt.domain.matching.repository.RedisMarketDataRepository;
 import grit.stockIt.domain.settlement.service.ExecutionSettlementService;
 import lombok.RequiredArgsConstructor;
@@ -8,6 +9,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
+import java.util.Optional;
 
 // 시세 갱신 → 체결(tx1) → 정산(tx2)
 @Slf4j
@@ -29,6 +31,10 @@ public class LimitOrderFillCoordinator {
         }
     }
 
+    // 큐 워커 경로의 결과. duplicate 면 이미 반영한 위치라 아무것도 하지 않았다.
+    public record QueuedFillOutcome(boolean duplicate, int filledOrders) {
+    }
+
     public FillOutcome processFill(String stockCode, LimitOrderFillEvent event) {
         redisMarketDataRepository.updateLastPrice(stockCode, event.price());
 
@@ -40,6 +46,25 @@ public class LimitOrderFillCoordinator {
             return FillOutcome.failed();
         }
 
+        settleAll(executionIds);
+        return new FillOutcome(true, executionIds.size());
+    }
+
+    // 큐 워커 경로. 체결 실패를 삼키지 않고 던진다 — 워커가 같은 위치를 다시 시도해야 유실이 없다.
+    public QueuedFillOutcome processQueuedFill(String stockCode, LimitOrderFillEvent event, CommandPosition position) {
+        redisMarketDataRepository.updateLastPrice(stockCode, event.price());
+
+        Optional<List<Long>> executionIds = limitOrderExecutionService.fillOnce(stockCode, event, position);
+        if (executionIds.isEmpty()) {
+            log.info("이미 반영한 명령이라 건너뜁니다. eventId={} position={}", event.eventId(), position);
+            return new QueuedFillOutcome(true, 0);
+        }
+
+        settleAll(executionIds.get());
+        return new QueuedFillOutcome(false, executionIds.get().size());
+    }
+
+    private void settleAll(List<Long> executionIds) {
         for (Long executionId : executionIds) {
             try {
                 executionSettlementService.settle(executionId);
@@ -48,7 +73,5 @@ public class LimitOrderFillCoordinator {
                 log.error("정산 실패. 미정산으로 남는다. executionId={}", executionId, e);
             }
         }
-
-        return new FillOutcome(true, executionIds.size());
     }
 }
