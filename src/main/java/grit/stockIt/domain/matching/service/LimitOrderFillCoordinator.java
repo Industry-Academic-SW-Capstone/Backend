@@ -1,12 +1,10 @@
 package grit.stockIt.domain.matching.service;
 
 import grit.stockIt.domain.matching.dto.LimitOrderFillEvent;
-import grit.stockIt.domain.matching.event.LimitOrderFillEventMessage;
 import grit.stockIt.domain.matching.repository.RedisMarketDataRepository;
 import grit.stockIt.domain.settlement.service.ExecutionSettlementService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -29,18 +27,6 @@ public class LimitOrderFillCoordinator {
         static FillOutcome failed() {
             return new FillOutcome(false, 0);
         }
-    }
-
-    @EventListener
-    public void handleLimitOrderFill(LimitOrderFillEventMessage message) {
-        LimitOrderFillEvent event = new LimitOrderFillEvent(
-                message.eventId(),
-                message.orderMethod(),
-                message.price(),
-                message.quantity(),
-                message.eventTimestamp()
-        );
-        processFill(message.stockCode(), event);
     }
 
     public FillOutcome processFill(String stockCode, LimitOrderFillEvent event) {
