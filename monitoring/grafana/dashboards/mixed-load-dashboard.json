@@ -2,7 +2,7 @@
   "title": "Mixed Load — Matching vs Assets API",
   "uid": "mixed-load",
   "schemaVersion": 39,
-  "version": 3,
+  "version": 4,
   "editable": true,
   "time": {
     "from": "now-30m",
@@ -268,7 +268,7 @@
       "id": 13,
       "type": "timeseries",
       "title": "Consumer Lag",
-      "description": "큐에 쌓여 아직 처리하지 못한 메시지 수(브로커 기준, 컨슈머가 죽어도 보인다). 처리 한계를 넘으면 오르고, 부하가 끝나면 0 으로 내려와야 한다. 0 으로 돌아오는 데 걸린 시간 = 비우는 시간. 정산 lag 이 계속 오르면 정산 워커가 체결을 못 따라가는 것이다.",
+      "description": "큐에 쌓여 아직 처리하지 못한 메시지 수(브로커 기준, 컨슈머가 죽어도 보인다). 처리 한계를 넘으면 오르고, 부하가 끝나면 0 으로 내려와야 한다. 0 으로 돌아오는 데 걸린 시간 = 비우는 시간. 정산 lag 이 계속 오르면 정산 워커가 체결을 못 따라가는 것이다. 커밋된 offset 이 없는 파티션은 exporter 가 -1 로 보고하므로 0 으로 올려 더한다.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -312,7 +312,7 @@
             "uid": "prometheus"
           },
           "refId": "A",
-          "expr": "sum(kafka_consumergroup_lag{consumergroup=\"matching-fill\"}) or vector(0)",
+          "expr": "sum(clamp_min(kafka_consumergroup_lag{consumergroup=\"matching-fill\"}, 0)) or vector(0)",
           "legendFormat": "fill"
         },
         {
@@ -321,7 +321,7 @@
             "uid": "prometheus"
           },
           "refId": "B",
-          "expr": "sum(kafka_consumergroup_lag{consumergroup=\"settlement\"}) or vector(0)",
+          "expr": "sum(clamp_min(kafka_consumergroup_lag{consumergroup=\"settlement\"}, 0)) or vector(0)",
           "legendFormat": "settlement"
         }
       ]
@@ -851,6 +851,84 @@
       ]
     },
     {
+      "id": 21,
+      "type": "timeseries",
+      "title": "Worker Utilization",
+      "description": "가장 바쁜 워커 하나가 시간의 몇 %를 처리에 썼나(처리 시간 합 ÷ 경과 시간, Spring Kafka 기본 지표). 100%(빨간 선)에 붙으면 그 워커가 쉬지 않는다 = 그 파티션(종목)의 처리 천장이다. 단일 종목이면 체결 워커 하나만 오른다.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 51,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 0,
+            "spanNulls": true,
+            "thresholdsStyle": {
+              "mode": "line"
+            }
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "transparent",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          },
+          "max": 1.1
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "max",
+            "mean"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "refId": "A",
+          "expr": "max(rate(spring_kafka_listener_seconds_sum{job=\"spring-boot\",name=~\"matching-fill-.*\"}[1m]))",
+          "legendFormat": "busiest fill worker"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "refId": "B",
+          "expr": "max(rate(spring_kafka_listener_seconds_sum{job=\"spring-boot\",name=~\"settlement-.*\"}[1m]))",
+          "legendFormat": "busiest settlement worker"
+        }
+      ]
+    },
+    {
       "id": 17,
       "type": "timeseries",
       "title": "Fill Worker Processing Time",
@@ -860,7 +938,7 @@
         "uid": "prometheus"
       },
       "gridPos": {
-        "x": 0,
+        "x": 12,
         "y": 51,
         "w": 12,
         "h": 8
@@ -912,8 +990,8 @@
         "uid": "prometheus"
       },
       "gridPos": {
-        "x": 12,
-        "y": 51,
+        "x": 0,
+        "y": 59,
         "w": 12,
         "h": 8
       },
@@ -964,9 +1042,9 @@
         "uid": "prometheus"
       },
       "gridPos": {
-        "x": 0,
+        "x": 12,
         "y": 59,
-        "w": 8,
+        "w": 12,
         "h": 8
       },
       "fieldConfig": {
@@ -1032,9 +1110,9 @@
         "uid": "prometheus"
       },
       "gridPos": {
-        "x": 8,
-        "y": 59,
-        "w": 8,
+        "x": 0,
+        "y": 67,
+        "w": 12,
         "h": 8
       },
       "fieldConfig": {
@@ -1084,9 +1162,9 @@
         "uid": "prometheus"
       },
       "gridPos": {
-        "x": 16,
-        "y": 59,
-        "w": 8,
+        "x": 12,
+        "y": 67,
+        "w": 12,
         "h": 8
       },
       "fieldConfig": {
