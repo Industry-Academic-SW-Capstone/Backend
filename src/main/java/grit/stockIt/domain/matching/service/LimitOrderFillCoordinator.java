@@ -59,10 +59,8 @@ public class LimitOrderFillCoordinator {
     }
 
     // 큐 워커 경로. 체결 실패를 삼키지 않고 던진다 — 워커가 같은 위치를 다시 시도해야 유실이 없다.
-    // 정산은 하지 않는다. 워커가 체결 결과를 정산 큐로 넘긴다.
+    // 정산은 하지 않는다. 워커가 체결 결과를 정산 큐로 넘긴다. 현재가는 큐에 넣을 때 이미 갱신했다.
     public QueuedFillOutcome processQueuedFill(String stockCode, LimitOrderFillEvent event, CommandPosition position) {
-        redisMarketDataRepository.updateLastPrice(stockCode, event.price());
-
         Optional<List<FilledExecution>> executions = limitOrderExecutionService.fillOnce(stockCode, event, position);
         if (executions.isEmpty()) {
             log.info("이미 반영한 명령이라 건너뜁니다. eventId={} position={}", event.eventId(), position);

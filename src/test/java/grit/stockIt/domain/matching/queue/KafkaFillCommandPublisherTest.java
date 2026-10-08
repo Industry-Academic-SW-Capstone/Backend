@@ -1,6 +1,7 @@
 package grit.stockIt.domain.matching.queue;
 
 import grit.stockIt.domain.matching.dto.LimitOrderFillEvent;
+import grit.stockIt.domain.matching.repository.RedisMarketDataRepository;
 import grit.stockIt.domain.matching.service.FillDispatchResult;
 import grit.stockIt.domain.order.entity.OrderMethod;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
@@ -36,9 +37,10 @@ class KafkaFillCommandPublisherTest {
     private final KafkaTemplate<String, MatchingCommand> kafkaTemplate = mock(KafkaTemplate.class);
 
     private final SimpleMeterRegistry registry = new SimpleMeterRegistry();
+    private final RedisMarketDataRepository redisMarketDataRepository = mock(RedisMarketDataRepository.class);
 
-    private final KafkaFillCommandPublisher publisher =
-            new KafkaFillCommandPublisher(kafkaTemplate, Duration.ofMillis(200), new MatchingQueueMetrics(registry));
+    private final KafkaFillCommandPublisher publisher = new KafkaFillCommandPublisher(
+            kafkaTemplate, Duration.ofMillis(200), new MatchingQueueMetrics(registry), redisMarketDataRepository);
 
     @Test
     @DisplayName("종목 코드를 키로 matching.commands 에 보내고, 브로커 확인을 받으면 기록 위치를 돌려준다")
@@ -57,6 +59,17 @@ class KafkaFillCommandPublisherTest {
         assertThat(command.stockCode()).isEqualTo(STOCK_CODE);
         assertThat(command.enqueuedAt()).isPositive();
         assertThat(enqueueCount("ok")).isEqualTo(1.0);
+    }
+
+    @Test
+    @DisplayName("현재가는 큐에 넣을 때 갱신한다 — 워커까지 기다리면 큐가 밀린 만큼 시세도 늦는다")
+    void publish_updatesLastPriceAtEntry() {
+        when(kafkaTemplate.send(anyString(), anyString(), any(MatchingCommand.class)))
+                .thenReturn(new CompletableFuture<>());
+
+        publisher.publish(STOCK_CODE, EVENT);
+
+        verify(redisMarketDataRepository).updateLastPrice(STOCK_CODE, EVENT.price());
     }
 
     @Test

@@ -10,7 +10,7 @@ import lombok.NoArgsConstructor;
 
 import java.time.LocalDateTime;
 
-// 쓰기는 ConsumerWatermarkRepository#advance 의 조건부 upsert 로만 한다. 엔티티는 조회와 스키마용이다.
+// 쓰기는 StockMatchingLock#acquireAndAdvance 의 조건부 upsert 로만 한다. 엔티티는 조회와 스키마용이다.
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 @Entity

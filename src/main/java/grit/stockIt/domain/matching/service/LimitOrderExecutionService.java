@@ -6,7 +6,6 @@ import grit.stockIt.domain.matching.dto.LimitOrderFillEvent;
 import grit.stockIt.domain.matching.dto.OrderBookEntry;
 import grit.stockIt.domain.matching.lock.StockMatchingLock;
 import grit.stockIt.domain.matching.queue.CommandPosition;
-import grit.stockIt.domain.matching.repository.ConsumerWatermarkRepository;
 import grit.stockIt.domain.matching.repository.OrderBookRepository;
 import grit.stockIt.domain.order.entity.Order;
 import grit.stockIt.domain.order.entity.OrderStatus;
@@ -37,7 +36,6 @@ public class LimitOrderExecutionService {
     private final OrderBookRepository orderBookRepository;
     private final OrderSubscriptionCoordinator orderSubscriptionCoordinator;
     private final StockMatchingLock stockMatchingLock;
-    private final ConsumerWatermarkRepository consumerWatermarkRepository;
 
     private final LimitOrderMatchPlanner matchPlanner = new LimitOrderMatchPlanner();
 
@@ -60,9 +58,9 @@ public class LimitOrderExecutionService {
     // 비어 있으면 이미 반영한 위치다(재전달). 락 뒤에 기록하므로 같은 위치를 쥔 두 워커도 한 줄로 선다.
     @Transactional
     public Optional<List<FilledExecution>> fillOnce(String stockCode, LimitOrderFillEvent event, CommandPosition position) {
-        stockMatchingLock.acquire(stockCode);
-        int advanced = consumerWatermarkRepository.advance(position.topic(), position.partition(), position.offset());
-        if (advanced == 0) {
+        boolean firstDelivery = stockMatchingLock.acquireAndAdvance(
+                stockCode, position.topic(), position.partition(), position.offset());
+        if (!firstDelivery) {
             return Optional.empty();
         }
         return Optional.of(doFill(stockCode, event));
