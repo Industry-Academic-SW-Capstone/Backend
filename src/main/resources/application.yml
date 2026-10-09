@@ -1,6 +1,9 @@
 spring:
   application:
     name: stockIt
+  # Kafka 설정은 테스트 설정(src/test/resources/application.yml)과 함께 쓰려고 따로 둔다.
+  config:
+    import: classpath:kafka.yml
   # 프로필: 하나만 지정 (local / dev / prod). 미지정 시 local
   # 예: -Dspring.profiles.active=local 또는 환경변수 SPRING_PROFILES_ACTIVE=local
   profiles:
@@ -64,13 +67,31 @@ management:
         # 둘을 나눠 봐야 풀이 작아서 막힌 것인지, 한 번 잡은 커넥션을 오래 쥐어서 막힌 것인지 갈린다.
         hikaricp.connections.acquire: true
         hikaricp.connections.usage: true
+        # 큐 지연. 처리 한계를 넘으면 lag 만큼 길어지므로 상한을 넉넉히 둔다.
+        matching.fill.queue.wait: true
+        matching.fill.e2e: true
+        settlement.e2e: true
+        # 워커 처리 시간·횟수·실패는 Spring Kafka 기본 지표로 본다(리스너 id 가 name 태그).
+        spring.kafka.listener: true
+        # 브로커가 기록을 확인해 줄 때까지(체결 명령 + 정산 요청). 측정 환경 브로커의 몫을 따로 보인다.
+        spring.kafka.template: true
       # 버킷 범위를 커넥션 타임아웃과 맞춘다. 기본값은 범위가 넓어 버킷만 늘어난다.
       minimum-expected-value:
         hikaricp.connections.acquire: 1ms
         hikaricp.connections.usage: 1ms
+        matching.fill.queue.wait: 1ms
+        matching.fill.e2e: 1ms
+        settlement.e2e: 1ms
+        spring.kafka.listener: 1ms
+        spring.kafka.template: 1ms
       maximum-expected-value:
         hikaricp.connections.acquire: 30s
         hikaricp.connections.usage: 30s
+        matching.fill.queue.wait: 10m
+        matching.fill.e2e: 10m
+        settlement.e2e: 10m
+        spring.kafka.listener: 30s
+        spring.kafka.template: 10s
       percentiles:
         http.server.requests: 0.5,0.95,0.99
         jvm.memory.used: 0.5,0.95,0.99
@@ -126,6 +147,13 @@ app:
 matching:
   # 체결 이벤트 1건이 훑을 오더북 후보 최대 개수. 임계 구역 길이에 직접 영향을 준다.
   limit-order-fetch-size: ${MATCHING_LIMIT_ORDER_FETCH_SIZE:100}
+  queue:
+    # true 면 체결 이벤트를 Kafka(matching.commands)에 넣고 워커가 처리한다. false 면 받은 스레드가 바로 처리한다.
+    enabled: ${MATCHING_QUEUE_ENABLED:false}
+    # 브로커 기록 확인을 기다리는 상한. 확인을 받아야 접수(202)가 유실되지 않는다는 뜻이 된다.
+    ack-timeout: ${MATCHING_QUEUE_ACK_TIMEOUT:1s}
+    # 체결 워커 스레드 수. 파티션(24)마다 하나라 종목이 서로 다른 스레드에 갈 확률이 가장 높다.
+    fill-concurrency: ${MATCHING_QUEUE_FILL_CONCURRENCY:24}
   lock:
     # 종목 락 대기 상한. advisory 락은 기본이 무한 대기라 반드시 걸어야 한다.
     # 초과하면 예외로 떨어진다.
@@ -141,3 +169,6 @@ settlement:
     # 너무 짧으면 배치와 체결 직후 정산이 같은 건을 두고 부딪혀 한쪽이 헛돈다.
     grace-period: ${SETTLEMENT_RECOVERY_GRACE_PERIOD:30s}
     batch-size: ${SETTLEMENT_RECOVERY_BATCH_SIZE:100}
+  queue:
+    # 정산 워커 스레드 수
+    concurrency: ${SETTLEMENT_QUEUE_CONCURRENCY:8}

@@ -11,6 +11,8 @@ spring:
     driver-class-name: org.postgresql.Driver
     hikari:
       maximum-pool-size: ${DB_POOL_SIZE:10}
+      # 주문 접수 p99 목표(1초)보다 오래 기다린 요청은 목표를 이미 놓쳤으므로 빨리 실패시킨다. 기본값은 30초.
+      connection-timeout: ${DB_CONNECTION_TIMEOUT:1000}
 
   data:
     redis:

@@ -7,6 +7,7 @@ import grit.stockIt.domain.account.repository.AccountStockRepository;
 import grit.stockIt.domain.contest.entity.Contest;
 import grit.stockIt.domain.contest.repository.ContestRepository;
 import grit.stockIt.domain.matching.dto.LimitOrderFillEvent;
+import grit.stockIt.domain.matching.queue.CommandPosition;
 import grit.stockIt.domain.matching.repository.OrderBookRepository;
 import grit.stockIt.domain.member.entity.Member;
 import grit.stockIt.domain.member.entity.AuthProvider;
@@ -284,5 +285,93 @@ class LimitOrderFillCoordinatorConcurrencyTest extends IntegrationTestSupport {
         AccountStock accountStock = accountStockRepository.findByAccountAndStock(updatedAccount, testStock)
                 .orElseThrow(() -> new AssertionError("AccountStock이 생성되어야 한다"));
         assertThat(accountStock.getQuantity()).isEqualTo(eventCount * 10);
+    }
+
+    @Test
+    @DisplayName("같은 위치의 명령이 다시 오면 건너뛴다 — 틱 하나가 두 주문을 체결시키지 않는다")
+    void queuedFill_redelivered_skipped() {
+        // Given: 틱 하나(10주)로 딱 하나만 체결될 주문 둘.
+        // 재전달을 막지 못하면 첫 번째로 A, 두 번째로 B 가 체결되어 틱 10주로 20주가 체결된다.
+        String stockCode = "005930";
+        Order first = createAndSaveOrder(stockCode, OrderMethod.BUY, new BigDecimal("100"), 10);
+        Order second = createAndSaveOrder(stockCode, OrderMethod.BUY, new BigDecimal("100"), 10);
+        LimitOrderFillEvent event = sellEvent();
+        CommandPosition position = new CommandPosition("matching.commands", 0, 42L);
+
+        // When
+        var firstDelivery = limitOrderFillCoordinator.processQueuedFill(stockCode, event, position);
+        var redelivery = limitOrderFillCoordinator.processQueuedFill(stockCode, event, position);
+
+        // Then
+        assertThat(firstDelivery.duplicate()).isFalse();
+        assertThat(firstDelivery.filledOrders()).isEqualTo(1);
+        assertThat(redelivery.duplicate()).isTrue();
+        assertThat(redelivery.filledOrders()).isZero();
+        assertThat(executionRepository.findByOrderIdInWithOrder(List.of(first.getOrderId(), second.getOrderId())))
+                .as("틱 하나로 체결은 한 건")
+                .hasSize(1);
+    }
+
+    @Test
+    @DisplayName("맞는 주문이 없던 명령도 위치를 기록한다 — 재전달 때 그사이 들어온 주문과 체결되지 않는다")
+    void queuedFill_noMatchThenRedelivered_skipped() {
+        String stockCode = "005930";
+        LimitOrderFillEvent event = sellEvent();
+        CommandPosition position = new CommandPosition("matching.commands", 0, 7L);
+
+        var firstDelivery = limitOrderFillCoordinator.processQueuedFill(stockCode, event, position);
+        Order lateOrder = createAndSaveOrder(stockCode, OrderMethod.BUY, new BigDecimal("100"), 10);
+        var redelivery = limitOrderFillCoordinator.processQueuedFill(stockCode, event, position);
+
+        assertThat(firstDelivery.filledOrders()).isZero();
+        assertThat(redelivery.duplicate()).isTrue();
+        assertThat(orderRepository.findById(lateOrder.getOrderId()).orElseThrow().getFilledQuantity()).isZero();
+    }
+
+    @Test
+    @DisplayName("같은 위치를 두 워커가 동시에 처리해도 한쪽만 체결한다 (리밸런싱 좀비)")
+    void queuedFill_sameTimeSamePosition_onlyOneFills() throws InterruptedException {
+        String stockCode = "005930";
+        Order first = createAndSaveOrder(stockCode, OrderMethod.BUY, new BigDecimal("100"), 10);
+        Order second = createAndSaveOrder(stockCode, OrderMethod.BUY, new BigDecimal("100"), 10);
+        LimitOrderFillEvent event = sellEvent();
+        CommandPosition position = new CommandPosition("matching.commands", 0, 99L);
+
+        int workers = 2;
+        CountDownLatch start = new CountDownLatch(1);
+        CountDownLatch done = new CountDownLatch(workers);
+        AtomicInteger duplicates = new AtomicInteger();
+        List<Exception> exceptions = java.util.Collections.synchronizedList(new ArrayList<>());
+        for (int i = 0; i < workers; i++) {
+            new Thread(() -> {
+                try {
+                    start.await();
+                    if (limitOrderFillCoordinator.processQueuedFill(stockCode, event, position).duplicate()) {
+                        duplicates.incrementAndGet();
+                    }
+                } catch (Exception e) {
+                    exceptions.add(e);
+                } finally {
+                    done.countDown();
+                }
+            }).start();
+        }
+        start.countDown();
+        done.await();
+
+        assertThat(exceptions).isEmpty();
+        assertThat(duplicates.get()).isEqualTo(1);
+        assertThat(executionRepository.findByOrderIdInWithOrder(List.of(first.getOrderId(), second.getOrderId())))
+                .hasSize(1);
+    }
+
+    private LimitOrderFillEvent sellEvent() {
+        return new LimitOrderFillEvent(
+                UUID.randomUUID().toString(),
+                OrderMethod.SELL,
+                new BigDecimal("100"),
+                10,
+                Instant.now().toEpochMilli()
+        );
     }
 }

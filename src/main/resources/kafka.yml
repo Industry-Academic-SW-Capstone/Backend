@@ -1,0 +1,30 @@
+# 체결 큐 Kafka 설정. 메인과 테스트 application.yml 이 함께 import 한다 —
+# 테스트 application.yml 은 메인을 병합하지 않고 대체하므로, 여기 두지 않으면 테스트가 다른 직렬화 설정으로 돈다.
+spring:
+  # matching.queue.enabled 가 false 면 쓰이지 않아 브로커 없이도 기동된다.
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+      acks: all
+      properties:
+        enable.idempotence: true
+        linger.ms: 5
+        # 메타데이터를 못 받거나 버퍼가 차면 요청 스레드를 1초 안에 돌려보낸다.
+        max.block.ms: 1000
+        # 기본 120초는 요청 스레드를 너무 오래 잡는다. linger.ms + request.timeout.ms 이상이어야 한다.
+        request.timeout.ms: 2000
+        delivery.timeout.ms: 3000
+        spring.json.add.type.headers: false
+    consumer:
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      # 역직렬화 실패를 예외로 감싸 에러 핸들러로 넘긴다. 감싸지 않으면 poll 단계에서 같은 메시지에 막혀 파티션이 멈춘다.
+      value-deserializer: org.springframework.kafka.support.serializer.ErrorHandlingDeserializer
+      # 새 컨슈머 그룹은 처음부터 읽는다. 건너뛴 명령은 곧 유실이다.
+      auto-offset-reset: earliest
+      enable-auto-commit: false
+      properties:
+        spring.deserializer.value.delegate.class: org.springframework.kafka.support.serializer.JsonDeserializer
+        spring.json.trusted.packages: grit.stockIt.domain.*
+        spring.json.use.type.headers: false

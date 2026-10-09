@@ -73,6 +73,7 @@ dependencies {
 	testImplementation 'org.testcontainers:testcontainers'
 	testImplementation 'org.testcontainers:junit-jupiter'
 	testImplementation 'org.testcontainers:postgresql'
+	testImplementation 'org.testcontainers:kafka'
 
 	// ArchUnit (아키텍처 규칙 검증 — docs/conventions.md 참고)
 	testImplementation 'com.tngtech.archunit:archunit-junit5:1.3.0'
@@ -94,6 +95,9 @@ dependencies {
 
 	// Prometheus metrics
 	implementation 'io.micrometer:micrometer-registry-prometheus'
+
+	// Kafka
+	implementation 'org.springframework.kafka:spring-kafka'
 
 
 	// Caffeine 캐시

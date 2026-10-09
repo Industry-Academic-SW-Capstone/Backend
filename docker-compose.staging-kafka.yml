@@ -1,0 +1,131 @@
+# 스테이징 — Kafka 브로커 서버 (체결 큐)
+#
+# 앱·부하 서버와 분리한다.
+#   ops 에 두면 k6(VU 수천)와 CPU 를 다퉈 브로커 지연이 측정에 섞인다.
+#   앱 서버에 두면 브로커가 측정 대상의 CPU·디스크를 쓴다.
+# 앱 서버와 같은 AZ·서브넷, 버스트형이 아닌 인스턴스(m7i.large 급)에 둔다.
+#
+# 측정용 구성이다: 브로커 1대, 복제 없음(RF 1). 운영이라면 3대 · RF 3 · min.insync.replicas=2 · acks=all.
+#
+# 실행: docker compose -f docker-compose.staging-kafka.yml up -d
+#       (kafka-init 이 토픽을 만들고 끝난다. 이미 있으면 건너뛴다)
+#
+# 필요한 환경변수 (.env)
+#   KAFKA_ADVERTISED_HOST   이 서버의 사설 IP. 클라이언트(앱)가 접속할 주소로 브로커가 알려 준다
+#
+# 보안 그룹: 앱 서버 → 9092, 모니터링 서버 → 9308(kafka-exporter)·9100(node-exporter) 허용.
+#
+# 측정 회차 사이에 토픽을 다시 만들면 offset 이 0 부터 다시 시작한다.
+# 그때는 consumer_watermark 도 비워야 한다(안 비우면 전부 이미 처리한 명령으로 건너뛴다).
+
+services:
+  kafka:
+    image: apache/kafka:3.9.1
+    container_name: kafka
+    ports:
+      - "9092:9092"
+    environment:
+      # KRaft 단일 노드: 브로커와 컨트롤러를 한 프로세스가 맡는다(ZooKeeper 없음).
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@localhost:9093
+      # 리스너를 둘로 나눈다. 브로커는 접속한 리스너에 맞는 주소를 알려 주는데, 하나만 두면
+      # 같은 compose 안의 컨테이너(kafka-init, kafka-exporter)도 외부 주소를 받아 그리로 나갔다 들어와야 한다.
+      #   INTERNAL  kafka:29092           같은 compose 안의 컨테이너
+      #   EXTERNAL  <사설 IP>:9092         앱 서버
+      KAFKA_LISTENERS: INTERNAL://:29092,EXTERNAL://:9092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:29092,EXTERNAL://${KAFKA_ADVERTISED_HOST:?KAFKA_ADVERTISED_HOST 를 이 서버 사설 IP 로 설정}:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      # 브로커 1대라 내부 토픽도 복제할 곳이 없다.
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_MIN_INSYNC_REPLICAS: 1
+      # 토픽은 kafka-init 이 파티션 수를 정해 만든다. 오타 난 토픽이 1 파티션으로 조용히 생기지 않게 막는다.
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+      KAFKA_LOG_RETENTION_HOURS: 168
+      KAFKA_HEAP_OPTS: "-Xms2g -Xmx2g"
+    volumes:
+      - kafka_data:/var/lib/kafka/data
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 > /dev/null 2>&1"]
+      interval: 5s
+      timeout: 10s
+      retries: 30
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "3"
+
+  # 파티션 수는 나중에 늘리면 키 → 파티션 매핑이 바뀌어 종목 안의 순서가 깨진다. 처음에 정해 만든다.
+  #   matching.commands   종목 키, 24  (체결 워커 24 = 파티션당 하나)
+  #   settlement.requests 계좌 키, 24  (정산 워커 8 이 나눠 맡는다)
+  #   *.DLT               처리할 수 없는 메시지만, 1
+  kafka-init:
+    image: apache/kafka:3.9.1
+    container_name: kafka-init
+    depends_on:
+      kafka:
+        condition: service_healthy
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -e
+        create() {
+          /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:29092 --create --if-not-exists \
+            --topic "$$1" --partitions "$$2" --replication-factor 1
+        }
+        create matching.commands 24
+        create matching.commands.DLT 1
+        create settlement.requests 24
+        create settlement.requests.DLT 1
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:29092 --describe | grep -E "^Topic:"
+    restart: "no"
+
+  # 컨슈머 그룹 lag 을 브로커 쪽에서 잰다. 컨슈머가 죽어도 lag 은 보인다(클라이언트 지표는 함께 사라진다).
+  # DLT 토픽의 offset 도 여기서 나온다(= DLT 에 쌓인 메시지 수).
+  kafka-exporter:
+    image: danielqsj/kafka-exporter:v1.8.0
+    container_name: kafka-exporter
+    command:
+      - "--kafka.server=kafka:29092"
+    ports:
+      - "9308:9308"
+    depends_on:
+      kafka:
+        condition: service_healthy
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # 브로커 호스트의 CPU·디스크. 측정 환경이 병목이 아니었음을 회차마다 기록한다.
+  node-exporter:
+    image: prom/node-exporter:latest
+    container_name: node-exporter
+    ports:
+      - "9100:9100"
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - '--path.procfs=/host/proc'
+      - '--path.sysfs=/host/sys'
+      - '--path.rootfs=/rootfs'
+      - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  kafka_data:
