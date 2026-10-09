@@ -148,8 +148,6 @@ matching:
   # 체결 이벤트 1건이 훑을 오더북 후보 최대 개수. 임계 구역 길이에 직접 영향을 준다.
   limit-order-fetch-size: ${MATCHING_LIMIT_ORDER_FETCH_SIZE:100}
   queue:
-    # true 면 체결 이벤트를 Kafka(matching.commands)에 넣고 워커가 처리한다. false 면 받은 스레드가 바로 처리한다.
-    enabled: ${MATCHING_QUEUE_ENABLED:false}
     # 브로커 기록 확인을 기다리는 상한. 확인을 받아야 접수(202)가 유실되지 않는다는 뜻이 된다.
     ack-timeout: ${MATCHING_QUEUE_ACK_TIMEOUT:1s}
     # 체결 워커 스레드 수. 파티션(24)마다 하나라 종목이 서로 다른 스레드에 갈 확률이 가장 높다.

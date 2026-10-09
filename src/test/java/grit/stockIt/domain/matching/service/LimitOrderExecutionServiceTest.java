@@ -11,6 +11,7 @@ import grit.stockIt.domain.execution.service.ExecutionService;
 import grit.stockIt.domain.matching.dto.LimitOrderFillEvent;
 import grit.stockIt.domain.matching.dto.OrderBookEntry;
 import grit.stockIt.domain.matching.lock.StockMatchingLock;
+import grit.stockIt.domain.matching.queue.CommandPosition;
 import grit.stockIt.domain.matching.repository.OrderBookRepository;
 import grit.stockIt.domain.order.entity.Order;
 import grit.stockIt.domain.order.entity.OrderHold;
@@ -77,6 +78,8 @@ class LimitOrderExecutionServiceTest {
     @InjectMocks
     private LimitOrderExecutionService limitOrderExecutionService;
 
+    private static final CommandPosition POSITION = new CommandPosition("matching.commands", 0, 1L);
+
     private Member testMember;
     private Contest testContest;
     private Account testAccount;
@@ -90,6 +93,7 @@ class LimitOrderExecutionServiceTest {
     void setUp() {
         // fetchSize 설정
         ReflectionTestUtils.setField(limitOrderExecutionService, "fetchSize", 100);
+        when(stockMatchingLock.acquireAndAdvance(anyString(), anyString(), anyInt(), anyLong())).thenReturn(true);
         
         // 테스트 데이터 생성
         testMember = Member.builder()
@@ -168,7 +172,7 @@ class LimitOrderExecutionServiceTest {
                 .thenReturn(Optional.of(testOrderHold));
 
         // When
-        List<Long> executionIds = limitOrderExecutionService.fill(stockCode, event);
+        List<Long> executionIds = fill(stockCode, event);
 
         // Then
         assertThat(executionIds).hasSize(1);
@@ -208,7 +212,7 @@ class LimitOrderExecutionServiceTest {
                 .thenReturn(Optional.of(testAccountStock));
 
         // When
-        List<Long> executionIds = limitOrderExecutionService.fill(stockCode, event);
+        List<Long> executionIds = fill(stockCode, event);
 
         // Then
         assertThat(executionIds).hasSize(1);
@@ -260,7 +264,7 @@ class LimitOrderExecutionServiceTest {
                 .thenReturn(Optional.of(partialOrderHold));
 
         // When
-        List<Long> executionIds = limitOrderExecutionService.fill(stockCode, event);
+        List<Long> executionIds = fill(stockCode, event);
 
         // Then
         assertThat(executionIds).hasSize(1);
@@ -349,7 +353,7 @@ class LimitOrderExecutionServiceTest {
                 });
 
         // When
-        List<Long> executionIds = limitOrderExecutionService.fill(stockCode, event);
+        List<Long> executionIds = fill(stockCode, event);
 
         // Then
         assertThat(executionIds).hasSize(2);
@@ -375,7 +379,7 @@ class LimitOrderExecutionServiceTest {
                 .thenReturn(List.of());
 
         // When
-        List<Long> executionIds = limitOrderExecutionService.fill(stockCode, event);
+        List<Long> executionIds = fill(stockCode, event);
 
         // Then
         assertThat(executionIds).isEmpty();
@@ -408,7 +412,7 @@ class LimitOrderExecutionServiceTest {
                 .thenReturn(List.of(testBuyOrder));
 
         // When
-        List<Long> executionIds = limitOrderExecutionService.fill(stockCode, event);
+        List<Long> executionIds = fill(stockCode, event);
 
         // Then
         assertThat(executionIds).isEmpty();
@@ -439,7 +443,7 @@ class LimitOrderExecutionServiceTest {
                 .thenReturn(List.of()); // DB에 주문 없음
 
         // When
-        List<Long> executionIds = limitOrderExecutionService.fill(stockCode, event);
+        List<Long> executionIds = fill(stockCode, event);
 
         // Then
         assertThat(executionIds).isEmpty();
@@ -460,7 +464,7 @@ class LimitOrderExecutionServiceTest {
         );
 
         // When
-        List<Long> executionIds = limitOrderExecutionService.fill(stockCode, event);
+        List<Long> executionIds = fill(stockCode, event);
 
         // Then
         assertThat(executionIds).isEmpty();
@@ -506,7 +510,7 @@ class LimitOrderExecutionServiceTest {
                 .thenReturn(Optional.of(marketOrderHold));
 
         // When
-        List<Long> executionIds = limitOrderExecutionService.fill(stockCode, event);
+        List<Long> executionIds = fill(stockCode, event);
 
         // Then
         assertThat(executionIds).hasSize(1);
@@ -552,7 +556,7 @@ class LimitOrderExecutionServiceTest {
                 .thenReturn(Optional.of(testAccountStock));
 
         // When
-        List<Long> executionIds = limitOrderExecutionService.fill(stockCode, event);
+        List<Long> executionIds = fill(stockCode, event);
 
         // Then
         assertThat(executionIds).hasSize(1);
@@ -645,7 +649,7 @@ class LimitOrderExecutionServiceTest {
                 });
 
         // When
-        List<Long> executionIds = limitOrderExecutionService.fill(stockCode, event);
+        List<Long> executionIds = fill(stockCode, event);
 
         // Then
         assertThat(executionIds).hasSize(2);
@@ -701,7 +705,7 @@ class LimitOrderExecutionServiceTest {
                 .thenReturn(Optional.of(partialOrderHold));
 
         // When
-        List<Long> executionIds = limitOrderExecutionService.fill(stockCode, event);
+        List<Long> executionIds = fill(stockCode, event);
 
         // Then
         assertThat(executionIds).hasSize(1);
@@ -719,5 +723,10 @@ class LimitOrderExecutionServiceTest {
         ReflectionTestUtils.setField(execution, "executionId", executionId);
         return execution;
     }
-}
 
+    private List<Long> fill(String stockCode, LimitOrderFillEvent event) {
+        return limitOrderExecutionService.fillOnce(stockCode, event, POSITION).orElseThrow().stream()
+                .map(FilledExecution::executionId)
+                .toList();
+    }
+}

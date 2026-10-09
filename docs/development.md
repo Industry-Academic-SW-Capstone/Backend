@@ -20,7 +20,7 @@
 Docker Compose:
 
 ```bash
-docker-compose up -d          # Traefik, PostgreSQL, Redis, Backend, 모니터링
+docker-compose up -d          # Traefik, PostgreSQL, Redis, Kafka, Backend, 모니터링
 docker-compose down
 docker-compose build          # 백엔드 이미지 재빌드
 ```
@@ -29,7 +29,7 @@ docker-compose build          # 백엔드 이미지 재빌드
 
 | 프로파일 | 용도 |
 |----------|------|
-| `local` | 로컬 DB/Redis (localhost) |
+| `local` | 로컬 DB/Redis/Kafka (localhost, Kafka 는 `docker-compose up -d kafka kafka-init`) |
 | `dev` | Docker 서비스 (**기본값**) |
 | `prod` | 외부 DB (배포 서버) |
 

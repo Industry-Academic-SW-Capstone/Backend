@@ -42,7 +42,7 @@ stockIt은 Spring Boot로 구축된 한국 주식 거래 시뮬레이션 플랫�
 ./gradlew test --tests "ClassName.methodName"      # 특정 테스트 메서드 실행
 
 # Docker (개발)
-docker-compose up -d          # 전체 서비스 시작 (Traefik, PostgreSQL, Redis, Backend)
+docker-compose up -d          # 전체 서비스 시작 (Traefik, PostgreSQL, Redis, Kafka, Backend)
 docker-compose down           # 전체 서비스 중지
 docker-compose build          # 백엔드 이미지 재빌드
 

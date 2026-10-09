@@ -1,7 +1,6 @@
 # 체결 큐 Kafka 설정. 메인과 테스트 application.yml 이 함께 import 한다 —
 # 테스트 application.yml 은 메인을 병합하지 않고 대체하므로, 여기 두지 않으면 테스트가 다른 직렬화 설정으로 돈다.
 spring:
-  # matching.queue.enabled 가 false 면 쓰이지 않아 브로커 없이도 기동된다.
   kafka:
     bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
     producer:

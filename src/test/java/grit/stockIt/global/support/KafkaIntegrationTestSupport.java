@@ -23,9 +23,9 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.function.Predicate;
 
-// 체결 큐를 켠 통합 테스트. 브로커는 JVM 당 한 번 띄우고, 토픽은 운영처럼 미리 만든다(자동 생성에 기대지 않는다).
+// 워커가 도는 통합 테스트. 브로커는 JVM 당 한 번 띄우고, 토픽은 운영처럼 미리 만든다(자동 생성에 기대지 않는다).
 @TestPropertySource(properties = {
-        "matching.queue.enabled=true",
+        "spring.kafka.listener.auto-startup=true",
         "matching.queue.fill-concurrency=" + KafkaIntegrationTestSupport.PARTITIONS
 })
 public abstract class KafkaIntegrationTestSupport extends IntegrationTestSupport {

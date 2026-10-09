@@ -6,14 +6,12 @@ import grit.stockIt.domain.matching.service.LimitOrderFillCoordinator.QueuedFill
 import grit.stockIt.domain.settlement.queue.SettlementRequestPublisher;
 import lombok.RequiredArgsConstructor;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.stereotype.Component;
 
 // 체결 워커. 파티션 하나를 스레드 하나가 맡아 그 안의 명령을 순서대로 처리하고, 체결 결과를 정산 큐로 넘긴다.
 @Component
 @RequiredArgsConstructor
-@ConditionalOnProperty(name = "matching.queue.enabled", havingValue = "true")
 public class FillCommandConsumer {
 
     private final LimitOrderFillCoordinator limitOrderFillCoordinator;

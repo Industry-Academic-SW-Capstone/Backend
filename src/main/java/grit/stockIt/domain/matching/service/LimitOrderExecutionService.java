@@ -42,20 +42,10 @@ public class LimitOrderExecutionService {
     @Value("${matching.limit-order-fetch-size:100}")
     private int fetchSize;
 
-    // 종목 락을 잡고 체결한다. 계좌를 보지 않는다 — 체결 수량은 배분 계획과 주문 잔여 수량만으로
-    // 정해지므로, 정산에 필요한 계좌 조회·잠금이 이 트랜잭션에 들어오지 않는다.
-    //
-    // 락은 이 트랜잭션에 묶여 있어 커밋과 함께 풀린다. 커밋은 프록시가 하므로 반환 뒤에 일어난다.
-    @Transactional
-    public List<Long> fill(String stockCode, LimitOrderFillEvent event) {
-        stockMatchingLock.acquire(stockCode);
-        return doFill(stockCode, event).stream()
-                .map(FilledExecution::executionId)
-                .toList();
-    }
-
-    // 큐에서 온 명령용. 위치 기록과 체결이 한 트랜잭션이라 함께 커밋되거나 함께 롤백된다.
-    // 비어 있으면 이미 반영한 위치다(재전달). 락 뒤에 기록하므로 같은 위치를 쥔 두 워커도 한 줄로 선다.
+    // 위치 기록과 체결이 한 트랜잭션이라 함께 커밋되거나 함께 롤백된다. 비어 있으면 이미 반영한 위치다(재전달).
+    // 락 뒤에 기록하므로 같은 위치를 쥔 두 워커도 한 줄로 선다.
+    // 계좌를 보지 않는다 — 체결 수량은 배분 계획과 주문 잔여 수량만으로 정해지므로,
+    // 정산에 필요한 계좌 조회·잠금이 이 트랜잭션에 들어오지 않는다.
     @Transactional
     public Optional<List<FilledExecution>> fillOnce(String stockCode, LimitOrderFillEvent event, CommandPosition position) {
         boolean firstDelivery = stockMatchingLock.acquireAndAdvance(
