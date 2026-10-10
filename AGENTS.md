@@ -11,7 +11,7 @@ stockIt은 Spring Boot로 구축된 한국 주식 거래 시뮬레이션 플랫�
 이 파일은 항상 로드되는 오리엔테이션 문서입니다. 깊은 내용은 필요할 때만 해당 `docs/` 파일을 읽으세요:
 
 - `docs/architecture.md` — 패키지/도메인 구조, 이벤트 흐름, 캐싱
-- `docs/matching-engine.md` — Redis 오더북 매칭 내부 구조 (오더북 키, 분산 락, 계좌 비관적 락, 이중 쓰기 정합성, 복구 배치, 동시성)
+- `docs/matching-engine.md` — 매칭 엔진 내부 구조 (Kafka 명령 큐와 종목 파티션 단일 작성자, 워터마크 재전달 거르기, 취소·만료, 정산 큐·복구 배치, 실패 처리)
 - `docs/websocket.md` — 실시간 스트리밍 설계 (STOMP 설정, 구독 참조 카운팅, KIS WebSocket 클라이언트, 브로드캐스트 흐름)
 - `docs/deployment.md` — CI/CD 파이프라인, Docker Hub, SSH + `docker-compose.prod.yml`, 시크릿, 모니터링
 - `docs/development.md` — 로컬 설정, 프로파일, 테스트, 마이그레이션
@@ -52,12 +52,12 @@ docker-compose --profile load-test run --rm k6 run /scripts/matching-engine-test
 
 ## 아키텍처
 
-**Java 21 / Spring Boot 3.5.6 / Gradle**, PostgreSQL 17(운영은 아직 15), Redis 7, Flyway 마이그레이션 사용.
+**Java 21 / Spring Boot 3.5.6 / Gradle**, PostgreSQL 17(운영은 아직 15), Redis 7, Kafka 3.9(KRaft), Flyway 마이그레이션 사용.
 
 ### 패키지 구조 (`grit.stockIt`)
 
 - **`domain/`** — 비즈니스 모듈. 각 모듈은 controller/service/repository/dto/entity 계층으로 구성:
-  - `matching` — Redis 기반 지정가 주문 매칭 엔진 (핵심 거래 로직)
+  - `matching` — 지정가·시장가 매칭 엔진 (핵심 거래 로직). 체결·취소·만료 명령을 Kafka 종목 파티션 워커가 처리
   - `order` / `execution` — 주문 접수 및 체결 추적, 이벤트 기반 처리(`LimitOrderFillEvent`)
   - `account` — 포트폴리오 및 현금 관리
   - `stock` — 주식 데이터 및 KIS API 연동
@@ -78,7 +78,8 @@ docker-compose --profile load-test run --rm k6 run /scripts/matching-engine-test
 
 ### 핵심 아키텍처 패턴
 
-- **이벤트 기반**: 도메인 이벤트(예: `LimitOrderFillEvent`)로 주문 매칭과 체결/알림을 디커플링
+- **명령 큐**: 체결·취소·만료는 Kafka `matching.commands`(종목 키) → 종목 파티션 워커, 정산은 `settlement.requests`(계좌 키) → 정산 워커
+- **이벤트 기반**: 도메인 이벤트로 체결과 미션·알림 같은 후속 처리를 디커플링
 - **3단계 캐싱**: Redis(분산) + Caffeine(로컬 랭킹) + `@Cacheable`
 - **WebSocket**: `/ws`에서 SockJS 위 STOMP, 토픽은 `/topic`·`/queue`, 앱 prefix는 `/app`
 - **JSON 컨벤션**: Jackson SNAKE_CASE — Java camelCase가 API 응답에서 snake_case로 자동 변환
@@ -100,8 +101,8 @@ docker-compose --profile load-test run --rm k6 run /scripts/matching-engine-test
 
 ## 테스트
 
-- **단위/통합**: JUnit 5 + Testcontainers(PostgreSQL) — 외부 DB 불필요
-- **동시성 테스트**: `LimitOrderMatchingServiceConcurrencyTest`가 동시 주문 매칭 하에서 데이터 정합성을 검증
+- **단위/통합**: JUnit 5 + Testcontainers(PostgreSQL, Kafka) — 외부 DB·브로커 불필요
+- **매칭 테스트**: `LimitOrderFillCoordinatorConcurrencyTest`(재전달, 좀비 워커), `MatchingQueueFlowIntegrationTest`(Kafka 입구 -> 체결 -> 정산, 취소·만료 순서)
 - **부하 테스트**: k6 스크립트(`k6/`)와 측정 보조 스크립트(`benchmark/`)는 개인 측정용이라 저장소에 올리지 않습니다(`.gitignore`). 부하 진입점 `POST /api/test/mock-execution`(`LoadTestController`, prod 제외)만 코드에 있습니다
 
 ## 데이터베이스 마이그레이션

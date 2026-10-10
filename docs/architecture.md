@@ -15,9 +15,10 @@ job/        배치 작업 (KIS 마스터 파일 다운로드/파싱)
 
 | 모듈 | 책임 |
 |------|------|
-| `matching` | Redis 기반 지정가 매칭 엔진 (핵심 트레이딩 로직) → [matching-engine.md](matching-engine.md) |
-| `order` | 주문 접수·검증·홀딩(현금/주식), Redis 오더북 등록 |
+| `matching` | 매칭 엔진 — Kafka 명령 큐와 종목 파티션 워커 (핵심 트레이딩 로직) → [matching-engine.md](matching-engine.md) |
+| `order` | 주문 접수·검증·홀딩(현금/주식), 취소 접수, 워커의 취소·만료 처리, 시장가 당일 만료 스케줄러 |
 | `execution` | 체결 기록 및 추적 |
+| `settlement` | 정산 큐·워커·복구 배치 (체결을 계좌에 반영) |
 | `account` | 자산·포트폴리오·현금 관리 |
 | `stock` | 종목 데이터, KIS API 연동, 차트, `stock/analysis`(AI 분석) |
 | `contest` | 모의투자 대회 |
@@ -39,8 +40,8 @@ job/        배치 작업 (KIS 마스터 파일 다운로드/파싱)
 
 도메인 이벤트로 주문 매칭과 체결/알림을 디커플링합니다.
 
-- **`LimitOrderFillEventMessage`** — 지정가 체결 트리거. `LimitOrderEventPublisher`(@EventListener)가
-  수신해 Redis 큐에 적재하고 매칭을 구동합니다. 상세 흐름은 [matching-engine.md](matching-engine.md).
+- **`LimitOrderFillEventMessage`** — KIS 체결 틱. `LimitOrderFillEventListener`(@EventListener)가 받아
+  체결 명령을 Kafka `matching.commands` 에 넣습니다. 상세 흐름은 [matching-engine.md](matching-engine.md).
 - **`TradeCompletionEvent`** — 거래 완료 후 후속 처리(미션/알림 등) 트리거.
 - 미션·알림 도메인도 각자 `event/` 패키지에서 이벤트를 발행/구독합니다.
 
@@ -48,7 +49,7 @@ job/        배치 작업 (KIS 마스터 파일 다운로드/파싱)
 
 | 계층 | 용도 | 설정 |
 |------|------|------|
-| Redis (분산) | 오더북, 시세, 매칭 큐/락, 세션성 데이터 | `RedisConfig` |
+| Redis (분산) | 시세(현재가), 세션성 데이터 | `RedisConfig` |
 | Caffeine (로컬) | 랭킹 (`rankings` 캐시, TTL 60초) | `CacheConfig` |
 | `@Cacheable` | 메서드 단위 캐싱 | Spring Cache 추상화 |
 
