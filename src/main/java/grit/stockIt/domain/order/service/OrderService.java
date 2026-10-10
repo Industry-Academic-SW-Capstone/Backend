@@ -2,9 +2,10 @@ package grit.stockIt.domain.order.service;
 
 import grit.stockIt.domain.account.entity.Account;
 import grit.stockIt.domain.account.repository.AccountRepository;
-import grit.stockIt.domain.matching.lock.StockMatchingLock;
+import grit.stockIt.domain.matching.queue.OrderCancelCommandPublisher;
 import grit.stockIt.domain.order.dto.LimitOrderCreateRequest;
 import grit.stockIt.domain.order.dto.MarketOrderCreateRequest;
+import grit.stockIt.domain.order.dto.OrderCancelAcceptedResponse;
 import grit.stockIt.domain.order.dto.OrderResponse;
 import grit.stockIt.domain.order.dto.PendingOrdersResponse;
 import grit.stockIt.domain.order.entity.Order;
@@ -15,10 +16,9 @@ import grit.stockIt.domain.order.repository.OrderRepository;
 import grit.stockIt.domain.stock.entity.Stock;
 import grit.stockIt.domain.stock.repository.StockRepository;
 import grit.stockIt.global.exception.BadRequestException;
-import jakarta.persistence.EntityManager;
+import grit.stockIt.global.exception.ServiceUnavailableException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
@@ -37,12 +37,7 @@ public class OrderService {
     private final OrderPricingService orderPricingService;
     private final OrderHoldService orderHoldService;
     private final OrderSubscriptionService orderSubscriptionService;
-    private final StockMatchingLock stockMatchingLock;
-    private final EntityManager entityManager;
-
-    // 취소는 사용자가 기다리는 요청이라 체결보다 짧게 끊는다.
-    @Value("${matching.lock.cancel-timeout:3s}")
-    private String cancelLockTimeout;
+    private final OrderCancelCommandPublisher orderCancelCommandPublisher;
 
     // 지정가 주문 생성
     @Transactional
@@ -148,18 +143,14 @@ public class OrderService {
         return OrderResponse.from(savedOrder);
     }
 
-    // 주문 취소
-    @Transactional
-    public OrderResponse cancelOrder(Long orderId) {
-        Order order = orderRepository.findById(orderId)
+    // 접수만 한다. 취소는 체결과 같은 종목 줄에서 워커가 하므로, 그사이 체결되면 취소되지 않는다.
+    // 여기서 거르는 상태는 빠른 거절일 뿐이고 최종 판정은 워커가 한다.
+    @Transactional(readOnly = true)
+    public OrderCancelAcceptedResponse cancelOrder(Long orderId) {
+        Order order = orderRepository.findByIdWithStockAndAccount(orderId)
                 .orElseThrow(() -> new BadRequestException("주문을 찾을 수 없습니다."));
 
         orderAuthorizationService.ensureAccountOwner(order.getAccount());
-
-        // 취소도 오더북을 바꾸므로 체결과 같은 락 아래에서 해야 한다. 락을 잡기 전에 읽은
-        // 상태는 그 사이 체결로 바뀌었을 수 있어 다시 읽는다.
-        stockMatchingLock.acquire(order.getStock().getCode(), cancelLockTimeout);
-        entityManager.refresh(order);
 
         if (order.getStatus() == OrderStatus.CANCELLED) {
             throw new BadRequestException("이미 취소된 주문입니다.");
@@ -168,21 +159,11 @@ public class OrderService {
             throw new BadRequestException("이미 체결된 주문은 취소할 수 없습니다.");
         }
 
-        order.markCancelled();
-        orderRepository.save(order);
-
-        if (order.getRemainingQuantity() > 0) {
-            orderSubscriptionService.unsubscribeOnCancel(order);
+        if (!orderCancelCommandPublisher.publish(order.getStock().getCode(), orderId)) {
+            throw new ServiceUnavailableException("취소 요청을 접수하지 못했습니다. 잠시 후 다시 시도해 주세요.");
         }
-
-        if (order.getOrderMethod() == OrderMethod.BUY) {
-            orderHoldService.releaseBuyHold(order);
-        } else if (order.getOrderMethod() == OrderMethod.SELL) {
-            orderHoldService.releaseSellHold(order);
-        }
-
-        log.info("주문 취소 완료: orderId={}", orderId);
-        return OrderResponse.from(order);
+        log.info("주문 취소 접수: orderId={}", orderId);
+        return new OrderCancelAcceptedResponse(orderId);
     }
 
     @Transactional(readOnly = true)

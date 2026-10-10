@@ -8,7 +8,10 @@ import grit.stockIt.domain.contest.repository.ContestRepository;
 import grit.stockIt.domain.execution.entity.Execution;
 import grit.stockIt.domain.execution.repository.ExecutionRepository;
 import grit.stockIt.domain.matching.dto.LimitOrderFillEvent;
+import grit.stockIt.domain.matching.entity.ConsumerWatermark;
+import grit.stockIt.domain.matching.repository.ConsumerWatermarkRepository;
 import grit.stockIt.domain.matching.service.FillCommandPublisher;
+import grit.stockIt.domain.matching.service.FillDispatchResult;
 import grit.stockIt.domain.member.entity.AuthProvider;
 import grit.stockIt.domain.member.entity.Member;
 import grit.stockIt.domain.member.repository.MemberRepository;
@@ -39,13 +42,15 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 
-@DisplayName("체결 큐 → 체결 워커 → 정산 큐 → 정산 워커 (Kafka 통합)")
+@DisplayName("체결 큐 → 체결 워커 → 정산 큐 → 정산 워커, 취소 (Kafka 통합)")
 class MatchingQueueFlowIntegrationTest extends KafkaIntegrationTestSupport {
 
     private static final BigDecimal PRICE = new BigDecimal("200");
     private static final BigDecimal INITIAL_CASH = new BigDecimal("1000000");
 
     @Autowired private FillCommandPublisher fillCommandPublisher;
+    @Autowired private OrderCancelCommandPublisher orderCancelCommandPublisher;
+    @Autowired private ConsumerWatermarkRepository consumerWatermarkRepository;
     @Autowired private KafkaTemplate<String, SettlementRequest> settlementTemplate;
     @Autowired private SettlementRepository settlementRepository;
     @Autowired private ExecutionRepository executionRepository;
@@ -81,6 +86,23 @@ class MatchingQueueFlowIntegrationTest extends KafkaIntegrationTestSupport {
     }
 
     @Test
+    @DisplayName("취소가 뒤따르는 체결보다 먼저 들어오면 같은 줄에서 먼저 처리되어, 주문은 체결되지 않고 홀딩이 풀린다")
+    void cancelThenFill_sameStock_cancelledNotFilled() {
+        BuyOrder buy = transactionTemplate.execute(status -> createBuyOrder());
+
+        assertThat(orderCancelCommandPublisher.publish(buy.stockCode(), buy.orderId())).isTrue();
+        FillDispatchResult.Queued fill = (FillDispatchResult.Queued) fillCommandPublisher.publish(buy.stockCode(),
+                new LimitOrderFillEvent(UUID.randomUUID().toString(), OrderMethod.SELL, PRICE, 1, System.currentTimeMillis()));
+
+        await().atMost(WAIT).until(() -> lastOffsetOf(fill.partition()) >= fill.offset());
+
+        assertThat(orderRepository.findById(buy.orderId()).orElseThrow().getStatus()).isEqualTo(OrderStatus.CANCELLED);
+        assertThat(executionOf(buy.orderId())).isNull();
+        assertThat(accountRepository.findById(buy.accountId()).orElseThrow().getHoldAmount())
+                .isEqualByComparingTo(BigDecimal.ZERO);
+    }
+
+    @Test
     @DisplayName("처리할 수 없는 정산 요청은 재시도하지 않고 DLT 로 보낸다")
     void invalidSettlementRequest_toDlt() throws Exception {
         long marker = System.nanoTime();
@@ -92,6 +114,15 @@ class MatchingQueueFlowIntegrationTest extends KafkaIntegrationTestSupport {
     private Execution executionOf(Long orderId) {
         List<Execution> executions = executionRepository.findByOrderIdInWithOrder(List.of(orderId));
         return executions.isEmpty() ? null : executions.get(0);
+    }
+
+    private long lastOffsetOf(int partition) {
+        return consumerWatermarkRepository.findAll().stream()
+                .filter(row -> row.getId().getTopic().equals(MatchingTopics.COMMANDS)
+                        && row.getId().getPartitionNo() == partition)
+                .mapToLong(ConsumerWatermark::getLastOffset)
+                .findFirst()
+                .orElse(-1L);
     }
 
     private record BuyOrder(Long orderId, Long accountId, String stockCode) {

@@ -1,9 +1,12 @@
 package grit.stockIt.domain.matching.queue;
 
+import grit.stockIt.domain.matching.dto.LimitOrderFillEvent;
 import grit.stockIt.domain.matching.service.FilledExecution;
 import grit.stockIt.domain.matching.service.LimitOrderFillCoordinator;
 import grit.stockIt.domain.matching.service.LimitOrderFillCoordinator.QueuedFillOutcome;
 import grit.stockIt.domain.order.entity.OrderMethod;
+import grit.stockIt.domain.order.service.OrderCancelService;
+import grit.stockIt.domain.order.service.QueuedCancelOutcome;
 import grit.stockIt.domain.settlement.queue.SettlementRequestPublisher;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
@@ -23,16 +26,17 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-@DisplayName("FillCommandConsumer")
-class FillCommandConsumerTest {
+@DisplayName("MatchingCommandConsumer")
+class MatchingCommandConsumerTest {
 
     private static final CommandPosition POSITION = new CommandPosition(MatchingTopics.COMMANDS, 7, 42L);
 
     private final LimitOrderFillCoordinator coordinator = mock(LimitOrderFillCoordinator.class);
     private final SettlementRequestPublisher settlementRequestPublisher = mock(SettlementRequestPublisher.class);
     private final SimpleMeterRegistry registry = new SimpleMeterRegistry();
-    private final FillCommandConsumer consumer =
-            new FillCommandConsumer(coordinator, settlementRequestPublisher, new MatchingQueueMetrics(registry));
+    private final OrderCancelService orderCancelService = mock(OrderCancelService.class);
+    private final MatchingCommandConsumer consumer = new MatchingCommandConsumer(
+            coordinator, orderCancelService, settlementRequestPublisher, new MatchingQueueMetrics(registry));
 
     @Test
     @DisplayName("체결마다 그 계좌 키로 정산 요청을 보내고 처리 지표를 남긴다")
@@ -68,9 +72,31 @@ class FillCommandConsumerTest {
         verify(coordinator, never()).processQueuedFill(any(), any(), any());
     }
 
+    @Test
+    @DisplayName("취소 명령은 그 위치와 함께 취소 처리로 넘기고 체결·정산은 하지 않는다")
+    void cancel_delegatesToCancelService() {
+        when(orderCancelService.cancelOnce("005930", 9L, POSITION)).thenReturn(QueuedCancelOutcome.CANCELLED);
+
+        consumer.consume(record(MatchingCommand.cancel("005930", 9L, System.currentTimeMillis())));
+
+        verify(orderCancelService).cancelOnce("005930", 9L, POSITION);
+        verify(coordinator, never()).processQueuedFill(any(), any(), any());
+        verify(settlementRequestPublisher, never()).publish(any(), any(), anyLong());
+        assertThat(registry.get("matching.fill.e2e").timer().count()).isZero();
+    }
+
+    @Test
+    @DisplayName("주문 번호가 없는 취소 명령은 처리하지 않고 재시도 금지 예외를 던진다")
+    void cancelWithoutOrderId_throwsWithoutCancelling() {
+        assertThatThrownBy(() -> consumer.consume(record(MatchingCommand.cancel("005930", null, 0L))))
+                .isInstanceOf(InvalidMatchingCommandException.class);
+        verify(orderCancelService, never()).cancelOnce(any(), any(), any());
+    }
+
     private MatchingCommand fillCommand(int quantity) {
-        return new MatchingCommand(MatchingCommandType.FILL, "evt-1", "005930", OrderMethod.SELL,
-                new BigDecimal("200"), quantity, 1_700_000_000_000L, System.currentTimeMillis());
+        return MatchingCommand.fill("005930",
+                new LimitOrderFillEvent("evt-1", OrderMethod.SELL, new BigDecimal("200"), quantity, 1_700_000_000_000L),
+                System.currentTimeMillis());
     }
 
     private ConsumerRecord<String, MatchingCommand> record(MatchingCommand command) {
