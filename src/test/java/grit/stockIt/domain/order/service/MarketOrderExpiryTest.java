@@ -4,6 +4,8 @@ import grit.stockIt.domain.account.entity.Account;
 import grit.stockIt.domain.account.entity.AccountStock;
 import grit.stockIt.domain.account.repository.AccountRepository;
 import grit.stockIt.domain.account.repository.AccountStockRepository;
+import grit.stockIt.domain.matching.queue.CommandPosition;
+import grit.stockIt.domain.matching.queue.OrderCommandPublisher;
 import grit.stockIt.domain.contest.entity.Contest;
 import grit.stockIt.domain.contest.repository.ContestRepository;
 import grit.stockIt.domain.member.entity.AuthProvider;
@@ -40,11 +42,15 @@ import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
-@DisplayName("시장가 미체결 주문 당일 만료 (통합 테스트)")
+@DisplayName("시장가 미체결 주문 당일 만료 — 스케줄러는 명령을 넣고 워커가 만료한다 (통합 테스트)")
 class MarketOrderExpiryTest extends IntegrationTestSupport {
 
     private static final BigDecimal UPPER_LIMIT_PRICE = new BigDecimal("91000");
@@ -53,7 +59,7 @@ class MarketOrderExpiryTest extends IntegrationTestSupport {
     private OrderService orderService;
 
     @Autowired
-    private MarketOrderExpiryService marketOrderExpiryService;
+    private OrderCancelService orderCancelService;
 
     @Autowired
     private MarketOrderExpiryScheduler marketOrderExpiryScheduler;
@@ -82,11 +88,19 @@ class MarketOrderExpiryTest extends IntegrationTestSupport {
     @MockitoBean
     private StockDetailService stockDetailService;
 
+    @MockitoBean
+    private OrderCommandPublisher orderCommandPublisher;
+
     private String memberEmail;
+    // 워터마크는 테스트 사이에 지우지 않는다. 테스트마다 다른 토픽 이름을 써서 서로의 위치에 걸리지 않게 한다.
+    private String topic;
+    private long nextOffset;
 
     @BeforeEach
     void setUp() {
         memberEmail = "market-expiry-" + UUID.randomUUID() + "@test.com";
+        topic = "matching.commands-" + UUID.randomUUID().toString().substring(0, 8);
+        when(orderCommandPublisher.expire(anyString(), anyLong())).thenReturn(true);
         when(stockDetailService.getStockDetail(anyString())).thenReturn(Mono.just(tradeableStockDetail()));
         when(stockDetailService.getUpperLimitPrice(anyString())).thenReturn(Mono.just(UPPER_LIMIT_PRICE));
     }
@@ -107,9 +121,8 @@ class MarketOrderExpiryTest extends IntegrationTestSupport {
         Account beforeExpiry = accountRepository.findById(fx.account().getAccountId()).orElseThrow();
         assertThat(beforeExpiry.getHoldAmount()).isEqualByComparingTo(UPPER_LIMIT_PRICE.multiply(BigDecimal.valueOf(3)));
 
-        boolean expired = marketOrderExpiryService.expire(created.orderId());
+        assertThat(expireByWorker(fx, created.orderId())).isEqualTo(QueuedCancelOutcome.CANCELLED);
 
-        assertThat(expired).isTrue();
         Order order = orderRepository.findById(created.orderId()).orElseThrow();
         assertThat(order.getStatus()).isEqualTo(OrderStatus.CANCELLED);
 
@@ -131,7 +144,7 @@ class MarketOrderExpiryTest extends IntegrationTestSupport {
 
         assertThat(holdingOf(fx).getHoldQuantity()).isEqualTo(4);
 
-        marketOrderExpiryService.expire(created.orderId());
+        assertThat(expireByWorker(fx, created.orderId())).isEqualTo(QueuedCancelOutcome.CANCELLED);
 
         assertThat(orderRepository.findById(created.orderId()).orElseThrow().getStatus())
                 .isEqualTo(OrderStatus.CANCELLED);
@@ -141,8 +154,8 @@ class MarketOrderExpiryTest extends IntegrationTestSupport {
     }
 
     @Test
-    @DisplayName("지정가 주문은 만료 대상이 아니다 — 주문가가 고정이라 홀딩이 다음 날에도 유효하다")
-    void limitOrder_isNotExpirable() {
+    @DisplayName("스케줄러는 시장가 주문에만 그 종목 키로 만료 명령을 넣는다 — 지정가는 주문가가 고정이라 홀딩이 다음 날에도 유효하다")
+    void scheduler_enqueuesMarketOrdersOnly() {
         Fixture fx = createFixture(new BigDecimal("1000000"));
         authenticateAs(memberEmail);
         OrderResponse limitOrder = orderService.createLimitOrder(new LimitOrderCreateRequest(
@@ -150,15 +163,18 @@ class MarketOrderExpiryTest extends IntegrationTestSupport {
         OrderResponse marketOrder = orderService.createMarketOrder(new MarketOrderCreateRequest(
                 fx.account().getAccountId(), fx.stock().getCode(), 1, OrderMethod.BUY));
 
-        List<Long> expirable = marketOrderExpiryService.findExpirableOrderIds();
+        marketOrderExpiryScheduler.expireMarketOrders();
 
-        assertThat(expirable).contains(marketOrder.orderId());
-        assertThat(expirable).doesNotContain(limitOrder.orderId());
+        verify(orderCommandPublisher).expire(fx.stock().getCode(), marketOrder.orderId());
+        verify(orderCommandPublisher, never()).expire(anyString(), eq(limitOrder.orderId()));
+        assertThat(orderRepository.findById(marketOrder.orderId()).orElseThrow().getStatus())
+                .as("스케줄러는 명령만 넣는다. 만료는 워커가 한다")
+                .isEqualTo(OrderStatus.PENDING);
     }
 
     @Test
-    @DisplayName("스케줄러가 대상을 모두 만료시키며, 다시 돌려도 바뀌는 것이 없다")
-    void scheduler_expiresAll_andIsIdempotent() {
+    @DisplayName("만료된 주문은 다음 실행의 대상이 아니고, 같은 만료가 다시 처리돼도 바뀌는 것이 없다")
+    void expired_notTargetedAgain_andIdempotent() {
         Fixture fx = createFixture(new BigDecimal("1000000"));
         authenticateAs(memberEmail);
         OrderResponse first = orderService.createMarketOrder(new MarketOrderCreateRequest(
@@ -166,18 +182,21 @@ class MarketOrderExpiryTest extends IntegrationTestSupport {
         OrderResponse second = orderService.createMarketOrder(new MarketOrderCreateRequest(
                 fx.account().getAccountId(), fx.stock().getCode(), 1, OrderMethod.BUY));
 
-        marketOrderExpiryScheduler.expireMarketOrders();
-
-        assertThat(orderRepository.findById(first.orderId()).orElseThrow().getStatus())
-                .isEqualTo(OrderStatus.CANCELLED);
-        assertThat(orderRepository.findById(second.orderId()).orElseThrow().getStatus())
-                .isEqualTo(OrderStatus.CANCELLED);
-        assertThat(marketOrderExpiryService.findExpirableOrderIds()).isEmpty();
+        expireByWorker(fx, first.orderId());
+        expireByWorker(fx, second.orderId());
 
         marketOrderExpiryScheduler.expireMarketOrders();
+        verify(orderCommandPublisher, never()).expire(anyString(), eq(first.orderId()));
+        verify(orderCommandPublisher, never()).expire(anyString(), eq(second.orderId()));
 
+        assertThat(expireByWorker(fx, first.orderId())).isEqualTo(QueuedCancelOutcome.NOT_CANCELLABLE);
         assertThat(accountRepository.findById(fx.account().getAccountId()).orElseThrow().getHoldAmount())
                 .isEqualByComparingTo(BigDecimal.ZERO);
+    }
+
+    // 워커가 꺼낸 만료 명령 처리를 흉내 낸다. 큐 없이 위치만 넘긴다.
+    private QueuedCancelOutcome expireByWorker(Fixture fx, Long orderId) {
+        return orderCancelService.expireOnce(fx.stock().getCode(), orderId, new CommandPosition(topic, 0, nextOffset++));
     }
 
     private AccountStock holdingOf(Fixture fx) {

@@ -79,13 +79,14 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
             Pageable pageable
     );
 
-    // 당일 만료 대상인 미체결 시장가 주문. 락을 주문마다 따로 잡으므로 식별자만 가져온다.
-    @Query("SELECT o.orderId FROM Order o " +
+    // 당일 만료 대상인 미체결 시장가 주문. 처리는 워커가 하므로 명령에 넣을 식별자와 종목만 가져온다.
+    @Query("SELECT new grit.stockIt.domain.order.repository.ExpirableMarketOrder(o.orderId, o.stock.code) " +
+           "FROM Order o " +
            "WHERE o.orderType = :marketType " +
            "AND o.status IN :statuses " +
            "AND (o.quantity - o.filledQuantity) > 0 " +
            "ORDER BY o.orderId ASC")
-    List<Long> findExpirableMarketOrderIds(
+    List<ExpirableMarketOrder> findExpirableMarketOrders(
             @Param("marketType") OrderType marketType,
             @Param("statuses") List<OrderStatus> statuses
     );

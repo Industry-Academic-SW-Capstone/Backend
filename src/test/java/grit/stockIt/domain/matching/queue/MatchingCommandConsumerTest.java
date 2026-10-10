@@ -86,6 +86,18 @@ class MatchingCommandConsumerTest {
     }
 
     @Test
+    @DisplayName("만료 명령은 만료 처리로 넘긴다")
+    void expire_delegatesToExpireOnce() {
+        when(orderCancelService.expireOnce("005930", 9L, POSITION)).thenReturn(QueuedCancelOutcome.CANCELLED);
+
+        consumer.consume(record(MatchingCommand.expire("005930", 9L, System.currentTimeMillis())));
+
+        verify(orderCancelService).expireOnce("005930", 9L, POSITION);
+        verify(orderCancelService, never()).cancelOnce(any(), any(), any());
+        verify(coordinator, never()).processQueuedFill(any(), any(), any());
+    }
+
+    @Test
     @DisplayName("주문 번호가 없는 취소 명령은 처리하지 않고 재시도 금지 예외를 던진다")
     void cancelWithoutOrderId_throwsWithoutCancelling() {
         assertThatThrownBy(() -> consumer.consume(record(MatchingCommand.cancel("005930", null, 0L))))

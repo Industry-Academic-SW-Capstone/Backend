@@ -8,7 +8,7 @@ import grit.stockIt.domain.contest.entity.Contest;
 import grit.stockIt.domain.contest.repository.ContestRepository;
 import grit.stockIt.domain.matching.lock.StockMatchingLock;
 import grit.stockIt.domain.matching.queue.CommandPosition;
-import grit.stockIt.domain.matching.queue.OrderCancelCommandPublisher;
+import grit.stockIt.domain.matching.queue.OrderCommandPublisher;
 import grit.stockIt.domain.matching.repository.OrderBookRepository;
 import grit.stockIt.domain.member.entity.AuthProvider;
 import grit.stockIt.domain.member.entity.Member;
@@ -78,7 +78,7 @@ class OrderCancelQueryCharacterizationTest extends IntegrationTestSupport {
     private OrderCancelService orderCancelService;
 
     @MockitoBean
-    private OrderCancelCommandPublisher orderCancelCommandPublisher;
+    private OrderCommandPublisher orderCommandPublisher;
 
     @Autowired
     private OrderRepository orderRepository;
@@ -128,7 +128,7 @@ class OrderCancelQueryCharacterizationTest extends IntegrationTestSupport {
         org.mockito.Mockito.reset(orderBookRepository, orderSubscriptionCoordinator, stockMatchingLock);
         String uniqueId = UUID.randomUUID().toString().substring(0, 8);
         topic = "matching.commands-" + uniqueId;
-        when(orderCancelCommandPublisher.publish(anyString(), anyLong())).thenReturn(true);
+        when(orderCommandPublisher.cancel(anyString(), anyLong())).thenReturn(true);
 
         member = memberRepository.save(Member.builder()
                 .name("특성화 사용자 " + uniqueId)
@@ -359,7 +359,7 @@ class OrderCancelQueryCharacterizationTest extends IntegrationTestSupport {
         OrderCancelAcceptedResponse response = orderService.cancelOrder(order.getOrderId());
 
         assertThat(response.orderId()).isEqualTo(order.getOrderId());
-        verify(orderCancelCommandPublisher).publish(stock.getCode(), order.getOrderId());
+        verify(orderCommandPublisher).cancel(stock.getCode(), order.getOrderId());
         assertThat(orderRepository.findById(order.getOrderId()).orElseThrow().getStatus()).isEqualTo(OrderStatus.PENDING);
     }
 
@@ -367,7 +367,7 @@ class OrderCancelQueryCharacterizationTest extends IntegrationTestSupport {
     @DisplayName("취소 명령을 큐에 넣지 못하면 ServiceUnavailableException이 발생한다")
     void cancelOrder_notEnqueued_throwsServiceUnavailable() {
         Order order = saveLimitOrder(account, stock, OrderMethod.SELL, new BigDecimal("10000"), 3);
-        when(orderCancelCommandPublisher.publish(anyString(), anyLong())).thenReturn(false);
+        when(orderCommandPublisher.cancel(anyString(), anyLong())).thenReturn(false);
 
         assertThatThrownBy(() -> orderService.cancelOrder(order.getOrderId()))
                 .isInstanceOf(ServiceUnavailableException.class);
@@ -381,7 +381,7 @@ class OrderCancelQueryCharacterizationTest extends IntegrationTestSupport {
 
         assertThatThrownBy(() -> orderService.cancelOrder(order.getOrderId()))
                 .isInstanceOf(ForbiddenException.class);
-        verify(orderCancelCommandPublisher, never()).publish(anyString(), anyLong());
+        verify(orderCommandPublisher, never()).cancel(anyString(), anyLong());
     }
 
     @Test

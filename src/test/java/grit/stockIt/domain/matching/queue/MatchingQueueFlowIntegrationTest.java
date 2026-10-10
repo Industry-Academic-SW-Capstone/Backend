@@ -42,14 +42,14 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 
-@DisplayName("체결 큐 → 체결 워커 → 정산 큐 → 정산 워커, 취소 (Kafka 통합)")
+@DisplayName("체결 큐 → 체결 워커 → 정산 큐 → 정산 워커, 취소·만료 (Kafka 통합)")
 class MatchingQueueFlowIntegrationTest extends KafkaIntegrationTestSupport {
 
     private static final BigDecimal PRICE = new BigDecimal("200");
     private static final BigDecimal INITIAL_CASH = new BigDecimal("1000000");
 
     @Autowired private FillCommandPublisher fillCommandPublisher;
-    @Autowired private OrderCancelCommandPublisher orderCancelCommandPublisher;
+    @Autowired private OrderCommandPublisher orderCommandPublisher;
     @Autowired private ConsumerWatermarkRepository consumerWatermarkRepository;
     @Autowired private KafkaTemplate<String, SettlementRequest> settlementTemplate;
     @Autowired private SettlementRepository settlementRepository;
@@ -90,7 +90,7 @@ class MatchingQueueFlowIntegrationTest extends KafkaIntegrationTestSupport {
     void cancelThenFill_sameStock_cancelledNotFilled() {
         BuyOrder buy = transactionTemplate.execute(status -> createBuyOrder());
 
-        assertThat(orderCancelCommandPublisher.publish(buy.stockCode(), buy.orderId())).isTrue();
+        assertThat(orderCommandPublisher.cancel(buy.stockCode(), buy.orderId())).isTrue();
         FillDispatchResult.Queued fill = (FillDispatchResult.Queued) fillCommandPublisher.publish(buy.stockCode(),
                 new LimitOrderFillEvent(UUID.randomUUID().toString(), OrderMethod.SELL, PRICE, 1, System.currentTimeMillis()));
 
@@ -98,6 +98,19 @@ class MatchingQueueFlowIntegrationTest extends KafkaIntegrationTestSupport {
 
         assertThat(orderRepository.findById(buy.orderId()).orElseThrow().getStatus()).isEqualTo(OrderStatus.CANCELLED);
         assertThat(executionOf(buy.orderId())).isNull();
+        assertThat(accountRepository.findById(buy.accountId()).orElseThrow().getHoldAmount())
+                .isEqualByComparingTo(BigDecimal.ZERO);
+    }
+
+    @Test
+    @DisplayName("만료 명령도 같은 줄로 들어가 워커가 주문을 끝내고 홀딩을 푼다")
+    void expire_viaQueue_cancelsAndReleasesHold() {
+        BuyOrder buy = transactionTemplate.execute(status -> createBuyOrder());
+
+        assertThat(orderCommandPublisher.expire(buy.stockCode(), buy.orderId())).isTrue();
+
+        await().atMost(WAIT).until(() ->
+                orderRepository.findById(buy.orderId()).orElseThrow().getStatus() == OrderStatus.CANCELLED);
         assertThat(accountRepository.findById(buy.accountId()).orElseThrow().getHoldAmount())
                 .isEqualByComparingTo(BigDecimal.ZERO);
     }

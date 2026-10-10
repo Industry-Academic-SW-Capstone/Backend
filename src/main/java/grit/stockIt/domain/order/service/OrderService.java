@@ -2,7 +2,7 @@ package grit.stockIt.domain.order.service;
 
 import grit.stockIt.domain.account.entity.Account;
 import grit.stockIt.domain.account.repository.AccountRepository;
-import grit.stockIt.domain.matching.queue.OrderCancelCommandPublisher;
+import grit.stockIt.domain.matching.queue.OrderCommandPublisher;
 import grit.stockIt.domain.order.dto.LimitOrderCreateRequest;
 import grit.stockIt.domain.order.dto.MarketOrderCreateRequest;
 import grit.stockIt.domain.order.dto.OrderCancelAcceptedResponse;
@@ -37,7 +37,7 @@ public class OrderService {
     private final OrderPricingService orderPricingService;
     private final OrderHoldService orderHoldService;
     private final OrderSubscriptionService orderSubscriptionService;
-    private final OrderCancelCommandPublisher orderCancelCommandPublisher;
+    private final OrderCommandPublisher orderCommandPublisher;
 
     // 지정가 주문 생성
     @Transactional
@@ -159,7 +159,7 @@ public class OrderService {
             throw new BadRequestException("이미 체결된 주문은 취소할 수 없습니다.");
         }
 
-        if (!orderCancelCommandPublisher.publish(order.getStock().getCode(), orderId)) {
+        if (!orderCommandPublisher.cancel(order.getStock().getCode(), orderId)) {
             throw new ServiceUnavailableException("취소 요청을 접수하지 못했습니다. 잠시 후 다시 시도해 주세요.");
         }
         log.info("주문 취소 접수: orderId={}", orderId);

@@ -12,7 +12,7 @@ import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.stereotype.Component;
 
-// 체결 워커. 파티션 하나를 스레드 하나가 맡아 그 안의 명령(체결·취소)을 도착 순서대로 처리한다.
+// 체결 워커. 파티션 하나를 스레드 하나가 맡아 그 안의 명령(체결, 취소, 만료)을 도착 순서대로 처리한다.
 // 체결 결과는 정산 큐로 넘긴다.
 @Slf4j
 @Component
@@ -41,6 +41,7 @@ public class MatchingCommandConsumer {
         Runnable handler = switch (command.type()) {
             case FILL -> () -> fill(command, position);
             case CANCEL -> () -> cancel(command, position);
+            case EXPIRE -> () -> expire(command, position);
         };
         handler.run();
     }
@@ -62,9 +63,17 @@ public class MatchingCommandConsumer {
     }
 
     private void cancel(MatchingCommand command, CommandPosition position) {
-        QueuedCancelOutcome outcome = orderCancelService.cancelOnce(command.stockCode(), command.orderId(), position);
+        logIfDuplicate(orderCancelService.cancelOnce(command.stockCode(), command.orderId(), position), command, position);
+    }
+
+    private void expire(MatchingCommand command, CommandPosition position) {
+        logIfDuplicate(orderCancelService.expireOnce(command.stockCode(), command.orderId(), position), command, position);
+    }
+
+    private void logIfDuplicate(QueuedCancelOutcome outcome, MatchingCommand command, CommandPosition position) {
         if (outcome == QueuedCancelOutcome.DUPLICATE) {
-            log.info("이미 반영한 명령이라 건너뜁니다. orderId={} position={}", command.orderId(), position);
+            log.info("이미 반영한 명령이라 건너뜁니다. type={} orderId={} position={}",
+                    command.type(), command.orderId(), position);
         }
     }
 }

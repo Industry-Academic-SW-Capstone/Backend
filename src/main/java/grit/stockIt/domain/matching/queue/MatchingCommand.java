@@ -5,8 +5,8 @@ import grit.stockIt.domain.order.entity.OrderMethod;
 
 import java.math.BigDecimal;
 
-// matching.commands 메시지. 종류마다 쓰는 필드가 다르다 - FILL 은 틱(eventId~eventTimestamp), CANCEL 은 orderId.
-// enqueuedAt 은 큐 대기와 도착->처리 완료 시간을 재는 기준이다.
+// matching.commands 메시지. 종류마다 쓰는 필드가 다르다 — FILL 은 틱(eventId~eventTimestamp), CANCEL·EXPIRE 는 orderId.
+// enqueuedAt 은 큐 대기와 도착→처리 완료 시간을 재는 기준이다.
 public record MatchingCommand(
         MatchingCommandType type,
         String stockCode,
@@ -34,7 +34,15 @@ public record MatchingCommand(
     }
 
     public static MatchingCommand cancel(String stockCode, Long orderId, long enqueuedAt) {
-        return new MatchingCommand(MatchingCommandType.CANCEL, stockCode, null, null, null, 0, 0L, orderId, enqueuedAt);
+        return ofOrder(MatchingCommandType.CANCEL, stockCode, orderId, enqueuedAt);
+    }
+
+    public static MatchingCommand expire(String stockCode, Long orderId, long enqueuedAt) {
+        return ofOrder(MatchingCommandType.EXPIRE, stockCode, orderId, enqueuedAt);
+    }
+
+    private static MatchingCommand ofOrder(MatchingCommandType type, String stockCode, Long orderId, long enqueuedAt) {
+        return new MatchingCommand(type, stockCode, null, null, null, 0, 0L, orderId, enqueuedAt);
     }
 
     // 여기서 걸러내지 않으면 처리 중 예외가 나 같은 명령을 끝없이 재시도하며 파티션이 멈춘다.
@@ -51,7 +59,7 @@ public record MatchingCommand(
     private boolean hasRequiredFields() {
         return switch (type) {
             case FILL -> !isBlank(eventId) && orderMethod != null && price != null && price.signum() > 0 && quantity > 0;
-            case CANCEL -> orderId != null;
+            case CANCEL, EXPIRE -> orderId != null;
         };
     }
 

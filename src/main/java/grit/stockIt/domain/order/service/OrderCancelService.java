@@ -15,8 +15,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Optional;
 
-// 체결 워커가 꺼낸 취소 명령을 처리한다. 같은 종목의 체결과 한 줄에서 도착 순서대로 처리되므로,
-// 접수 뒤 먼저 도착한 체결이 주문을 채웠으면 취소되지 않는다.
+// 체결 워커가 꺼낸 취소·만료 명령을 처리한다. 같은 종목의 체결과 한 줄에서 도착 순서대로 처리되므로,
+// 명령을 넣은 뒤 먼저 도착한 체결이 주문을 채웠으면 취소되지 않는다.
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -32,6 +32,17 @@ public class OrderCancelService {
     // 같은 주문의 취소가 두 번 들어와도 두 번째는 상태를 보고 아무것도 하지 않는다.
     @Transactional
     public QueuedCancelOutcome cancelOnce(String stockCode, Long orderId, CommandPosition position) {
+        return endOnce(stockCode, orderId, position, "주문 취소");
+    }
+
+    // 시장가 주문 당일 만료. 시장가 홀딩은 그날 상한가로 잡으므로 다음 매매일로 넘어가면 "홀딩 >= 체결금액" 보장이 깨진다.
+    // 처리는 취소와 같다 — 권한은 접수 단계에서만 보므로 워커에는 원래 없다.
+    @Transactional
+    public QueuedCancelOutcome expireOnce(String stockCode, Long orderId, CommandPosition position) {
+        return endOnce(stockCode, orderId, position, "시장가 주문 당일 만료");
+    }
+
+    private QueuedCancelOutcome endOnce(String stockCode, Long orderId, CommandPosition position, String action) {
         boolean firstDelivery = stockMatchingLock.acquireAndAdvance(
                 stockCode, position.topic(), position.partition(), position.offset());
         if (!firstDelivery) {
@@ -40,8 +51,8 @@ public class OrderCancelService {
 
         Optional<Order> found = orderRepository.findById(orderId);
         if (found.isEmpty() || !isCancellable(found.get())) {
-            log.info("취소할 수 없는 주문이라 건너뜁니다. orderId={} status={}",
-                    orderId, found.map(Order::getStatus).orElse(null));
+            log.info("{} 대상이 아니라 건너뜁니다. orderId={} status={}",
+                    action, orderId, found.map(Order::getStatus).orElse(null));
             return QueuedCancelOutcome.NOT_CANCELLABLE;
         }
 
@@ -51,7 +62,7 @@ public class OrderCancelService {
         if (order.getRemainingQuantity() > 0) {
             TransactionHandler.afterCommit(() -> orderSubscriptionService.unsubscribeOnCancel(order));
         }
-        log.info("주문 취소 완료: orderId={}", orderId);
+        log.info("{} 완료: orderId={} stockCode={}", action, orderId, stockCode);
         return QueuedCancelOutcome.CANCELLED;
     }
 
