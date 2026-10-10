@@ -56,8 +56,12 @@ import static org.awaitility.Awaitility.await;
 // 종목 락 없이 "같은 종목의 명령은 한 파티션에서 워커 하나가 차례로 처리한다"만으로 오더북과 계좌가 맞는지 본다.
 // 한 종목에 체결·취소·만료를 여러 스레드가 한꺼번에 넣고, 다 처리된 뒤 장부 불변식을 검사한다.
 // 틱 수량(3주)을 주문 수량(10주)보다 작게 해 주문마다 체결이 여러 번 나뉘어 들어오고, 그 사이에 취소가 끼어든다.
-// 무작위 취소는 워커가 그 주문에 닿기 전에 대부분 끝나므로, 워커가 지금 채우고 있는 주문을 골라 취소하는 스레드를
-// 체결이 끝날 때까지 함께 돌린다 — 같은 주문을 같은 순간에 건드리는 창을 넓힌다.
+// 취소는 세 갈래로 넣는다.
+//   무작위      — 아무 주문이나. 대부분 체결이 닿기 전에 처리된다
+//   줄 앞쪽     — 틱을 넣는 도중, 지금까지 넣은 틱이 채울 차례의 주문을 골라 바로 뒤에 끼운다. 정상 구조에서
+//                 "부분 체결된 주문을 다음 틱 전에 취소"하는 경우를 실제로 만든다
+//   처리 중     — 워커가 지금 채우는 주문을 DB 에서 골라 취소한다. 취소가 다른 줄로 새면(단일 작성자가 깨지면)
+//                 같은 주문을 같은 순간에 건드리게 되는 창을 넓힌다
 @DisplayName("단일 종목 체결·취소·만료 동시 발행 (Kafka 통합)")
 class SingleStockCommandConcurrencyIntegrationTest extends KafkaIntegrationTestSupport {
 
@@ -99,20 +103,25 @@ class SingleStockCommandConcurrencyIntegrationTest extends KafkaIntegrationTestS
     @Test
     @DisplayName("체결·취소·만료가 한 줄에 섞여도 주문 수량·홀딩·현금·보유 수량이 장부와 맞는다")
     void concurrentCommands_singleStock_ledgerConsistent() throws Exception {
+        long startedAt = System.nanoTime();
         long seed = System.nanoTime();
         Fixture fixture = transactionTemplate.execute(status -> createFixture());
         FillDispatchResult.Queued probe = publishNoMatchTick(fixture.stockCode());
 
         Published published = publishConcurrently(fixture, new Random(seed), () -> { });
-        cancelWhileFilling(fixture, probe.partition(), published);
+        int hotCancels = cancelWhileFilling(fixture, probe.partition(), published);
 
         drain(fixture, probe.partition());
-        assertThat(violations(fixture, published)).as("seed=%d", seed).isEmpty();
+        List<String> violations = violations(fixture, published);
+        printSummary("단일 종목 체결·취소·만료 동시 발행", seed, fixture, published, hotCancels, null, null, startedAt, violations);
+        assertThat(violations).as("seed=%d", seed).isEmpty();
+        assertThat(cancelledAfterPartialFill(fixture)).as("seed=%d 부분 체결 뒤 취소가 실제로 일어났다", seed).isPositive();
     }
 
     @Test
     @DisplayName("처리 중 워커를 멈추고 커밋된 위치를 되감아 재전달시켜도 장부가 맞는다 — 워터마크가 다시 온 명령을 거른다")
     void redeliveredMidFlight_ledgerStillConsistent() throws Exception {
+        long startedAt = System.nanoTime();
         long seed = System.nanoTime();
         Random random = new Random(seed);
         Fixture fixture = transactionTemplate.execute(status -> createFixture());
@@ -126,18 +135,28 @@ class SingleStockCommandConcurrencyIntegrationTest extends KafkaIntegrationTestS
                 rewound.addAndGet(rewindCommittedOffset(probe.partition(), probe.offset(), 30 + random.nextInt(120)));
             }
         });
-        cancelWhileFilling(fixture, probe.partition(), published);
+        int hotCancels = cancelWhileFilling(fixture, probe.partition(), published);
 
         drain(fixture, probe.partition());
+        double duplicates = fillDuplicates() - duplicatesBefore;
+        List<String> violations = violations(fixture, published);
+        printSummary("처리 중 재전달 주입", seed, fixture, published, hotCancels, rewound.get(), duplicates, startedAt, violations);
         assertThat(rewound.get()).as("seed=%d 되감은 위치 수", seed).isPositive();
-        assertThat(fillDuplicates() - duplicatesBefore).as("seed=%d 재전달을 워터마크가 거른 수", seed).isPositive();
-        assertThat(violations(fixture, published)).as("seed=%d", seed).isEmpty();
+        assertThat(duplicates).as("seed=%d 재전달을 워터마크가 거른 수", seed).isPositive();
+        assertThat(violations).as("seed=%d", seed).isEmpty();
+        assertThat(cancelledAfterPartialFill(fixture)).as("seed=%d 부분 체결 뒤 취소가 실제로 일어났다", seed).isPositive();
+    }
+
+    private long cancelledAfterPartialFill(Fixture fixture) {
+        return jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM trade_order WHERE stock_code = ? AND status = 'CANCELLED' AND filled_quantity > 0",
+                Long.class, fixture.stockCode());
     }
 
     // ===== 발행 =====
 
-    // endRequested 는 취소·만료를 보낸 주문. 처리 중 취소가 계속 더해지므로 동시 집합이다.
-    private record Published(int ticks, AtomicLong lastFillOffset, Set<Long> endRequested) {
+    // endRequested 는 취소·만료를 보낸 주문. 발행 중·처리 중 취소가 계속 더해지므로 동시 집합이다.
+    private record Published(int ticks, AtomicLong lastFillOffset, Set<Long> endRequested, int frontierCancels) {
     }
 
     // 모든 발행 스레드를 같은 순간에 풀고, 그동안 sideTask 를 함께 돌린다.
@@ -149,7 +168,17 @@ class SingleStockCommandConcurrencyIntegrationTest extends KafkaIntegrationTestS
         cancels.addAll(cancelTargets.subList(0, DOUBLE_CANCELS));
         Collections.shuffle(cancels, random);
 
-        int threads = FILL_THREADS + CANCEL_THREADS + EXPIRE_THREADS + 1;
+        Set<Long> endRequested = ConcurrentHashMap.newKeySet();
+        endRequested.addAll(cancelTargets);
+        endRequested.addAll(fixture.marketOrderIds());
+        // 틱이 채워 나갈 순서. 같은 가격이면 먼저 만든 주문이 앞선다. 처음부터 끝내기로 한 주문(만료할 시장가,
+        // 무작위 취소 대상)은 대부분 틱이 닿기 전에 빠지므로 건너뛴다 — 그래야 지금 채워질 차례를 맞게 짚는다.
+        List<Long> priority = fixture.limitOrderIds().stream().filter(id -> !endRequested.contains(id)).toList();
+        AtomicLong publishedShares = new AtomicLong();
+        AtomicInteger frontierCancels = new AtomicInteger();
+        CountDownLatch fillsPublished = new CountDownLatch(FILL_THREADS);
+
+        int threads = FILL_THREADS + CANCEL_THREADS + EXPIRE_THREADS + 2;
         ExecutorService pool = Executors.newFixedThreadPool(threads);
         CountDownLatch ready = new CountDownLatch(threads);
         CountDownLatch start = new CountDownLatch(1);
@@ -161,13 +190,18 @@ class SingleStockCommandConcurrencyIntegrationTest extends KafkaIntegrationTestS
         try {
             for (int t = 0; t < FILL_THREADS; t++) {
                 submit(pool, ready, start, errors, () -> {
-                    for (int i = 0; i < TICKS_PER_FILL_THREAD; i++) {
-                        if (fillCommandPublisher.publish(stockCode, sellTick(TICK_QUANTITY))
-                                instanceof FillDispatchResult.Queued queued) {
-                            lastFillOffset.accumulateAndGet(queued.offset(), Math::max);
-                        } else {
-                            failedSends.incrementAndGet();
+                    try {
+                        for (int i = 0; i < TICKS_PER_FILL_THREAD; i++) {
+                            if (fillCommandPublisher.publish(stockCode, sellTick(TICK_QUANTITY))
+                                    instanceof FillDispatchResult.Queued queued) {
+                                lastFillOffset.accumulateAndGet(queued.offset(), Math::max);
+                                publishedShares.addAndGet(TICK_QUANTITY);
+                            } else {
+                                failedSends.incrementAndGet();
+                            }
                         }
+                    } finally {
+                        fillsPublished.countDown();
                     }
                 });
             }
@@ -185,6 +219,23 @@ class SingleStockCommandConcurrencyIntegrationTest extends KafkaIntegrationTestS
                     }
                 }));
             }
+            // 줄 앞쪽 취소 — 지금까지 넣은 틱 수량이면 우선순위 몇 번째 주문까지 닿는지 셈해, 그 주문의 취소를 바로 뒤에 넣는다.
+            submit(pool, ready, start, errors, () -> {
+                while (fillsPublished.getCount() > 0) {
+                    int frontier = (int) (publishedShares.get() / ORDER_QUANTITY);
+                    for (int next = frontier; next <= frontier + 1 && next < priority.size(); next++) {
+                        Long orderId = priority.get(next);
+                        if (endRequested.add(orderId)) {
+                            if (orderCommandPublisher.cancel(stockCode, orderId)) {
+                                frontierCancels.incrementAndGet();
+                            } else {
+                                failedSends.incrementAndGet();
+                            }
+                        }
+                    }
+                    sleepQuietly(2);
+                }
+            });
             submit(pool, ready, start, errors, sideTask);
 
             ready.await();
@@ -198,15 +249,12 @@ class SingleStockCommandConcurrencyIntegrationTest extends KafkaIntegrationTestS
 
         assertThat(errors).isEmpty();
         assertThat(failedSends.get()).as("발행 실패").isZero();
-        Set<Long> endRequested = ConcurrentHashMap.newKeySet();
-        endRequested.addAll(cancelTargets);
-        endRequested.addAll(fixture.marketOrderIds());
-        return new Published(FILL_THREADS * TICKS_PER_FILL_THREAD, lastFillOffset, endRequested);
+        return new Published(FILL_THREADS * TICKS_PER_FILL_THREAD, lastFillOffset, endRequested, frontierCancels.get());
     }
 
     // 워커가 마지막 틱까지 처리할 때까지, 지금 채우는 중인 주문(PARTIALLY_FILLED)과 다음 차례 주문을 골라 취소한다.
     // 실제 사용자가 부분 체결된 주문을 취소하는 경우와 같다. 같은 주문을 체결 명령과 취소 명령이 앞뒤로 다툰다.
-    private void cancelWhileFilling(Fixture fixture, int partition, Published published) {
+    private int cancelWhileFilling(Fixture fixture, int partition, Published published) {
         int sent = 0;
         while (sent < HOT_CANCEL_LIMIT && watermarkOf(partition) < published.lastFillOffset().get()) {
             List<Long> hot = jdbcTemplate.queryForList("""
@@ -223,6 +271,7 @@ class SingleStockCommandConcurrencyIntegrationTest extends KafkaIntegrationTestS
             }
             sleepQuietly(10);
         }
+        return sent;
     }
 
     private void submit(ExecutorService pool, CountDownLatch ready, CountDownLatch start,
@@ -421,6 +470,46 @@ class SingleStockCommandConcurrencyIntegrationTest extends KafkaIntegrationTestS
         if (((Number) row.get("executions")).longValue() != ((Number) row.get("settlements")).longValue()) {
             violations.add("정산 수 " + row.get("settlements") + " != 체결 수 " + row.get("executions"));
         }
+    }
+
+    // ===== 결과 요약 =====
+
+    // 통과해도 시나리오가 실제로 얼마나 섞였는지 보이게 한다. IDE 테스트 트리에서 테스트를 고르면 이 출력만 보인다.
+    private void printSummary(String title, long seed, Fixture fixture, Published published, int hotCancels,
+                              Integer rewound, Double duplicates, long startedAt, List<String> violations) {
+        Map<String, Object> row = jdbcTemplate.queryForMap("""
+                SELECT (SELECT COALESCE(sum(quantity), 0) FROM execution WHERE stock_code = ?) AS executed_quantity,
+                       (SELECT count(*) FROM execution WHERE stock_code = ?) AS executions,
+                       (SELECT count(*) FROM trade_order WHERE stock_code = ? AND status = 'CANCELLED') AS cancelled,
+                       (SELECT count(*) FROM trade_order WHERE stock_code = ? AND status = 'CANCELLED'
+                                                           AND filled_quantity > 0) AS cancelled_after_fill,
+                       (SELECT count(*) FROM trade_order WHERE stock_code = ? AND status = 'FILLED') AS filled
+                """, fixture.stockCode(), fixture.stockCode(), fixture.stockCode(), fixture.stockCode(), fixture.stockCode());
+        long ignored = published.endRequested().stream()
+                .filter(orderId -> jdbcTemplate.queryForObject(
+                        "SELECT status FROM trade_order WHERE order_id = ?", String.class, orderId).equals("FILLED"))
+                .count();
+        int ticks = published.ticks();
+        StringBuilder out = new StringBuilder()
+                .append("\n===== ").append(title).append(" =====\n")
+                .append(String.format("주문            지정가 %,d건 + 시장가 %,d건 (계좌 %d개, 종목 1개)%n",
+                        fixture.limitOrderIds().size(), fixture.marketOrderIds().size(), fixture.accountIds().size()))
+                .append(String.format("체결 틱          %,d개 (%,d주) → 체결 %,d건 %,d주%n",
+                        ticks, ticks * TICK_QUANTITY, ((Number) row.get("executions")).longValue(),
+                        ((Number) row.get("executed_quantity")).longValue()))
+                .append(String.format("취소·만료 요청    무작위 %,d(중복 %,d 포함) + 줄 앞쪽 %,d + 처리 중 %,d + 만료 %,d%n",
+                        CANCEL_TARGETS + DOUBLE_CANCELS, DOUBLE_CANCELS, published.frontierCancels(), hotCancels,
+                        fixture.marketOrderIds().size()))
+                .append(String.format("  └ 취소·만료됨    %,d건 (그중 부분 체결 뒤 %,d건)%n",
+                        ((Number) row.get("cancelled")).longValue(), ((Number) row.get("cancelled_after_fill")).longValue()))
+                .append(String.format("  └ 먼저 다 체결돼 무시  %,d건%n", ignored))
+                .append(String.format("전량 체결 주문     %,d건%n", ((Number) row.get("filled")).longValue()));
+        if (rewound != null) {
+            out.append(String.format("재전달 주입       커밋 위치 %,d칸 되감음 → 워터마크가 거른 명령 %,.0f건%n", rewound, duplicates));
+        }
+        out.append(String.format("장부 검사         위반 %d건%s%n", violations.size(), violations.isEmpty() ? " ✔" : " ✘"))
+                .append(String.format("소요              %.1f초 · seed=%d%n", (System.nanoTime() - startedAt) / 1e9, seed));
+        System.out.println(out);
     }
 
     // ===== 준비 =====
