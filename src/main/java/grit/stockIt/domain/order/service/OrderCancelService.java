@@ -1,8 +1,8 @@
 package grit.stockIt.domain.order.service;
 
 import grit.stockIt.domain.account.repository.AccountRepository;
-import grit.stockIt.domain.matching.lock.StockMatchingLock;
 import grit.stockIt.domain.matching.queue.CommandPosition;
+import grit.stockIt.domain.matching.repository.ConsumerWatermarkWriter;
 import grit.stockIt.domain.order.entity.Order;
 import grit.stockIt.domain.order.entity.OrderMethod;
 import grit.stockIt.domain.order.entity.OrderStatus;
@@ -26,7 +26,7 @@ public class OrderCancelService {
     private final AccountRepository accountRepository;
     private final OrderHoldService orderHoldService;
     private final OrderSubscriptionService orderSubscriptionService;
-    private final StockMatchingLock stockMatchingLock;
+    private final ConsumerWatermarkWriter consumerWatermarkWriter;
 
     // 위치 기록과 취소가 한 트랜잭션이라 함께 커밋되거나 함께 롤백된다.
     // 같은 주문의 취소가 두 번 들어와도 두 번째는 상태를 보고 아무것도 하지 않는다.
@@ -43,9 +43,7 @@ public class OrderCancelService {
     }
 
     private QueuedCancelOutcome endOnce(String stockCode, Long orderId, CommandPosition position, String action) {
-        boolean firstDelivery = stockMatchingLock.acquireAndAdvance(
-                stockCode, position.topic(), position.partition(), position.offset());
-        if (!firstDelivery) {
+        if (!consumerWatermarkWriter.advance(position)) {
             return QueuedCancelOutcome.DUPLICATE;
         }
 

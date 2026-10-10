@@ -152,11 +152,6 @@ matching:
     ack-timeout: ${MATCHING_QUEUE_ACK_TIMEOUT:1s}
     # 체결 워커 스레드 수. 파티션(24)마다 하나라 종목이 서로 다른 스레드에 갈 확률이 가장 높다.
     fill-concurrency: ${MATCHING_QUEUE_FILL_CONCURRENCY:24}
-  lock:
-    # 종목 락 대기 상한. advisory 락은 기본이 무한 대기라 반드시 걸어야 한다.
-    # 초과하면 예외로 떨어진다.
-    timeout: ${MATCHING_LOCK_TIMEOUT:10s}
-    cancel-timeout: ${MATCHING_CANCEL_LOCK_TIMEOUT:3s}
 
 # 정산 복구
 settlement:

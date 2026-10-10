@@ -25,10 +25,10 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
 
-// 체결 하나를 계좌에 반영한다. 체결 트랜잭션이 커밋된 뒤에 돌므로 종목 락 밖이고,
+// 체결 하나를 계좌에 반영한다. 체결 트랜잭션이 커밋된 뒤 정산 워커가 돌므로 종목의 체결 줄 밖이고,
 // 여기서 쓰는 왕복은 종목당 상한에 영향을 주지 않는다.
 //
-// 체결 직후(오케스트레이터)와 복구 배치 두 곳에서 같은 메서드로 들어온다.
+// 정산 워커와 복구 배치 두 곳에서 같은 메서드로 들어온다.
 @Slf4j
 @Service
 @RequiredArgsConstructor

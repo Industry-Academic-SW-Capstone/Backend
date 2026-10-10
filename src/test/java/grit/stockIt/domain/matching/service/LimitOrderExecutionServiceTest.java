@@ -10,8 +10,8 @@ import grit.stockIt.domain.execution.entity.Execution;
 import grit.stockIt.domain.execution.service.ExecutionService;
 import grit.stockIt.domain.matching.dto.LimitOrderFillEvent;
 import grit.stockIt.domain.matching.dto.OrderBookEntry;
-import grit.stockIt.domain.matching.lock.StockMatchingLock;
 import grit.stockIt.domain.matching.queue.CommandPosition;
+import grit.stockIt.domain.matching.repository.ConsumerWatermarkWriter;
 import grit.stockIt.domain.matching.repository.OrderBookRepository;
 import grit.stockIt.domain.order.entity.Order;
 import grit.stockIt.domain.order.entity.OrderHold;
@@ -73,7 +73,7 @@ class LimitOrderExecutionServiceTest {
     private ApplicationEventPublisher eventPublisher;
 
     @Mock
-    private StockMatchingLock stockMatchingLock;
+    private ConsumerWatermarkWriter consumerWatermarkWriter;
 
     @InjectMocks
     private LimitOrderExecutionService limitOrderExecutionService;
@@ -93,7 +93,7 @@ class LimitOrderExecutionServiceTest {
     void setUp() {
         // fetchSize 설정
         ReflectionTestUtils.setField(limitOrderExecutionService, "fetchSize", 100);
-        when(stockMatchingLock.acquireAndAdvance(anyString(), anyString(), anyInt(), anyLong())).thenReturn(true);
+        when(consumerWatermarkWriter.advance(any())).thenReturn(true);
         
         // 테스트 데이터 생성
         testMember = Member.builder()

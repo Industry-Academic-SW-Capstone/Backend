@@ -4,8 +4,8 @@ import grit.stockIt.domain.execution.entity.Execution;
 import grit.stockIt.domain.execution.service.ExecutionService;
 import grit.stockIt.domain.matching.dto.LimitOrderFillEvent;
 import grit.stockIt.domain.matching.dto.OrderBookEntry;
-import grit.stockIt.domain.matching.lock.StockMatchingLock;
 import grit.stockIt.domain.matching.queue.CommandPosition;
+import grit.stockIt.domain.matching.repository.ConsumerWatermarkWriter;
 import grit.stockIt.domain.matching.repository.OrderBookRepository;
 import grit.stockIt.domain.order.entity.Order;
 import grit.stockIt.domain.order.entity.OrderStatus;
@@ -35,7 +35,7 @@ public class LimitOrderExecutionService {
     private final OrderRepository orderRepository;
     private final OrderBookRepository orderBookRepository;
     private final OrderSubscriptionCoordinator orderSubscriptionCoordinator;
-    private final StockMatchingLock stockMatchingLock;
+    private final ConsumerWatermarkWriter consumerWatermarkWriter;
 
     private final LimitOrderMatchPlanner matchPlanner = new LimitOrderMatchPlanner();
 
@@ -43,14 +43,12 @@ public class LimitOrderExecutionService {
     private int fetchSize;
 
     // 위치 기록과 체결이 한 트랜잭션이라 함께 커밋되거나 함께 롤백된다. 비어 있으면 이미 반영한 위치다(재전달).
-    // 락 뒤에 기록하므로 같은 위치를 쥔 두 워커도 한 줄로 선다.
+    // 종목 락은 없다 — 이 종목의 오더북을 바꾸는 명령(체결, 취소, 만료)은 모두 한 파티션에서 이 워커 하나가 차례로 처리한다.
     // 계좌를 보지 않는다 — 체결 수량은 배분 계획과 주문 잔여 수량만으로 정해지므로,
     // 정산에 필요한 계좌 조회·잠금이 이 트랜잭션에 들어오지 않는다.
     @Transactional
     public Optional<List<FilledExecution>> fillOnce(String stockCode, LimitOrderFillEvent event, CommandPosition position) {
-        boolean firstDelivery = stockMatchingLock.acquireAndAdvance(
-                stockCode, position.topic(), position.partition(), position.offset());
-        if (!firstDelivery) {
+        if (!consumerWatermarkWriter.advance(position)) {
             return Optional.empty();
         }
         return Optional.of(doFill(stockCode, event));

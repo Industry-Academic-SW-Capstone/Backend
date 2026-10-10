@@ -6,7 +6,6 @@ import grit.stockIt.domain.account.repository.AccountRepository;
 import grit.stockIt.domain.account.repository.AccountStockRepository;
 import grit.stockIt.domain.contest.entity.Contest;
 import grit.stockIt.domain.contest.repository.ContestRepository;
-import grit.stockIt.domain.matching.lock.StockMatchingLock;
 import grit.stockIt.domain.matching.queue.CommandPosition;
 import grit.stockIt.domain.matching.queue.OrderCommandPublisher;
 import grit.stockIt.domain.matching.repository.OrderBookRepository;
@@ -113,9 +112,6 @@ class OrderCancelQueryCharacterizationTest extends IntegrationTestSupport {
     @SpyBean
     private OrderSubscriptionCoordinator orderSubscriptionCoordinator;
 
-    @SpyBean
-    private StockMatchingLock stockMatchingLock;
-
     private Member member;
     private Account account;
     private Stock stock;
@@ -125,7 +121,7 @@ class OrderCancelQueryCharacterizationTest extends IntegrationTestSupport {
     @BeforeEach
     void setUp() {
         // @SpyBean은 캐시된 컨텍스트에서 테스트 간 공유되므로, 각 테스트 시작 시 호출기록을 초기화한다(격리).
-        org.mockito.Mockito.reset(orderBookRepository, orderSubscriptionCoordinator, stockMatchingLock);
+        org.mockito.Mockito.reset(orderBookRepository, orderSubscriptionCoordinator);
         String uniqueId = UUID.randomUUID().toString().substring(0, 8);
         topic = "matching.commands-" + uniqueId;
         when(orderCommandPublisher.cancel(anyString(), anyLong())).thenReturn(true);
