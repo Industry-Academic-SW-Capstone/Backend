@@ -25,7 +25,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 
 @DisplayName("체결 워커 (Kafka 통합)")
-class FillCommandConsumerIntegrationTest extends KafkaIntegrationTestSupport {
+class MatchingCommandConsumerIntegrationTest extends KafkaIntegrationTestSupport {
 
     private static final String STOCK_CODE = "005930";
 

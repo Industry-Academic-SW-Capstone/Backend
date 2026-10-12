@@ -5,7 +5,6 @@ import grit.stockIt.domain.settlement.queue.InvalidSettlementRequestException;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.serialization.ByteArraySerializer;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.autoconfigure.kafka.ConcurrentKafkaListenerContainerFactoryConfigurer;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -23,7 +22,6 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 @Configuration
-@ConditionalOnProperty(name = "matching.queue.enabled", havingValue = "true")
 public class KafkaConfig {
 
     private static final String DLT_SUFFIX = ".DLT";

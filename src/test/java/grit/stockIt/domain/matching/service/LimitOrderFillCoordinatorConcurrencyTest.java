@@ -88,6 +88,8 @@ class LimitOrderFillCoordinatorConcurrencyTest extends IntegrationTestSupport {
     private Contest testContest;
     private Account testAccount;
     private Stock testStock;
+    // 워터마크는 테스트 사이에 지우지 않는다. 테스트마다 다른 토픽 이름을 써서 서로의 위치에 걸리지 않게 한다.
+    private String topic;
 
     @BeforeEach
     void setUp() {
@@ -96,6 +98,7 @@ class LimitOrderFillCoordinatorConcurrencyTest extends IntegrationTestSupport {
 
         // 테스트 데이터 생성 (각 테스트마다 고유한 데이터 생성)
         String uniqueId = UUID.randomUUID().toString().substring(0, 8);
+        topic = "matching.commands-" + uniqueId;
         testMember = Member.builder()
                 .name("테스트 사용자 " + uniqueId)
                 .email("test" + uniqueId + "@test.com")
@@ -190,101 +193,13 @@ class LimitOrderFillCoordinatorConcurrencyTest extends IntegrationTestSupport {
         );
 
         // When
-        int filledOrders = limitOrderFillCoordinator.processFill(stockCode, event).filledOrders();
+        int filledOrders = limitOrderFillCoordinator.processQueuedFill(stockCode, event, position(0)).filledOrders();
 
         // Then
         assertThat(filledOrders).isEqualTo(1);
         Order reloaded = orderRepository.findById(order.getOrderId()).orElseThrow();
         assertThat(reloaded.getFilledQuantity()).isEqualTo(10);
         assertThat(reloaded.getStatus()).isEqualTo(OrderStatus.FILLED);
-    }
-
-    @Test
-    @DisplayName("같은 종목에 동시에 들어온 이벤트가 모두 처리되고 초과 체결이 없다")
-    void match_concurrentEvents_allProcessedWithoutOverfill() throws InterruptedException {
-        // Given: 이벤트 하나당 딱 맞게 체결될 주문을 같은 수만큼 준비한다.
-        // 직렬화가 깨지면 같은 주문에 두 번 배분되어 체결 총량이 주문 총량을 넘는다.
-        String stockCode = "005930";
-        int eventCount = 50;
-
-        List<Long> orderIds = new ArrayList<>();
-        BigDecimal initialCash = testAccount.getCash();
-        for (int i = 0; i < eventCount; i++) {
-            orderIds.add(createAndSaveOrder(stockCode, OrderMethod.BUY, new BigDecimal("100"), 10).getOrderId());
-        }
-
-        CountDownLatch ready = new CountDownLatch(eventCount);
-        CountDownLatch start = new CountDownLatch(1);
-        CountDownLatch done = new CountDownLatch(eventCount);
-        AtomicInteger processedEvents = new AtomicInteger();
-        AtomicInteger totalExecutions = new AtomicInteger();
-        List<Exception> exceptions = java.util.Collections.synchronizedList(new ArrayList<>());
-
-        // When: 모든 스레드를 같은 순간에 풀어 락 경합을 강제한다.
-        // 큐가 없으므로 각 스레드는 자기 이벤트를 직접 들고 들어가고, 락을 못 잡으면 기다린다.
-        for (int i = 0; i < eventCount; i++) {
-            new Thread(() -> {
-                LimitOrderFillEvent event = new LimitOrderFillEvent(
-                        UUID.randomUUID().toString(),
-                        OrderMethod.SELL,
-                        new BigDecimal("100"),
-                        10,
-                        Instant.now().toEpochMilli()
-                );
-                ready.countDown();
-                try {
-                    start.await();
-                    int filledOrders = limitOrderFillCoordinator.processFill(stockCode, event).filledOrders();
-                    processedEvents.incrementAndGet();
-                    totalExecutions.addAndGet(filledOrders);
-                } catch (Exception e) {
-                    exceptions.add(e);
-                } finally {
-                    done.countDown();
-                }
-            }).start();
-        }
-
-        ready.await();
-        start.countDown();
-        done.await();
-
-        // Then
-        assertThat(exceptions)
-                .as("락을 기다리는 구조이므로 포기하거나 실패하는 이벤트가 없어야 한다")
-                .isEmpty();
-        assertThat(processedEvents.get()).isEqualTo(eventCount);
-
-        // ===== 데이터 정합성 (갱신 손실·초과 체결 방지) =====
-        List<Order> orders = orderRepository.findAllById(orderIds);
-        assertThat(orders).hasSize(eventCount);
-
-        int totalFilledQuantity = 0;
-        for (Order order : orders) {
-            assertThat(order.getFilledQuantity())
-                    .as("주문 %d 의 체결 수량", order.getOrderId())
-                    .isEqualTo(10);
-            assertThat(order.getRemainingQuantity()).isZero();
-            assertThat(order.getStatus()).isEqualTo(OrderStatus.FILLED);
-            totalFilledQuantity += order.getFilledQuantity();
-        }
-        assertThat(totalFilledQuantity)
-                .as("총 체결 수량은 주문 총량과 정확히 같아야 한다(초과 체결 없음)")
-                .isEqualTo(eventCount * 10);
-
-        var executions = executionRepository.findByOrderIdInWithOrder(orderIds);
-        assertThat(executions).hasSize(eventCount);
-        assertThat(executions.stream().mapToInt(e -> e.getQuantity()).sum()).isEqualTo(eventCount * 10);
-        assertThat(totalExecutions.get()).isEqualTo(eventCount);
-
-        Account updatedAccount = accountRepository.findById(testAccount.getAccountId()).orElseThrow();
-        assertThat(updatedAccount.getCash())
-                .as("현금이 정확히 차감되어야 한다 (50건 × 10주 × 100원)")
-                .isEqualByComparingTo(initialCash.subtract(new BigDecimal("50000")));
-
-        AccountStock accountStock = accountStockRepository.findByAccountAndStock(updatedAccount, testStock)
-                .orElseThrow(() -> new AssertionError("AccountStock이 생성되어야 한다"));
-        assertThat(accountStock.getQuantity()).isEqualTo(eventCount * 10);
     }
 
     @Test
@@ -296,7 +211,7 @@ class LimitOrderFillCoordinatorConcurrencyTest extends IntegrationTestSupport {
         Order first = createAndSaveOrder(stockCode, OrderMethod.BUY, new BigDecimal("100"), 10);
         Order second = createAndSaveOrder(stockCode, OrderMethod.BUY, new BigDecimal("100"), 10);
         LimitOrderFillEvent event = sellEvent();
-        CommandPosition position = new CommandPosition("matching.commands", 0, 42L);
+        CommandPosition position = position(42L);
 
         // When
         var firstDelivery = limitOrderFillCoordinator.processQueuedFill(stockCode, event, position);
@@ -317,7 +232,7 @@ class LimitOrderFillCoordinatorConcurrencyTest extends IntegrationTestSupport {
     void queuedFill_noMatchThenRedelivered_skipped() {
         String stockCode = "005930";
         LimitOrderFillEvent event = sellEvent();
-        CommandPosition position = new CommandPosition("matching.commands", 0, 7L);
+        CommandPosition position = position(7L);
 
         var firstDelivery = limitOrderFillCoordinator.processQueuedFill(stockCode, event, position);
         Order lateOrder = createAndSaveOrder(stockCode, OrderMethod.BUY, new BigDecimal("100"), 10);
@@ -335,7 +250,7 @@ class LimitOrderFillCoordinatorConcurrencyTest extends IntegrationTestSupport {
         Order first = createAndSaveOrder(stockCode, OrderMethod.BUY, new BigDecimal("100"), 10);
         Order second = createAndSaveOrder(stockCode, OrderMethod.BUY, new BigDecimal("100"), 10);
         LimitOrderFillEvent event = sellEvent();
-        CommandPosition position = new CommandPosition("matching.commands", 0, 99L);
+        CommandPosition position = position(99L);
 
         int workers = 2;
         CountDownLatch start = new CountDownLatch(1);
@@ -363,6 +278,10 @@ class LimitOrderFillCoordinatorConcurrencyTest extends IntegrationTestSupport {
         assertThat(duplicates.get()).isEqualTo(1);
         assertThat(executionRepository.findByOrderIdInWithOrder(List.of(first.getOrderId(), second.getOrderId())))
                 .hasSize(1);
+    }
+
+    private CommandPosition position(long offset) {
+        return new CommandPosition(topic, 0, offset);
     }
 
     private LimitOrderFillEvent sellEvent() {

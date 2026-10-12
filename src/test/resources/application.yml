@@ -32,6 +32,11 @@ spring:
     scheduling:
       enabled: false
 
+  # 워커가 브로커 없는 테스트에서 접속을 계속 시도하지 않게 한다. Kafka 통합 테스트만 켠다.
+  kafka:
+    listener:
+      auto-startup: false
+
   # 테스트 환경에서 Flyway 비활성화 (Testcontainers 사용 시 스키마 자동 생성)
   flyway:
     enabled: false

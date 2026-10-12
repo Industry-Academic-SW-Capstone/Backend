@@ -20,7 +20,7 @@
 Docker Compose:
 
 ```bash
-docker-compose up -d          # Traefik, PostgreSQL, Redis, Backend, 모니터링
+docker-compose up -d          # Traefik, PostgreSQL, Redis, Kafka, Backend, 모니터링
 docker-compose down
 docker-compose build          # 백엔드 이미지 재빌드
 ```
@@ -29,7 +29,7 @@ docker-compose build          # 백엔드 이미지 재빌드
 
 | 프로파일 | 용도 |
 |----------|------|
-| `local` | 로컬 DB/Redis (localhost) |
+| `local` | 로컬 DB/Redis/Kafka (localhost, Kafka 는 `docker-compose up -d kafka kafka-init`) |
 | `dev` | Docker 서비스 (**기본값**) |
 | `prod` | 외부 DB (배포 서버) |
 
@@ -65,8 +65,8 @@ SPRING_PROFILES_ACTIVE=local
 ./gradlew test --tests "ClassName.methodName" # 특정 메서드
 ```
 
-- **단위/통합**: JUnit 5 + Testcontainers(PostgreSQL) — 외부 DB 불필요.
-- **동시성**: `LimitOrderMatchingServiceConcurrencyTest` — 동시 주문 매칭 시 데이터 정합성 검증.
+- **단위/통합**: JUnit 5 + Testcontainers(PostgreSQL, Kafka) — 외부 DB·브로커 불필요. 워커는 `KafkaIntegrationTestSupport` 를 상속한 테스트에서만 뜬다.
+- **매칭**: `LimitOrderFillCoordinatorConcurrencyTest`(재전달·좀비 워커), `MatchingQueueFlowIntegrationTest`(체결 → 정산, 취소·만료 순서).
   → [matching-engine.md](matching-engine.md)
 - **부하(k6)**:
   ```bash

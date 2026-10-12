@@ -3,7 +3,6 @@ package grit.stockIt.domain.matching.queue;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 import java.time.Duration;
@@ -12,7 +11,6 @@ import java.time.Duration;
 // spring.kafka.listener 가, DLT 적재 수는 kafka-exporter 의 DLT 토픽 offset 이 보여 준다.
 // 시각은 모두 같은 JVM 시계라 넣은 쪽과 꺼낸 쪽 사이에 시계 오차가 없다.
 @Component
-@ConditionalOnProperty(name = "matching.queue.enabled", havingValue = "true")
 public class MatchingQueueMetrics {
 
     private final Counter enqueued;

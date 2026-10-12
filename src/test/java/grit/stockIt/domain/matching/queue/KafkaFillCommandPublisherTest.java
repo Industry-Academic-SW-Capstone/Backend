@@ -40,7 +40,9 @@ class KafkaFillCommandPublisherTest {
     private final RedisMarketDataRepository redisMarketDataRepository = mock(RedisMarketDataRepository.class);
 
     private final KafkaFillCommandPublisher publisher = new KafkaFillCommandPublisher(
-            kafkaTemplate, Duration.ofMillis(200), new MatchingQueueMetrics(registry), redisMarketDataRepository);
+            new MatchingCommandSender(kafkaTemplate, Duration.ofMillis(200)),
+            new MatchingQueueMetrics(registry),
+            redisMarketDataRepository);
 
     @Test
     @DisplayName("종목 코드를 키로 matching.commands 에 보내고, 브로커 확인을 받으면 기록 위치를 돌려준다")

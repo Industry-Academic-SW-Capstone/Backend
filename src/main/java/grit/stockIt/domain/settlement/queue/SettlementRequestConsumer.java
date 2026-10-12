@@ -3,7 +3,6 @@ package grit.stockIt.domain.settlement.queue;
 import grit.stockIt.domain.settlement.service.ExecutionSettlementService;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.stereotype.Component;
 
@@ -11,7 +10,6 @@ import java.time.Duration;
 
 // 정산 워커. 같은 요청이 두 번 와도 settle() 이 settlement 의 execution_id 유니크로 한 번만 반영한다.
 @Component
-@ConditionalOnProperty(name = "matching.queue.enabled", havingValue = "true")
 public class SettlementRequestConsumer {
 
     private final ExecutionSettlementService executionSettlementService;

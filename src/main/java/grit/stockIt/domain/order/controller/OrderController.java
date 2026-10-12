@@ -2,6 +2,7 @@ package grit.stockIt.domain.order.controller;
 
 import grit.stockIt.domain.order.dto.LimitOrderCreateRequest;
 import grit.stockIt.domain.order.dto.MarketOrderCreateRequest;
+import grit.stockIt.domain.order.dto.OrderCancelAcceptedResponse;
 import grit.stockIt.domain.order.dto.OrderResponse;
 import grit.stockIt.domain.order.service.OrderService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -9,11 +10,13 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 @Slf4j
@@ -37,9 +40,11 @@ public class OrderController {
         return orderService.createMarketOrder(request);
     }
 
-    @Operation(summary = "주문 취소", description = "미체결 주문을 취소합니다.")
+    @Operation(summary = "주문 취소", description = "미체결 주문의 취소를 접수합니다(202). 접수 뒤 먼저 체결되면 취소되지 않으며, "
+            + "결과는 주문 상태로 확인합니다. 접수하지 못하면 503입니다.")
     @PostMapping("/{orderId}/cancel")
-    public OrderResponse cancelOrder(@PathVariable Long orderId) {
+    @ResponseStatus(HttpStatus.ACCEPTED)
+    public OrderCancelAcceptedResponse cancelOrder(@PathVariable Long orderId) {
         return orderService.cancelOrder(orderId);
     }
 
