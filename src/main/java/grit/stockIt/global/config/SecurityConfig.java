@@ -153,6 +153,8 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/api/rankings/me").authenticated()
 
                         .requestMatchers(PUBLIC_PATHS).permitAll()
+                        // 부하 진입점(LoadTestController, prod 에 없음). 토큰을 받으면 요청마다 회원 조회가 입구 비용에 더해진다.
+                        .requestMatchers(HttpMethod.POST, "/api/test/mock-execution").permitAll()
                         .requestMatchers(HttpMethod.GET, PUBLIC_GET_PATHS).permitAll()
                         .requestMatchers(PUBLIC_STOCK_CODE_MATCHERS).permitAll()
                         .anyRequest().authenticated()

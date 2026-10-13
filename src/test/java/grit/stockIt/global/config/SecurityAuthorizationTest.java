@@ -72,6 +72,13 @@ class SecurityAuthorizationTest extends IntegrationTestSupport {
         }
 
         @Test
+        @DisplayName("부하 진입점은 토큰 없이 접근할 수 있다")
+        void loadTestEntry_isPublic() throws Exception {
+            assertPassesSecurityChain(mockMvc.perform(post("/api/test/mock-execution")
+                    .contentType("application/json").content("{}")).andReturn());
+        }
+
+        @Test
         @DisplayName("프로메테우스 스크레이프 경로는 시큐리티에 막히지 않는다")
         void actuatorPrometheus_isNotBlockedBySecurity() throws Exception {
             // 테스트 프로파일에는 management 블록이 없어 엔드포인트 자체가 노출되지 않는다.
