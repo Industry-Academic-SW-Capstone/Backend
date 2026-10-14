@@ -72,11 +72,11 @@ class SecurityAuthorizationTest extends IntegrationTestSupport {
         }
 
         @Test
-        @DisplayName("프로메테우스 스크레이프 경로는 시큐리티에 막히지 않는다")
-        void actuatorPrometheus_isNotBlockedBySecurity() throws Exception {
+        @DisplayName("헬스체크 경로는 시큐리티에 막히지 않는다")
+        void actuatorHealth_isNotBlockedBySecurity() throws Exception {
             // 테스트 프로파일에는 management 블록이 없어 엔드포인트 자체가 노출되지 않는다.
             // 여기서 확인하는 것은 permitAll 규칙이 걸리는지까지다.
-            assertPassesSecurityChain(mockMvc.perform(get("/actuator/prometheus")).andReturn());
+            assertPassesSecurityChain(mockMvc.perform(get("/actuator/health")).andReturn());
         }
     }
 

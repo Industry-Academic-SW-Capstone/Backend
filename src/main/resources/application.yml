@@ -26,55 +26,17 @@ spring:
     baseline-on-migrate: true
     init-sqls: []
 
-server:
-  tomcat:
-    mbeanregistry:
-      # 톰캣 스레드 지표(tomcat_threads_*)는 MBean 등록을 켜야 노출된다.
-      # 스레드 사용량을 상한(max-threads)과 함께 봐야 고갈 여부를 판단할 수 있다.
-      enabled: true
-
 management:
   endpoints:
     web:
       exposure:
-        # /actuator/**는 인증 없이 열려 있다(프로메테우스 스크레이프). env·configprops는
-        # 값이 마스킹되더라도 설정 키 전체를 드러내므로 노출하지 않는다.
-        include: health,info,prometheus,metrics
+        # 배포 후 생존 확인용 health 만 연다. /actuator/** 는 인증 없이 열려 있다.
+        include: health
       base-path: /actuator
   endpoint:
-    prometheus:
-      enabled: true
     health:
-      # /actuator/**는 인증 없이 열려 있고 8080이 호스트에 퍼블리시된다. always면 DB
-      # 컴포넌트 상태와 디스크 여유 용량이 무인증으로 노출된다.
+      # always면 DB 컴포넌트 상태와 디스크 여유 용량이 무인증으로 노출된다.
       show-details: when-authorized
-  metrics:
-    export:
-      prometheus:
-        enabled: true
-    tags:
-      application: ${spring.application.name}
-      environment: ${spring.profiles.active:default}
-    distribution:
-      percentiles-histogram:
-        http.server.requests: true
-        jvm.memory.used: true
-        process.cpu.usage: true
-        # 커넥션을 기다린 시간(acquire)과 쥐고 있던 시간(usage).
-        # 둘을 나눠 봐야 풀이 작아서 막힌 것인지, 한 번 잡은 커넥션을 오래 쥐어서 막힌 것인지 갈린다.
-        hikaricp.connections.acquire: true
-        hikaricp.connections.usage: true
-      # 버킷 범위를 커넥션 타임아웃과 맞춘다. 기본값은 범위가 넓어 버킷만 늘어난다.
-      minimum-expected-value:
-        hikaricp.connections.acquire: 1ms
-        hikaricp.connections.usage: 1ms
-      maximum-expected-value:
-        hikaricp.connections.acquire: 30s
-        hikaricp.connections.usage: 30s
-      percentiles:
-        http.server.requests: 0.5,0.95,0.99
-        jvm.memory.used: 0.5,0.95,0.99
-        process.cpu.usage: 0.5,0.95,0.99
 
 # KIS API 설정
 kis:

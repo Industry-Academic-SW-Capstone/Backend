@@ -44,11 +44,8 @@ public class SecurityConfig {
      * 사용자별 목적지({@code /queue/**})를 쓰게 되면 CONNECT 프레임을 검사하는
      * ChannelInterceptor가 필요하다.
      *
-     * {@code /actuator/**}: Prometheus가 토큰 없이 스크레이프하므로 열어둔다
-     * (monitoring/prometheus/prometheus.yml). 다만 docker-compose.prod.yml이 백엔드를
-     * {@code 8080:8080}으로 호스트에 퍼블리시하므로 Traefik을 거치지 않고도 외부에서
-     * 닿는다 — 도커 네트워크 안에서만 접근된다고 가정하면 안 된다. 그래서 노출 자체를
-     * application.yml에서 좁힌다(env·configprops 제외, health 상세는 인증 시에만).
+     * {@code /actuator/**}: 배포 후 생존 확인(health)용으로 열어둔다. 노출 자체는
+     * application.yml에서 health 하나로 좁힌다(상세는 인증 시에만).
      */
     private static final String[] PUBLIC_PATHS = {
             "/api/members/login",

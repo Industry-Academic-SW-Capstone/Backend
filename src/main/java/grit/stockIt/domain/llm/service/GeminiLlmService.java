@@ -171,16 +171,6 @@ public class GeminiLlmService {
     }
 
     /**
-     * 캐시 삭제
-     */
-    public Mono<Void> clearCache(String companyName) {
-        return Mono.fromRunnable(() -> {
-            cacheRepository.delete(companyName);
-            log.info("캐시 삭제 완료: {}", companyName);
-        });
-    }
-
-    /**
      * 기업 설명 결과를 담을 내부 Record
      */
     public record CompanyDescriptionResult(

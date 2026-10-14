@@ -30,9 +30,4 @@ public class CompanyDescriptionCacheRepository {
         cache.put(CACHE_KEY_PATTERN.formatted(companyName), description, TTL);
         log.debug("캐시 저장: companyName={}, TTL={}시간", companyName, TTL.toHours());
     }
-
-    public void delete(String companyName) {
-        cache.delete(CACHE_KEY_PATTERN.formatted(companyName));
-        log.debug("캐시 삭제: companyName={}", companyName);
-    }
 }
