@@ -1,15 +1,10 @@
-# prod: 실제 서버 배포. DB·Redis 호스트는 반드시 환경 변수로 지정
+# prod: 실제 서버 배포. DB 호스트는 반드시 환경 변수로 지정
 spring:
   datasource:
     url: ${POSTGRES_URL}
     username: ${POSTGRES_USER}
     password: ${POSTGRES_PASSWORD}
     driver-class-name: org.postgresql.Driver
-
-  data:
-    redis:
-      host: ${SPRING_REDIS_HOST:redis}
-      port: ${SPRING_REDIS_PORT:6379}
 
   jpa:
     hibernate:

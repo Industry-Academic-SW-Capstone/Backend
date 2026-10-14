@@ -1,12 +1,7 @@
-# dev: Docker Compose 안에서 실행. DB·Redis는 서비스 이름(db, redis)으로 접속
+# dev: Docker Compose 안에서 실행. DB는 서비스 이름(db)으로 접속
 spring:
   config:
     import: optional:file:.env[.properties]
-
-  data:
-    redis:
-      host: redis
-      port: 6379
 
   datasource:
     url: jdbc:postgresql://db:5432/database

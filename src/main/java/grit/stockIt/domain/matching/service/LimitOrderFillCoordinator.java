@@ -2,7 +2,7 @@ package grit.stockIt.domain.matching.service;
 
 import grit.stockIt.domain.matching.dto.LimitOrderFillEvent;
 import grit.stockIt.domain.matching.queue.CommandPosition;
-import grit.stockIt.domain.matching.repository.RedisMarketDataRepository;
+import grit.stockIt.domain.matching.repository.MarketDataRepository;
 import grit.stockIt.domain.settlement.service.ExecutionSettlementService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -19,7 +19,7 @@ public class LimitOrderFillCoordinator {
 
     private final LimitOrderExecutionService limitOrderExecutionService;
     private final ExecutionSettlementService executionSettlementService;
-    private final RedisMarketDataRepository redisMarketDataRepository;
+    private final MarketDataRepository marketDataRepository;
 
     // 처리 결과. 실패해도 예외를 던지지 않으므로 호출자가 구분할 수단이 필요하다.
     // processed 는 체결 트랜잭션이 커밋됐는지만 뜻한다 — 정산 실패는 여기 드러나지 않고
@@ -44,7 +44,7 @@ public class LimitOrderFillCoordinator {
     }
 
     public FillOutcome processFill(String stockCode, LimitOrderFillEvent event) {
-        redisMarketDataRepository.updateLastPrice(stockCode, event.price());
+        marketDataRepository.updateLastPrice(stockCode, event.price());
 
         List<Long> executionIds;
         try {

@@ -23,8 +23,7 @@ import org.junit.jupiter.api.TestInstance;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.env.Environment;
-import org.springframework.data.redis.core.StringRedisTemplate;
-import org.springframework.data.redis.core.ValueOperations;
+import grit.stockIt.global.cache.LocalTtlCache;
 import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -36,6 +35,7 @@ import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.util.List;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -43,14 +43,13 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.doThrow;
-import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.reset;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * StockChartService의 Redis 캐시 계약과 미지원 기간 타입 예외를 현재 동작 그대로 고정한다.
+ * StockChartService의 캐시 계약과 미지원 기간 타입 예외를 현재 동작 그대로 고정한다.
  *
  * 이 파일은 리팩터링 오라클의 불변 기준선이다(계획 AC-1). 순수 클래스 추출 커밋들이
  * 이 파일을 수정하지 않았음을 git으로 증명하므로, 여기 적힌 단정은 나중에 강화하거나
@@ -136,7 +135,7 @@ class StockChartCacheCharacterizationTest extends IntegrationTestSupport {
     private KisTokenManager kisTokenManager;
 
     @MockitoSpyBean
-    private StringRedisTemplate redisTemplate;
+    private LocalTtlCache cache;
 
     @BeforeAll
     void kisApiUrlMustPointAtMockServer() {
@@ -146,13 +145,13 @@ class StockChartCacheCharacterizationTest extends IntegrationTestSupport {
     @BeforeEach
     void setUp() {
         when(kisTokenManager.getAccessToken()).thenReturn("test-token");
-        TARGET_KEYS.forEach(redisTemplate::delete);
-        reset(redisTemplate);
+        TARGET_KEYS.forEach(cache::delete);
+        reset(cache);
     }
 
     @AfterEach
     void tearDown() {
-        reset(redisTemplate);
+        reset(cache);
     }
 
     @Test
@@ -160,7 +159,7 @@ class StockChartCacheCharacterizationTest extends IntegrationTestSupport {
     void cacheKey_isPrefixedStockCodeAndLowerCasedPeriodType() {
         stockChartService.getStockChart(STOCK_CODE, "3MONTH").block(SHORT_TIMEOUT);
 
-        assertThat(redisTemplate.hasKey(KEY_3MONTH)).isTrue();
+        assertThat(cache.contains(KEY_3MONTH)).isTrue();
     }
 
     @Test
@@ -168,7 +167,7 @@ class StockChartCacheCharacterizationTest extends IntegrationTestSupport {
     void cacheTtl_oneDay_is60Seconds() {
         stockChartService.getStockChart(STOCK_CODE, "1day").block(SHORT_TIMEOUT);
 
-        assertThat(redisTemplate.getExpire(KEY_1DAY)).isBetween(55L, 60L);
+        assertThat(cache.remainingTtl(KEY_1DAY).orElseThrow().toSeconds()).isBetween(55L, 60L);
     }
 
     @Test
@@ -176,7 +175,7 @@ class StockChartCacheCharacterizationTest extends IntegrationTestSupport {
     void cacheTtl_oneWeek_is300Seconds() {
         stockChartService.getStockChart(STOCK_CODE, "1week").block(WEEK_TIMEOUT);
 
-        assertThat(redisTemplate.getExpire(KEY_1WEEK)).isBetween(295L, 300L);
+        assertThat(cache.remainingTtl(KEY_1WEEK).orElseThrow().toSeconds()).isBetween(295L, 300L);
     }
 
     @Test
@@ -184,7 +183,7 @@ class StockChartCacheCharacterizationTest extends IntegrationTestSupport {
     void cacheTtl_threeMonth_is1800Seconds() {
         stockChartService.getStockChart(STOCK_CODE, "3month").block(SHORT_TIMEOUT);
 
-        assertThat(redisTemplate.getExpire(KEY_3MONTH)).isBetween(1795L, 1800L);
+        assertThat(cache.remainingTtl(KEY_3MONTH).orElseThrow().toSeconds()).isBetween(1795L, 1800L);
     }
 
     @Test
@@ -192,7 +191,7 @@ class StockChartCacheCharacterizationTest extends IntegrationTestSupport {
     void cacheTtl_oneYear_is3600Seconds() {
         stockChartService.getStockChart(STOCK_CODE, "1year").block(SHORT_TIMEOUT);
 
-        assertThat(redisTemplate.getExpire(KEY_1YEAR)).isBetween(3595L, 3600L);
+        assertThat(cache.remainingTtl(KEY_1YEAR).orElseThrow().toSeconds()).isBetween(3595L, 3600L);
     }
 
     @Test
@@ -200,7 +199,7 @@ class StockChartCacheCharacterizationTest extends IntegrationTestSupport {
     void cacheTtl_fiveYear_is43200Seconds() {
         stockChartService.getStockChart(STOCK_CODE, "5year").block(SHORT_TIMEOUT);
 
-        assertThat(redisTemplate.getExpire(KEY_5YEAR)).isBetween(43195L, 43200L);
+        assertThat(cache.remainingTtl(KEY_5YEAR).orElseThrow().toSeconds()).isBetween(43195L, 43200L);
     }
 
     @Test
@@ -216,10 +215,10 @@ class StockChartCacheCharacterizationTest extends IntegrationTestSupport {
     }
 
     @Test
-    @DisplayName("어서션 5: 미지원 기간 타입도 throw보다 Redis GET이 먼저 일어난다 — 캐시가 있으면 예외 없이 캐시 값을 돌려준다")
-    void redisGetPrecedesThrow_cachedValueIsReturnedForUnsupportedPeriodType() throws Exception {
+    @DisplayName("어서션 5: 미지원 기간 타입도 throw보다 캐시 조회이 먼저 일어난다 — 캐시가 있으면 예외 없이 캐시 값을 돌려준다")
+    void cacheGetPrecedesThrow_cachedValueIsReturnedForUnsupportedPeriodType() throws Exception {
         List<StockChartResponse> seeded = List.of(sampleResponse("foo"));
-        redisTemplate.opsForValue().set(KEY_FOO, objectMapper.writeValueAsString(seeded), Duration.ofMinutes(5));
+        cache.put(KEY_FOO, objectMapper.writeValueAsString(seeded), Duration.ofMinutes(5));
 
         List<StockChartResponse> chart = stockChartService.getStockChart(STOCK_CODE, "FOO").block(SHORT_TIMEOUT);
 
@@ -229,7 +228,7 @@ class StockChartCacheCharacterizationTest extends IntegrationTestSupport {
     @Test
     @DisplayName("어서션 5-b: 깨진 캐시 값이면 파싱 실패 WARN 로그가 남은 뒤 같은 경로에서 IllegalArgumentException이 나온다")
     void corruptCacheOnUnsupportedPeriodType_logsParseWarnBeforeThrow() {
-        redisTemplate.opsForValue().set(KEY_FOO, "not-json", Duration.ofMinutes(5));
+        cache.put(KEY_FOO, "not-json", Duration.ofMinutes(5));
         Logger serviceLogger = (Logger) LoggerFactory.getLogger(SERVICE_LOGGER_NAME);
         ListAppender<ILoggingEvent> appender = new ListAppender<>();
         appender.start();
@@ -255,23 +254,20 @@ class StockChartCacheCharacterizationTest extends IntegrationTestSupport {
     @Test
     @DisplayName("어서션 6: 깨진 캐시 값은 API 호출로 폴백하며 캐시 삭제를 발행하지 않는다")
     void corruptCache_fallsBackToApiWithoutDeletingKey() {
-        redisTemplate.opsForValue().set(KEY_3MONTH, "not-json", Duration.ofMinutes(5));
-        reset(redisTemplate);
+        cache.put(KEY_3MONTH, "not-json", Duration.ofMinutes(5));
+        reset(cache);
 
         List<StockChartResponse> chart = stockChartService.getStockChart(STOCK_CODE, "3MONTH").block(SHORT_TIMEOUT);
 
         assertThat(chart).isNotNull();
-        verify(redisTemplate, never()).delete(anyString());
+        verify(cache, never()).delete(anyString());
     }
 
     @Test
     @DisplayName("어서션 7: 캐시 저장 실패는 삼켜지고 응답은 그대로 방출된다")
-    @SuppressWarnings("unchecked")
     void cacheWriteFailure_isSwallowedAndResponseStillEmits() {
-        ValueOperations<String, String> ops = mock(ValueOperations.class);
-        doReturn(ops).when(redisTemplate).opsForValue();
-        doReturn(null).when(ops).get(anyString());
-        doThrow(new RuntimeException("boom")).when(ops).set(anyString(), anyString(), any(Duration.class));
+        doReturn(Optional.empty()).when(cache).get(anyString());
+        doThrow(new RuntimeException("boom")).when(cache).put(anyString(), anyString(), any(Duration.class));
 
         List<StockChartResponse> chart = stockChartService.getStockChart(STOCK_CODE, "3MONTH").block(SHORT_TIMEOUT);
 
@@ -282,7 +278,7 @@ class StockChartCacheCharacterizationTest extends IntegrationTestSupport {
     @DisplayName("어서션 8: 캐시 히트면 KIS 요청이 한 건도 나가지 않는다")
     void cacheHit_issuesZeroKisRequests() throws Exception {
         List<StockChartResponse> seeded = List.of(sampleResponse("3month"));
-        redisTemplate.opsForValue().set(KEY_3MONTH, objectMapper.writeValueAsString(seeded), Duration.ofMinutes(5));
+        cache.put(KEY_3MONTH, objectMapper.writeValueAsString(seeded), Duration.ofMinutes(5));
         int before = KIS.getRequestCount();
 
         List<StockChartResponse> chart = stockChartService.getStockChart(STOCK_CODE, "3MONTH").block(SHORT_TIMEOUT);
@@ -296,7 +292,7 @@ class StockChartCacheCharacterizationTest extends IntegrationTestSupport {
     void storedJson_roundTripsToEqualList() throws Exception {
         List<StockChartResponse> chart = stockChartService.getStockChart(STOCK_CODE, "3MONTH").block(SHORT_TIMEOUT);
 
-        String stored = redisTemplate.opsForValue().get(KEY_3MONTH);
+        String stored = cache.get(KEY_3MONTH).orElse(null);
         List<StockChartResponse> parsed = objectMapper.readValue(stored, new TypeReference<List<StockChartResponse>>() { });
 
         assertThat(parsed).isEqualTo(chart);

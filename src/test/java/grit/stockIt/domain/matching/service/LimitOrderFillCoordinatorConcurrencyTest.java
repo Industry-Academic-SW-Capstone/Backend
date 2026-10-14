@@ -26,7 +26,6 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.TransactionStatus;
@@ -50,9 +49,6 @@ class LimitOrderFillCoordinatorConcurrencyTest extends IntegrationTestSupport {
 
     @Autowired
     private LimitOrderFillCoordinator limitOrderFillCoordinator;
-
-    @Autowired
-    private StringRedisTemplate redisTemplate;
 
     @Autowired
     private MemberRepository memberRepository;
@@ -91,9 +87,6 @@ class LimitOrderFillCoordinatorConcurrencyTest extends IntegrationTestSupport {
 
     @BeforeEach
     void setUp() {
-        // Redis 데이터 초기화
-        redisTemplate.getConnectionFactory().getConnection().serverCommands().flushAll();
-
         // 테스트 데이터 생성 (각 테스트마다 고유한 데이터 생성)
         String uniqueId = UUID.randomUUID().toString().substring(0, 8);
         testMember = Member.builder()

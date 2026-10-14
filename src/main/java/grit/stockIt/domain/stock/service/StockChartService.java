@@ -5,10 +5,10 @@ import grit.stockIt.domain.stock.dto.KisChartResponse;
 import grit.stockIt.domain.stock.dto.KisMinuteChartDataDto;
 import grit.stockIt.domain.stock.dto.StockChartResponse;
 import grit.stockIt.global.auth.KisTokenManager;
+import grit.stockIt.global.cache.LocalTtlCache;
 import grit.stockIt.global.config.KisApiProperties;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Flux;
@@ -39,14 +39,14 @@ public class StockChartService {
     private final KisTokenManager kisTokenManager;
     private final KisApiProperties kisApiProperties;
     private final ObjectMapper objectMapper;
-    private final StringRedisTemplate redisTemplate;
+    private final LocalTtlCache cache;
     private final ChartPeriodPolicy chartPeriodPolicy;
     private final KisValueParser kisValueParser;
     private final ChartTimeline chartTimeline;
     private final ChartSampling chartSampling;
 
     /**
-     * 주식 차트 데이터 조회 (Redis 캐싱 적용)
+     * 주식 차트 데이터 조회 (캐싱 적용)
      * @param stockCode 종목코드 (6자리)
      * @param periodType 기간 타입 (1day/1week/3month/1year/5year)
      * @return 차트 데이터 리스트
@@ -59,7 +59,7 @@ public class StockChartService {
 
         String cacheKey = chartPeriodPolicy.cacheKey(stockCode, normalizedType);
 
-        String cachedData = redisTemplate.opsForValue().get(cacheKey);
+        String cachedData = cache.get(cacheKey).orElse(null);
         if (cachedData != null) {
             try {
                 List<StockChartResponse> chartData = objectMapper.readValue(
@@ -78,7 +78,7 @@ public class StockChartService {
                     try {
                         String jsonData = objectMapper.writeValueAsString(chartData);
                         Duration ttl = chartPeriodPolicy.cacheTtl(normalizedType);
-                        redisTemplate.opsForValue().set(cacheKey, jsonData, ttl);
+                        cache.put(cacheKey, jsonData, ttl);
                         log.info("차트 데이터 캐시 저장: key={} ({}, {}개, TTL={}s)",
                                 cacheKey, periodType, chartData.size(), ttl.toSeconds());
                     } catch (Exception e) {

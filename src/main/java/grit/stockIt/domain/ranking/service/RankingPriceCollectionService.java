@@ -1,7 +1,7 @@
 package grit.stockIt.domain.ranking.service;
 
 import grit.stockIt.domain.account.repository.AccountStockRepository;
-import grit.stockIt.domain.matching.repository.RedisMarketDataRepository;
+import grit.stockIt.domain.matching.repository.MarketDataRepository;
 import grit.stockIt.domain.stock.service.StockDetailService;
 import com.google.common.util.concurrent.RateLimiter;
 import lombok.extern.slf4j.Slf4j;
@@ -20,14 +20,14 @@ import java.util.Set;
 
 /**
  * 랭킹용 현재가 배치 수집
- * - Redis 캐시 우선 조회 → 캐시 미스 시 KIS API 호출 (Rate Limiting 적용)
+ * - 캐시 우선 조회 → 캐시 미스 시 KIS API 호출 (Rate Limiting 적용)
  */
 @Slf4j
 @Service
 public class RankingPriceCollectionService {
 
     private final AccountStockRepository accountStockRepository;
-    private final RedisMarketDataRepository redisMarketDataRepository;
+    private final MarketDataRepository marketDataRepository;
     private final StockDetailService stockDetailService;
 
     /**
@@ -43,11 +43,11 @@ public class RankingPriceCollectionService {
 
     public RankingPriceCollectionService(
             AccountStockRepository accountStockRepository,
-            RedisMarketDataRepository redisMarketDataRepository,
+            MarketDataRepository marketDataRepository,
             StockDetailService stockDetailService,
             @Value("${kis.api.rate-limit-per-second:25.0}") double rateLimitPerSecond) {
         this.accountStockRepository = accountStockRepository;
-        this.redisMarketDataRepository = redisMarketDataRepository;
+        this.marketDataRepository = marketDataRepository;
         this.stockDetailService = stockDetailService;
         this.kisApiRateLimiter = RateLimiter.create(rateLimitPerSecond);
     }
@@ -65,7 +65,7 @@ public class RankingPriceCollectionService {
 
     /**
      * 배치로 종목 현재가 수집
-     * 1. Redis 캐시 우선 조회
+     * 1. 캐시 우선 조회
      * 2. 캐시 미스 시 KIS API 호출 (Rate Limiting 적용)
      * 
      * @param stockCodes 조회할 종목 코드 Set
@@ -76,7 +76,7 @@ public class RankingPriceCollectionService {
         List<String> cacheMissStocks = new ArrayList<>();
 
         for (String stockCode : stockCodes) {
-            Optional<BigDecimal> cachedPrice = redisMarketDataRepository.getLastPrice(stockCode);
+            Optional<BigDecimal> cachedPrice = marketDataRepository.getLastPrice(stockCode);
             if (cachedPrice.isPresent()) {
                 prices.put(stockCode, cachedPrice.get());
             } else {

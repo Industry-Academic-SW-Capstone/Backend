@@ -5,7 +5,7 @@ import grit.stockIt.domain.account.repository.AccountRepository;
 import grit.stockIt.domain.account.repository.AccountStockRepository;
 import grit.stockIt.domain.contest.entity.Contest;
 import grit.stockIt.domain.contest.repository.ContestRepository;
-import grit.stockIt.domain.matching.repository.RedisMarketDataRepository;
+import grit.stockIt.domain.matching.repository.MarketDataRepository;
 import grit.stockIt.domain.member.entity.AuthProvider;
 import grit.stockIt.domain.member.entity.Member;
 import grit.stockIt.domain.member.repository.MemberRepository;
@@ -132,7 +132,7 @@ class RankingUpdateCharacterizationTest extends IntegrationTestSupport {
     private AccountStockRepository accountStockRepository;
 
     @SpyBean
-    private RedisMarketDataRepository redisMarketDataRepository;
+    private MarketDataRepository marketDataRepository;
 
     @MockBean
     private StockDetailService stockDetailService;
@@ -144,7 +144,7 @@ class RankingUpdateCharacterizationTest extends IntegrationTestSupport {
     void setUp() {
         // @SpyBean/@MockBean은 캐시된 컨텍스트에서 테스트 간 공유되므로, 각 테스트 시작 시
         // 호출기록·스텁을 초기화한다(격리).
-        reset(accountRepository, contestRepository, accountStockRepository, redisMarketDataRepository);
+        reset(accountRepository, contestRepository, accountStockRepository, marketDataRepository);
         rankerAchievedEventCaptor.reset();
         when(missionQueryService.getTierInfo(anyString()))
                 .thenReturn(UserTierStatusResponse.builder().currentTier("BRONZE 1").build());
@@ -266,13 +266,13 @@ class RankingUpdateCharacterizationTest extends IntegrationTestSupport {
         assertThat(rankings.get("main:balance")).isNotNull();
 
         // 워밍 과정에서 발생한 호출기록을 초기화 후, 배치 조기리턴 시 추가 호출이 없음을 단언
-        reset(accountStockRepository, redisMarketDataRepository);
+        reset(accountStockRepository, marketDataRepository);
         rankerAchievedEventCaptor.reset();
 
         assertThatCode(() -> rankingService.updateAllRankings()).doesNotThrowAnyException();
 
         verify(accountStockRepository, never()).findDistinctStockCodes();
-        verify(redisMarketDataRepository, never()).getLastPrice(anyString());
+        verify(marketDataRepository, never()).getLastPrice(anyString());
         assertThat(rankerAchievedEventCaptor.captured()).isEmpty();
 
         // @CacheEvict(allEntries=true, beforeInvocation=true)는 본문 실행 전에 발화하므로

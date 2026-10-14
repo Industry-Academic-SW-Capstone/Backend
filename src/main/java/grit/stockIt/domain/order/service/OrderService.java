@@ -87,7 +87,6 @@ public class OrderService {
             orderHoldService.applyBuyHold(savedOrder, account, holdAmount);
         }
 
-        // DB 커밋 후에만 Redis 오더북에 주문 추가 (유령 주문 방지)
         orderSubscriptionService.subscribeAfterCommit(savedOrder, stock);
 
         log.info("지정가 주문 생성 완료: orderId={} stock={} quantity={}", savedOrder.getOrderId(), stock.getCode(), savedOrder.getQuantity());
@@ -141,7 +140,6 @@ public class OrderService {
             orderHoldService.applyBuyHold(savedOrder, account, holdAmount);
         }
 
-        // DB 커밋 후에만 Redis 오더북에 주문 추가 (유령 주문 방지)
         orderSubscriptionService.subscribeAfterCommit(savedOrder, stock);
 
         log.info("시장가 주문 생성 완료: orderId={} stock={} quantity={}", savedOrder.getOrderId(), stock.getCode(), savedOrder.getQuantity());

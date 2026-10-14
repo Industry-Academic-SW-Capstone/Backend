@@ -30,7 +30,7 @@ public class CompanyDescribeController {
 
     @Operation(
             summary = "기업 설명 생성",
-            description = "기업명을 받아 Gemini LLM을 활용하여 두 문장 요약을 생성합니다. Redis 캐시를 사용하여 API 호출을 최소화합니다 (TTL: 3시간)."
+            description = "기업명을 받아 Gemini LLM을 활용하여 두 문장 요약을 생성합니다. 캐시를 사용하여 API 호출을 최소화합니다 (TTL: 3시간)."
     )
     @PostMapping("/describe")
     @ResponseStatus(HttpStatus.OK)

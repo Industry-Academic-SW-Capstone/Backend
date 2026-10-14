@@ -14,7 +14,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.env.Environment;
-import org.springframework.data.redis.core.StringRedisTemplate;
+import grit.stockIt.global.cache.LocalTtlCache;
 import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -125,7 +125,7 @@ class StockChartCallProfileCharacterizationTest extends IntegrationTestSupport {
     private Environment environment;
 
     @Autowired
-    private StringRedisTemplate redisTemplate;
+    private LocalTtlCache cache;
 
     @MockitoBean
     private KisTokenManager kisTokenManager;
@@ -138,7 +138,7 @@ class StockChartCallProfileCharacterizationTest extends IntegrationTestSupport {
     @BeforeEach
     void setUp() {
         when(kisTokenManager.getAccessToken()).thenReturn("test-token");
-        TARGET_KEYS.forEach(redisTemplate::delete);
+        TARGET_KEYS.forEach(cache::delete);
         CALLS.clear();
     }
 

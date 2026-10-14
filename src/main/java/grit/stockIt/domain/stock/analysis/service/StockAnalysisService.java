@@ -2,7 +2,7 @@ package grit.stockIt.domain.stock.analysis.service;
 
 import grit.stockIt.domain.mission.event.StockAnalyzedEvent;
 import grit.stockIt.domain.stock.analysis.dto.*;
-import grit.stockIt.domain.stock.analysis.repository.RedisStockAnalysisRepository;
+import grit.stockIt.domain.stock.analysis.repository.StockAnalysisCacheRepository;
 import grit.stockIt.domain.stock.service.StockDetailService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
@@ -19,7 +19,7 @@ public class StockAnalysisService {
     private final KisFinancialRatioService kisFinancialRatioService;
     private final KisDividendService kisDividendService;
     private final PythonAnalysisClient pythonAnalysisClient;
-    private final RedisStockAnalysisRepository redisStockAnalysisRepository;
+    private final StockAnalysisCacheRepository stockAnalysisCacheRepository;
     private final ApplicationEventPublisher eventPublisher;
 
     public StockAnalysisService(
@@ -27,14 +27,14 @@ public class StockAnalysisService {
             KisFinancialRatioService kisFinancialRatioService,
             KisDividendService kisDividendService,
             PythonAnalysisClient pythonAnalysisClient,
-            RedisStockAnalysisRepository redisStockAnalysisRepository,
+            StockAnalysisCacheRepository stockAnalysisCacheRepository,
             ApplicationEventPublisher eventPublisher
     ) {
         this.stockDetailService = stockDetailService;
         this.kisFinancialRatioService = kisFinancialRatioService;
         this.kisDividendService = kisDividendService;
         this.pythonAnalysisClient = pythonAnalysisClient;
-        this.redisStockAnalysisRepository = redisStockAnalysisRepository;
+        this.stockAnalysisCacheRepository = stockAnalysisCacheRepository;
         this.eventPublisher = eventPublisher;
     }
 
@@ -86,7 +86,7 @@ public class StockAnalysisService {
     // 시장 데이터 조회 (캐시 우선)
     public Mono<MarketData> getMarketData(String stockCode) {
         // 1. 캐시 확인
-        return Mono.fromCallable(() -> redisStockAnalysisRepository.getMarketData(stockCode))
+        return Mono.fromCallable(() -> stockAnalysisCacheRepository.getMarketData(stockCode))
                 .flatMap(cachedData -> {
                     if (cachedData.isPresent()) {
                         log.info("캐시에서 시장 데이터 조회: stockCode={}", stockCode);
@@ -98,7 +98,7 @@ public class StockAnalysisService {
                     return stockDetailService.getMarketDataFromKis(stockCode)
                             .map(data -> {
                                 // 3. 캐시 저장
-                                redisStockAnalysisRepository.saveMarketData(stockCode, data);
+                                stockAnalysisCacheRepository.saveMarketData(stockCode, data);
                                 return data;
                             });
                 })
@@ -112,7 +112,7 @@ public class StockAnalysisService {
     // 재무 데이터 조회 (캐시 우선)
     public Mono<FinancialData> getFinancialData(String stockCode) {
         // 1. 캐시 확인
-        return Mono.fromCallable(() -> redisStockAnalysisRepository.getFinancialData(stockCode))
+        return Mono.fromCallable(() -> stockAnalysisCacheRepository.getFinancialData(stockCode))
                 .flatMap(cachedData -> {
                     if (cachedData.isPresent()) {
                         log.info("캐시에서 재무 데이터 조회: stockCode={}", stockCode);
@@ -128,7 +128,7 @@ public class StockAnalysisService {
 
                                 FinancialData data = new FinancialData(roe, debtRatio);
                                 // 3. 캐시 저장
-                                redisStockAnalysisRepository.saveFinancialData(stockCode, data);
+                                stockAnalysisCacheRepository.saveFinancialData(stockCode, data);
                                 return data;
                             });
                 })
@@ -142,7 +142,7 @@ public class StockAnalysisService {
     // 배당 데이터 조회 (캐시 우선)
     public Mono<DividendData> getDividendData(String stockCode) {
         // 1. 캐시 확인
-        return Mono.fromCallable(() -> redisStockAnalysisRepository.getDividendData(stockCode))
+        return Mono.fromCallable(() -> stockAnalysisCacheRepository.getDividendData(stockCode))
                 .flatMap(cachedData -> {
                     if (cachedData.isPresent()) {
                         log.info("캐시에서 배당 데이터 조회: stockCode={}", stockCode);
@@ -156,14 +156,14 @@ public class StockAnalysisService {
                                 if (output == null) {
                                     // 배당 정보가 없는 경우
                                     DividendData data = new DividendData(0.0);
-                                    redisStockAnalysisRepository.saveDividendData(stockCode, data);
+                                    stockAnalysisCacheRepository.saveDividendData(stockCode, data);
                                     return data;
                                 }
 
                                 Double dividendYield = parseDoubleValue(output.diviRate());
                                 DividendData data = new DividendData(dividendYield != null ? dividendYield : 0.0);
                                 // 3. 캐시 저장
-                                redisStockAnalysisRepository.saveDividendData(stockCode, data);
+                                stockAnalysisCacheRepository.saveDividendData(stockCode, data);
                                 return data;
                             })
                             .defaultIfEmpty(new DividendData(0.0));  // null인 경우 기본값

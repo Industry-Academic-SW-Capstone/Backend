@@ -1,7 +1,7 @@
 package grit.stockIt.domain.matching.queue;
 
 import grit.stockIt.domain.matching.dto.LimitOrderFillEvent;
-import grit.stockIt.domain.matching.repository.RedisMarketDataRepository;
+import grit.stockIt.domain.matching.repository.MarketDataRepository;
 import grit.stockIt.domain.matching.service.FillDispatchResult;
 import grit.stockIt.domain.order.entity.OrderMethod;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
@@ -37,10 +37,10 @@ class KafkaFillCommandPublisherTest {
     private final KafkaTemplate<String, MatchingCommand> kafkaTemplate = mock(KafkaTemplate.class);
 
     private final SimpleMeterRegistry registry = new SimpleMeterRegistry();
-    private final RedisMarketDataRepository redisMarketDataRepository = mock(RedisMarketDataRepository.class);
+    private final MarketDataRepository marketDataRepository = mock(MarketDataRepository.class);
 
     private final KafkaFillCommandPublisher publisher = new KafkaFillCommandPublisher(
-            kafkaTemplate, Duration.ofMillis(200), new MatchingQueueMetrics(registry), redisMarketDataRepository);
+            kafkaTemplate, Duration.ofMillis(200), new MatchingQueueMetrics(registry), marketDataRepository);
 
     @Test
     @DisplayName("종목 코드를 키로 matching.commands 에 보내고, 브로커 확인을 받으면 기록 위치를 돌려준다")
@@ -69,7 +69,7 @@ class KafkaFillCommandPublisherTest {
 
         publisher.publish(STOCK_CODE, EVENT);
 
-        verify(redisMarketDataRepository).updateLastPrice(STOCK_CODE, EVENT.price());
+        verify(marketDataRepository).updateLastPrice(STOCK_CODE, EVENT.price());
     }
 
     @Test

@@ -5,7 +5,7 @@ import grit.stockIt.domain.account.repository.AccountRepository;
 import grit.stockIt.domain.account.repository.AccountStockRepository;
 import grit.stockIt.domain.contest.entity.Contest;
 import grit.stockIt.domain.contest.repository.ContestRepository;
-import grit.stockIt.domain.matching.repository.RedisMarketDataRepository;
+import grit.stockIt.domain.matching.repository.MarketDataRepository;
 import grit.stockIt.domain.member.entity.AuthProvider;
 import grit.stockIt.domain.member.entity.Member;
 import grit.stockIt.domain.member.repository.MemberRepository;
@@ -84,7 +84,7 @@ class RankingCacheCharacterizationTest extends IntegrationTestSupport {
     private AccountStockRepository accountStockRepository;
 
     @SpyBean
-    private RedisMarketDataRepository redisMarketDataRepository;
+    private MarketDataRepository marketDataRepository;
 
     @MockBean
     private StockDetailService stockDetailService;
@@ -94,7 +94,7 @@ class RankingCacheCharacterizationTest extends IntegrationTestSupport {
 
     @BeforeEach
     void setUp() {
-        reset(accountRepository, contestRepository, accountStockRepository, redisMarketDataRepository);
+        reset(accountRepository, contestRepository, accountStockRepository, marketDataRepository);
         when(missionQueryService.getTierInfo(anyString()))
                 .thenReturn(UserTierStatusResponse.builder().currentTier("BRONZE 1").build());
         when(stockDetailService.getCurrentPrice(anyString()))

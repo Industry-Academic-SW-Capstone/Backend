@@ -81,9 +81,6 @@ dependencies {
 	// WebClient
 	implementation 'org.springframework.boot:spring-boot-starter-webflux'
 
-	// Redis
-	implementation 'org.springframework.boot:spring-boot-starter-data-redis'
-
 	// WebSocket
 	implementation 'org.springframework.boot:spring-boot-starter-websocket'
 
@@ -101,6 +98,7 @@ dependencies {
 
 
 	// Caffeine 캐시
+	implementation 'org.springframework.boot:spring-boot-starter-cache'
 	implementation 'com.github.ben-manes.caffeine:caffeine:3.1.8'
 
 	// Guava (RateLimiter 사용)

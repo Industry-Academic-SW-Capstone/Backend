@@ -12,7 +12,6 @@ import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.context.transaction.TestTransaction;
-import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.utility.DockerImageName;
 
@@ -20,7 +19,7 @@ import java.util.List;
 
 /**
  * Testcontainers 기반 통합 테스트 공용 베이스 클래스.
- * PostgreSQL/Redis 컨테이너를 자동으로 띄우므로 로컬 DB 없이 어디서든(CI 포함) 실행 가능하다.
+ * PostgreSQL 컨테이너를 자동으로 띄우므로 로컬 DB 없이 어디서든(CI 포함) 실행 가능하다.
  * DB가 필요한 @SpringBootTest 는 이 클래스를 상속한다.
  *
  * 컨테이너는 싱글턴 패턴으로 JVM당 1회만 기동한다. @Testcontainers/@Container 확장은
@@ -40,13 +39,8 @@ public abstract class IntegrationTestSupport {
             .withPassword("test_password")
             .withReuse(true);
 
-    static final GenericContainer<?> REDIS = new GenericContainer<>(DockerImageName.parse("redis:7"))
-            .withExposedPorts(6379)
-            .withReuse(true);
-
     static {
         POSTGRES.start();
-        REDIS.start();
     }
 
     private static final int TRUNCATE_MAX_ATTEMPTS = 3;
@@ -64,9 +58,6 @@ public abstract class IntegrationTestSupport {
         registry.add("spring.datasource.username", POSTGRES::getUsername);
         registry.add("spring.datasource.password", POSTGRES::getPassword);
         registry.add("spring.datasource.driver-class-name", () -> "org.postgresql.Driver");
-
-        registry.add("spring.data.redis.host", REDIS::getHost);
-        registry.add("spring.data.redis.port", REDIS::getFirstMappedPort);
     }
 
     /**

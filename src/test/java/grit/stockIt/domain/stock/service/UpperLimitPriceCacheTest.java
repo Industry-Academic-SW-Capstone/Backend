@@ -14,7 +14,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.env.Environment;
-import org.springframework.data.redis.core.StringRedisTemplate;
+import grit.stockIt.global.cache.LocalTtlCache;
 import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -84,7 +84,7 @@ class UpperLimitPriceCacheTest extends IntegrationTestSupport {
     private Environment environment;
 
     @Autowired
-    private StringRedisTemplate redisTemplate;
+    private LocalTtlCache cache;
 
     @MockitoBean
     private KisTokenManager kisTokenManager;
@@ -98,8 +98,8 @@ class UpperLimitPriceCacheTest extends IntegrationTestSupport {
     void setUp() {
         when(kisTokenManager.getAccessToken()).thenReturn("test-token");
         upperLimitPayload = UPPER_LIMIT;
-        redisTemplate.delete(UPPER_LIMIT_KEY);
-        redisTemplate.delete(LAST_PRICE_KEY);
+        cache.delete(UPPER_LIMIT_KEY);
+        cache.delete(LAST_PRICE_KEY);
     }
 
     @Test
@@ -115,8 +115,8 @@ class UpperLimitPriceCacheTest extends IntegrationTestSupport {
     void cacheMiss_storesUnderOwnKey() {
         stockDetailService.getUpperLimitPrice(STOCK_CODE).block(TIMEOUT);
 
-        assertThat(redisTemplate.opsForValue().get(UPPER_LIMIT_KEY)).isEqualTo(UPPER_LIMIT);
-        assertThat(redisTemplate.hasKey(LAST_PRICE_KEY)).isFalse();
+        assertThat(cache.get(UPPER_LIMIT_KEY).orElse(null)).isEqualTo(UPPER_LIMIT);
+        assertThat(cache.contains(LAST_PRICE_KEY)).isFalse();
     }
 
     @Test
@@ -127,8 +127,7 @@ class UpperLimitPriceCacheTest extends IntegrationTestSupport {
         ZonedDateTime now = ZonedDateTime.now(KST);
         long expected = Duration.between(now, now.toLocalDate().plusDays(1).atStartOfDay(KST)).getSeconds();
 
-        // Redis 는 밀리초 잔여를 올림해 돌려주므로 기대값보다 1초 클 수 있다.
-        assertThat(redisTemplate.getExpire(UPPER_LIMIT_KEY)).isBetween(expected - 5, expected + 2);
+        assertThat(cache.remainingTtl(UPPER_LIMIT_KEY).orElseThrow().toSeconds()).isBetween(expected - 5, expected + 2);
     }
 
     @Test
@@ -151,7 +150,7 @@ class UpperLimitPriceCacheTest extends IntegrationTestSupport {
         assertThatThrownBy(() -> stockDetailService.getUpperLimitPrice(STOCK_CODE).block(TIMEOUT))
                 .hasStackTraceContaining("상한가를 가져올 수 없습니다");
 
-        assertThat(redisTemplate.hasKey(UPPER_LIMIT_KEY)).isFalse();
+        assertThat(cache.contains(UPPER_LIMIT_KEY)).isFalse();
     }
 
     private static String priceEnvelope(String upperLimit) {
