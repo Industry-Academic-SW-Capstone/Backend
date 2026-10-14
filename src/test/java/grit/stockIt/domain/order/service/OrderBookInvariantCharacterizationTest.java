@@ -1,5 +1,7 @@
 package grit.stockIt.domain.order.service;
 
+import grit.stockIt.domain.stock.analysis.dto.StockAnalysisResponse;
+import grit.stockIt.domain.stock.analysis.service.StockAnalysisService;
 import grit.stockIt.domain.account.entity.Account;
 import grit.stockIt.domain.account.repository.AccountRepository;
 import grit.stockIt.domain.contest.entity.Contest;
@@ -37,6 +39,7 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -81,6 +84,9 @@ class OrderBookInvariantCharacterizationTest extends IntegrationTestSupport {
     @MockBean
     private StockDetailService stockDetailService;
 
+    @MockBean
+    private StockAnalysisService stockAnalysisService;
+
     private Member testMember;
     private Contest testContest;
 
@@ -110,18 +116,10 @@ class OrderBookInvariantCharacterizationTest extends IntegrationTestSupport {
                 new UsernamePasswordAuthenticationToken(testMember.getEmail(), null, List.of())
         );
 
-        // BUY 주문은 매수 시 항상 validateStockTradeable(getStockDetail)을 먼저 통과해야
+        // BUY 주문은 매수 시 항상 validateStockTradeable(scoreStock)을 먼저 통과해야
         // 이후 현금 검증/afterCommit 경로에 도달한다. 기본적으로 거래 가능으로 스텁.
-        org.mockito.Mockito.when(stockDetailService.getStockDetail(anyString()))
-                .thenReturn(Mono.just(tradeableStockDetail()));
-    }
-
-    private grit.stockIt.domain.stock.dto.StockDetailResponse tradeableStockDetail() {
-        return new grit.stockIt.domain.stock.dto.StockDetailResponse(
-                "000000", "테스트", 100, 0, "0", null,
-                0L, 0L, 0L, 0.0, 0.0, 0.0, 0, 0, 0, 0, 0,
-                null, null, true, null, null, null
-        );
+        org.mockito.Mockito.when(stockAnalysisService.scoreStock(anyString(), isNull(), isNull()))
+                .thenReturn(Mono.just(new StockAnalysisResponse("000000", "테스트", null, null, true, null)));
     }
 
     @AfterEach

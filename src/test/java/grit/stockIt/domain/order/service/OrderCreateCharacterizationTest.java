@@ -18,7 +18,8 @@ import grit.stockIt.domain.order.entity.OrderStatus;
 import grit.stockIt.domain.order.entity.OrderType;
 import grit.stockIt.domain.order.repository.OrderHoldRepository;
 import grit.stockIt.domain.order.repository.OrderRepository;
-import grit.stockIt.domain.stock.dto.StockDetailResponse;
+import grit.stockIt.domain.stock.analysis.dto.StockAnalysisResponse;
+import grit.stockIt.domain.stock.analysis.service.StockAnalysisService;
 import grit.stockIt.domain.stock.entity.Stock;
 import grit.stockIt.domain.stock.repository.StockRepository;
 import grit.stockIt.domain.stock.service.StockDetailService;
@@ -45,6 +46,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -93,6 +95,9 @@ class OrderCreateCharacterizationTest extends IntegrationTestSupport {
     @MockBean
     private StockDetailService stockDetailService;
 
+    @MockBean
+    private StockAnalysisService stockAnalysisService;
+
     @SpyBean
     private OrderSubscriptionCoordinator orderSubscriptionCoordinator;
 
@@ -104,8 +109,8 @@ class OrderCreateCharacterizationTest extends IntegrationTestSupport {
         org.mockito.Mockito.reset(orderSubscriptionCoordinator);
         memberEmail = "order-create-" + UUID.randomUUID() + "@test.com";
         // 기본적으로 거래 가능 종목으로 취급 (개별 테스트에서 필요 시 재정의)
-        when(stockDetailService.getStockDetail(anyString()))
-                .thenReturn(Mono.just(tradeableStockDetail()));
+        when(stockAnalysisService.scoreStock(anyString(), isNull(), isNull()))
+                .thenReturn(Mono.just(analysis(true, null)));
     }
 
     @AfterEach
@@ -185,19 +190,8 @@ class OrderCreateCharacterizationTest extends IntegrationTestSupport {
                 new UsernamePasswordAuthenticationToken(email, null, List.of()));
     }
 
-    private StockDetailResponse tradeableStockDetail() {
-        return stockDetail(true, null);
-    }
-
-    private StockDetailResponse stockDetail(boolean tradeable, String untradeableReason) {
-        return new StockDetailResponse(
-                "IGNORED", "무시됨", 0, 0, "0", null,
-                0L, 0L, 0L, 0.0, 0.0, 0.0,
-                0, 0, 0, 0, 0,
-                null, null,
-                tradeable, untradeableReason,
-                null, null
-        );
+    private StockAnalysisResponse analysis(boolean analyzable, String reason) {
+        return new StockAnalysisResponse("IGNORED", "무시됨", null, null, analyzable, reason);
     }
 
     private AccountStock createHolding(Account account, Stock stock, int quantity, BigDecimal avgPrice) {
@@ -289,12 +283,12 @@ class OrderCreateCharacterizationTest extends IntegrationTestSupport {
     // ===== 4. 미거래종목 =====
 
     @Test
-    @DisplayName("createLimitOrder: BUY 미거래종목(tradeable=false) 시 UntradeableStockException(사유 포함)")
+    @DisplayName("createLimitOrder: BUY 미거래종목(analyzable=false) 시 UntradeableStockException(사유 포함)")
     void createLimitOrder_buyUntradeableStock() {
         Fixture fx = createFixture(new BigDecimal("1000000"));
         authenticateAs(memberEmail);
-        when(stockDetailService.getStockDetail(fx.stock().getCode()))
-                .thenReturn(Mono.just(stockDetail(false, "AI 분석 결과 거래가 제한됩니다.")));
+        when(stockAnalysisService.scoreStock(fx.stock().getCode(), null, null))
+                .thenReturn(Mono.just(analysis(false, "AI 분석 결과 거래가 제한됩니다.")));
 
         LimitOrderCreateRequest request = new LimitOrderCreateRequest(
                 fx.account().getAccountId(), fx.stock().getCode(), new BigDecimal("10000"), 5, OrderMethod.BUY);
@@ -309,7 +303,7 @@ class OrderCreateCharacterizationTest extends IntegrationTestSupport {
     void createLimitOrder_buyStockDetailLookupFails_wrappedAsUntradeable() {
         Fixture fx = createFixture(new BigDecimal("1000000"));
         authenticateAs(memberEmail);
-        when(stockDetailService.getStockDetail(fx.stock().getCode()))
+        when(stockAnalysisService.scoreStock(fx.stock().getCode(), null, null))
                 .thenReturn(Mono.error(new RuntimeException("KIS 연결 실패")));
 
         LimitOrderCreateRequest request = new LimitOrderCreateRequest(

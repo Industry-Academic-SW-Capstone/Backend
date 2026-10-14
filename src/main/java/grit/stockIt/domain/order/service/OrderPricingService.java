@@ -1,6 +1,7 @@
 package grit.stockIt.domain.order.service;
 
 import grit.stockIt.domain.order.entity.Order;
+import grit.stockIt.domain.stock.analysis.service.StockAnalysisService;
 import grit.stockIt.domain.stock.service.StockDetailService;
 import grit.stockIt.global.exception.BadRequestException;
 import grit.stockIt.global.exception.UntradeableStockException;
@@ -20,6 +21,7 @@ import java.math.RoundingMode;
 public class OrderPricingService {
 
     private final StockDetailService stockDetailService;
+    private final StockAnalysisService stockAnalysisService;
 
     public BigDecimal calculateHoldAmount(Order order) {
         return order.getPrice().multiply(BigDecimal.valueOf(order.getRemainingQuantity()));
@@ -44,15 +46,15 @@ public class OrderPricingService {
         return upperLimitPrice.multiply(BigDecimal.valueOf(quantity)).setScale(2, RoundingMode.UP);
     }
 
-    // 거래 가능 종목인지 검증
+    // 거래 가능 종목인지 검증. 리포트(LLM) 없는 스코어링으로 분석 가능 여부만 본다 — 스팩·우선주 등은 막는다.
     public void validateStockTradeable(String stockCode) {
         try {
-            var stockDetail = stockDetailService.getStockDetail(stockCode)
+            var analysis = stockAnalysisService.scoreStock(stockCode, null, null)
                     .block(java.time.Duration.ofSeconds(5));
 
-            if (stockDetail == null || !Boolean.TRUE.equals(stockDetail.tradeable())) {
-                String reason = stockDetail != null && stockDetail.untradeableReason() != null
-                        ? stockDetail.untradeableReason()
+            if (analysis == null || Boolean.FALSE.equals(analysis.analyzable())) {
+                String reason = analysis != null && analysis.reason() != null
+                        ? analysis.reason()
                         : "이 종목은 AI 분석이 불가능하여 거래가 제한됩니다.";
                 throw new UntradeableStockException(reason);
             }

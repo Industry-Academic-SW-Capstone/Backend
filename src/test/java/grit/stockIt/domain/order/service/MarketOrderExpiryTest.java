@@ -19,7 +19,8 @@ import grit.stockIt.domain.order.entity.OrderStatus;
 import grit.stockIt.domain.order.repository.OrderHoldRepository;
 import grit.stockIt.domain.order.repository.OrderRepository;
 import grit.stockIt.domain.order.scheduler.MarketOrderExpiryScheduler;
-import grit.stockIt.domain.stock.dto.StockDetailResponse;
+import grit.stockIt.domain.stock.analysis.dto.StockAnalysisResponse;
+import grit.stockIt.domain.stock.analysis.service.StockAnalysisService;
 import grit.stockIt.domain.stock.entity.Stock;
 import grit.stockIt.domain.stock.repository.StockRepository;
 import grit.stockIt.domain.stock.service.StockDetailService;
@@ -41,6 +42,7 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.when;
 
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
@@ -82,12 +84,15 @@ class MarketOrderExpiryTest extends IntegrationTestSupport {
     @MockitoBean
     private StockDetailService stockDetailService;
 
+    @MockitoBean
+    private StockAnalysisService stockAnalysisService;
+
     private String memberEmail;
 
     @BeforeEach
     void setUp() {
         memberEmail = "market-expiry-" + UUID.randomUUID() + "@test.com";
-        when(stockDetailService.getStockDetail(anyString())).thenReturn(Mono.just(tradeableStockDetail()));
+        when(stockAnalysisService.scoreStock(anyString(), isNull(), isNull())).thenReturn(Mono.just(analyzableStock()));
         when(stockDetailService.getUpperLimitPrice(anyString())).thenReturn(Mono.just(UPPER_LIMIT_PRICE));
     }
 
@@ -222,14 +227,7 @@ class MarketOrderExpiryTest extends IntegrationTestSupport {
                 new UsernamePasswordAuthenticationToken(email, null, List.of()));
     }
 
-    private StockDetailResponse tradeableStockDetail() {
-        return new StockDetailResponse(
-                "IGNORED", "무시됨", 0, 0, "0", null,
-                0L, 0L, 0L, 0.0, 0.0, 0.0,
-                0, 0, 0, 0, 0,
-                null, null,
-                true, null,
-                null, null
-        );
+    private StockAnalysisResponse analyzableStock() {
+        return new StockAnalysisResponse("IGNORED", "무시됨", null, null, true, null);
     }
 }
