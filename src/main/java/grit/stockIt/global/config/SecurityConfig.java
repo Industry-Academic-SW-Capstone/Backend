@@ -3,6 +3,7 @@ package grit.stockIt.global.config;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import grit.stockIt.global.jwt.JwtAuthenticationFilter;
 import grit.stockIt.global.jwt.JwtService;
+import jakarta.servlet.DispatcherType;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.beans.factory.annotation.Value;
@@ -143,6 +144,10 @@ public class SecurityConfig {
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
 
                 .authorizeHttpRequests(auth -> auth
+                        // Mono/Flux 응답과 오류 페이지는 같은 요청의 두 번째 디스패치다. 첫 디스패치에서 이미 인가했고,
+                        // JWT 필터는 여기서 다시 돌지 않아 막으면 인증된 요청의 응답이 401 로 바뀐다.
+                        .dispatcherTypeMatchers(DispatcherType.ASYNC, DispatcherType.ERROR).permitAll()
+
                         // ROLE_ADMIN은 app.admin.emails 허용목록에서 나온다 — AdminEmailAllowlist 참고.
                         .requestMatchers(ADMIN_PATHS).hasRole("ADMIN")
 
