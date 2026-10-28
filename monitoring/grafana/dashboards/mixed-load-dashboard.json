@@ -587,13 +587,137 @@
       ]
     },
     {
+      "id": 31,
+      "type": "timeseries",
+      "title": "Settlement Throughput",
+      "description": "정산 요청이 들어온 속도(settlement.requests 토픽 유입)와 정산 워커가 끝낸 속도. 두 선의 차이만큼 정산 lag 이 쌓인다. 정산 워커는 8개로 고정이라 한 건이 길어지면 처리 속도가 바로 떨어진다.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 34,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 0,
+            "spanNulls": true
+          },
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "max",
+            "mean"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "refId": "A",
+          "expr": "sum(rate(kafka_topic_partition_current_offset{topic=\"settlement.requests\"}[1m]))",
+          "legendFormat": "정산 요청 유입/s"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "refId": "B",
+          "expr": "sum(rate(spring_kafka_listener_seconds_count{job=\"spring-boot\",name=~\"settlement-.*\",result=\"success\"}[1m]))",
+          "legendFormat": "정산 처리/s"
+        }
+      ]
+    },
+    {
+      "id": 32,
+      "type": "timeseries",
+      "title": "Worker Time per Event (mean)",
+      "description": "워커가 메시지 하나를 처리한 평균 시간. 워커 수가 그대로인데 이 값이 길어지면 처리량이 떨어진다. CPU 를 다투면 DB 응답 뒤 CPU 차례를 기다리는 시간까지 여기에 들어간다.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 34,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 0,
+            "spanNulls": true
+          },
+          "decimals": 1
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "max",
+            "mean"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "refId": "A",
+          "expr": "1000*sum(rate(spring_kafka_listener_seconds_sum{job=\"spring-boot\",name=~\"matching-fill-.*\"}[1m]))/sum(rate(spring_kafka_listener_seconds_count{job=\"spring-boot\",name=~\"matching-fill-.*\"}[1m]))",
+          "legendFormat": "체결 한 건 (ms)"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "refId": "B",
+          "expr": "1000*sum(rate(spring_kafka_listener_seconds_sum{job=\"spring-boot\",name=~\"settlement-.*\"}[1m]))/sum(rate(spring_kafka_listener_seconds_count{job=\"spring-boot\",name=~\"settlement-.*\"}[1m]))",
+          "legendFormat": "정산 한 건 (ms)"
+        }
+      ]
+    },
+    {
       "id": 7,
       "type": "row",
       "title": "Saturation — 병목 자원",
       "collapsed": false,
       "gridPos": {
         "x": 0,
-        "y": 34,
+        "y": 42,
         "w": 24,
         "h": 1
       },
@@ -610,7 +734,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 35,
+        "y": 43,
         "w": 12,
         "h": 8
       },
@@ -671,7 +795,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 35,
+        "y": 43,
         "w": 12,
         "h": 8
       },
@@ -741,7 +865,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 43,
+        "y": 51,
         "w": 12,
         "h": 8
       },
@@ -809,7 +933,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 43,
+        "y": 51,
         "w": 12,
         "h": 8
       },
@@ -861,7 +985,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 51,
+        "y": 59,
         "w": 12,
         "h": 8
       },
@@ -932,14 +1056,14 @@
       "id": 17,
       "type": "timeseries",
       "title": "Fill Worker Processing Time",
-      "description": "체결 워커가 명령 하나를 처리한 시간(p99, Spring Kafka 기본 지표). 체결 트랜잭션(종목 락 + 워터마크 + 체결) + 정산 요청 전송. 종목당 처리량의 역수에 가깝다 — 워터마크 왕복 비용이 여기서 드러난다.",
+      "description": "체결 워커가 명령 하나를 처리한 시간(p99, Spring Kafka 기본 지표). 워터마크 확인 + 체결 트랜잭션 + 정산 요청 전송. 종목 하나의 처리량은 이 시간의 역수에 가깝다.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
       },
       "gridPos": {
         "x": 12,
-        "y": 51,
+        "y": 59,
         "w": 12,
         "h": 8
       },
@@ -991,7 +1115,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 59,
+        "y": 67,
         "w": 12,
         "h": 8
       },
@@ -1043,7 +1167,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 59,
+        "y": 67,
         "w": 12,
         "h": 8
       },
@@ -1111,7 +1235,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 67,
+        "y": 75,
         "w": 12,
         "h": 8
       },
@@ -1163,7 +1287,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 67,
+        "y": 75,
         "w": 12,
         "h": 8
       },
@@ -1215,7 +1339,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 75,
+        "y": 83,
         "w": 12,
         "h": 8
       },
@@ -1277,7 +1401,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 75,
+        "y": 83,
         "w": 12,
         "h": 8
       },
@@ -1338,13 +1462,137 @@
       ]
     },
     {
+      "id": 29,
+      "type": "timeseries",
+      "title": "Mission · Notification Queue",
+      "description": "미션·알림 전용 스레드 풀(각 2개)의 메모리 대기열에 쌓인 작업 수. 알림은 정산 한 건마다, 미션은 주문이 전부 체결될 때마다 생긴다. 체결이 늘면 함께 늘고, CPU 를 못 받으면 쌓인다. 대기열은 크기 제한 없는 메모리라 서버가 재시작되면 사라진다.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 91,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 0,
+            "spanNulls": true
+          },
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "refId": "A",
+          "expr": "executor_queued_tasks{job=\"spring-boot\",name=\"missionExecutor\"}",
+          "legendFormat": "미션 대기"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "refId": "B",
+          "expr": "executor_queued_tasks{job=\"spring-boot\",name=\"notificationExecutor\"}",
+          "legendFormat": "알림 대기"
+        }
+      ]
+    },
+    {
+      "id": 30,
+      "type": "timeseries",
+      "title": "Mission · Notification Throughput",
+      "description": "미션·알림 작업을 초당 몇 건 끝냈나. 알림은 정산 한 건마다, 미션은 주문이 전부 체결될 때마다 생긴다. 만들어지는 속도보다 낮으면 대기열이 쌓이는 중이다.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 91,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 0,
+            "spanNulls": true
+          },
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "refId": "A",
+          "expr": "rate(executor_completed_tasks_total{job=\"spring-boot\",name=\"missionExecutor\"}[1m])",
+          "legendFormat": "미션 처리/s"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "refId": "B",
+          "expr": "rate(executor_completed_tasks_total{job=\"spring-boot\",name=\"notificationExecutor\"}[1m])",
+          "legendFormat": "알림 처리/s"
+        }
+      ]
+    },
+    {
       "id": 22,
       "type": "row",
       "title": "Kafka — 파티션별 분배",
       "collapsed": false,
       "gridPos": {
         "x": 0,
-        "y": 83,
+        "y": 99,
         "w": 24,
         "h": 1
       },
@@ -1361,7 +1609,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 84,
+        "y": 100,
         "w": 12,
         "h": 8
       },
@@ -1414,7 +1662,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 84,
+        "y": 100,
         "w": 12,
         "h": 8
       },
@@ -1467,7 +1715,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 92,
+        "y": 108,
         "w": 12,
         "h": 8
       },
@@ -1520,7 +1768,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 92,
+        "y": 108,
         "w": 12,
         "h": 8
       },
