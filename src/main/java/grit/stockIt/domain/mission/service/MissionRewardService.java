@@ -14,6 +14,8 @@ import grit.stockIt.domain.mission.repository.MissionRepository;
 import grit.stockIt.domain.notification.event.MissionCompletedEvent;
 import grit.stockIt.domain.title.entity.MemberTitle;
 import grit.stockIt.domain.title.repository.MemberTitleRepository;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.LockModeType;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
@@ -39,6 +41,7 @@ public class MissionRewardService {
     private final MissionProgressRepository missionProgressRepository;
     private final MemberTitleRepository memberTitleRepository;
     private final AccountRepository accountRepository;
+    private final EntityManager entityManager;
     private final ApplicationEventPublisher eventPublisher;
     private final MissionTrackPolicy missionTrackPolicy;
 
@@ -96,6 +99,8 @@ public class MissionRewardService {
             accountRepository.findByMemberAndIsDefaultTrue(member)
                     .ifPresentOrElse(
                             acc -> {
+                                // 미션 트랜잭션은 계좌를 먼저 읽어 둔다. 잠그며 다시 읽지 않으면 그 사이 커밋된 정산을 덮어쓴다
+                                entityManager.refresh(acc, LockModeType.PESSIMISTIC_WRITE);
                                 acc.increaseCash(BigDecimal.valueOf(reward.getMoneyAmount()));
                                 log.info("보상 지급: {}원", reward.getMoneyAmount());
                             },
