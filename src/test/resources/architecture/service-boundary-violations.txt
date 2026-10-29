@@ -1,0 +1,112 @@
+# 서비스 경계 위반 목록 — ServiceBoundaryTest 가 읽는다. 위반을 고치면 해당 줄을 지운다. 비면 Gradle 모듈로 나눈다.
+# 형식: <서비스> <클래스> -> <서비스> <클래스>  (grit.stockIt. 생략)
+
+# 거래소 → 증권사: trade_order·execution 공유, 취소 워커의 계좌 변경 (2·3·5단계) — 19건
+EXCHANGE domain.execution.entity.Execution -> BROKER domain.account.entity.Account
+EXCHANGE domain.execution.entity.Execution -> BROKER domain.order.entity.Order
+EXCHANGE domain.execution.entity.Execution -> BROKER domain.stock.entity.Stock
+EXCHANGE domain.execution.repository.ExecutionRepository -> BROKER domain.account.entity.Account
+EXCHANGE domain.execution.repository.ExecutionRepository -> BROKER domain.order.entity.Order
+EXCHANGE domain.execution.repository.ExecutionRepository -> BROKER domain.stock.entity.Stock
+EXCHANGE domain.execution.service.ExecutionService -> BROKER domain.order.entity.Order
+EXCHANGE domain.matching.service.LimitOrderExecutionService -> BROKER domain.account.entity.Account
+EXCHANGE domain.matching.service.LimitOrderExecutionService -> BROKER domain.order.entity.Order
+EXCHANGE domain.matching.service.LimitOrderExecutionService -> BROKER domain.order.entity.OrderStatus
+EXCHANGE domain.matching.service.LimitOrderExecutionService -> BROKER domain.order.repository.OrderRepository
+EXCHANGE domain.matching.service.LimitOrderExecutionService -> BROKER domain.stock.entity.Stock
+EXCHANGE domain.order.service.OrderCancelService -> BROKER domain.account.entity.Account
+EXCHANGE domain.order.service.OrderCancelService -> BROKER domain.account.repository.AccountRepository
+EXCHANGE domain.order.service.OrderCancelService -> BROKER domain.order.entity.Order
+EXCHANGE domain.order.service.OrderCancelService -> BROKER domain.order.entity.OrderStatus
+EXCHANGE domain.order.service.OrderCancelService -> BROKER domain.order.repository.OrderRepository
+EXCHANGE domain.order.service.OrderCancelService -> BROKER domain.order.service.OrderHoldService
+EXCHANGE domain.order.service.OrderCancelService -> BROKER domain.order.service.OrderSubscriptionService
+
+# 거래소 → 시세: 체결 트랜잭션 안의 구독 해제 (7단계) — 1건
+EXCHANGE domain.matching.service.LimitOrderExecutionService -> MARKET global.websocket.manager.OrderSubscriptionCoordinator
+
+# 증권사 → 거래소: 정산·자산 조회가 execution 을 읽음 (2·5단계) — 4건
+BROKER domain.account.service.AssetService -> EXCHANGE domain.execution.entity.Execution
+BROKER domain.account.service.AssetService -> EXCHANGE domain.execution.repository.ExecutionRepository
+BROKER domain.settlement.service.ExecutionSettlementService -> EXCHANGE domain.execution.entity.Execution
+BROKER domain.settlement.service.ExecutionSettlementService -> EXCHANGE domain.execution.repository.ExecutionRepository
+
+# 증권사 → 시세: 주문 구독 등록, 시세 캐시 읽기 (7단계) — 3건
+BROKER domain.order.service.OrderSubscriptionService -> MARKET global.websocket.manager.OrderSubscriptionCoordinator
+BROKER domain.ranking.service.RankingPriceCollectionService -> MARKET domain.matching.repository.RedisMarketDataRepository
+BROKER domain.stock.service.StockDetailService -> MARKET domain.matching.repository.RedisMarketDataRepository
+
+# 시세 → 거래소: FILL 발행이 거래소 지표를 씀 (7단계) — 1건
+MARKET domain.matching.queue.KafkaFillCommandPublisher -> EXCHANGE domain.matching.queue.MatchingQueueMetrics
+
+# 시세 → 증권사: 시세 응답 DTO (7단계) — 2건
+MARKET global.websocket.client.KisWebSocketClient -> BROKER domain.stock.dto.StockOrderBookResponse
+MARKET global.websocket.client.KisWebSocketClient -> BROKER domain.stock.dto.StockPriceUpdateResponse
+
+# 부가 → 증권사: 회원·계좌·보유 종목·주문 조회 (6단계) — 47건
+EXTRA domain.mission.entity.MissionProgress -> BROKER domain.member.entity.Member
+EXTRA domain.mission.repository.MissionProgressRepository -> BROKER domain.member.entity.Member
+EXTRA domain.mission.service.MissionBatchService -> BROKER domain.account.repository.AccountStockRepository
+EXTRA domain.mission.service.MissionBatchService -> BROKER domain.member.entity.Member
+EXTRA domain.mission.service.MissionConditionEvaluator -> BROKER domain.order.event.TradeCompletionEvent
+EXTRA domain.mission.service.MissionEventListener -> BROKER domain.member.entity.Member
+EXTRA domain.mission.service.MissionEventListener -> BROKER domain.member.event.MemberRegisteredEvent
+EXTRA domain.mission.service.MissionEventListener -> BROKER domain.order.event.TradeCompletionEvent
+EXTRA domain.mission.service.MissionProgressCalculator -> BROKER domain.order.event.TradeCompletionEvent
+EXTRA domain.mission.service.MissionProgressService -> BROKER domain.account.entity.Account
+EXTRA domain.mission.service.MissionProgressService -> BROKER domain.account.repository.AccountRepository
+EXTRA domain.mission.service.MissionProgressService -> BROKER domain.member.entity.Member
+EXTRA domain.mission.service.MissionProgressService -> BROKER domain.member.repository.MemberRepository
+EXTRA domain.mission.service.MissionProgressService -> BROKER domain.order.event.TradeCompletionEvent
+EXTRA domain.mission.service.MissionProgressService -> BROKER domain.stock.repository.StockRepository
+EXTRA domain.mission.service.MissionQueryService -> BROKER domain.member.entity.Member
+EXTRA domain.mission.service.MissionQueryService -> BROKER domain.member.repository.MemberRepository
+EXTRA domain.mission.service.MissionRewardService -> BROKER domain.account.entity.Account
+EXTRA domain.mission.service.MissionRewardService -> BROKER domain.account.repository.AccountRepository
+EXTRA domain.mission.service.MissionRewardService -> BROKER domain.member.entity.Member
+EXTRA domain.mission.service.MissionService -> BROKER domain.account.entity.Account
+EXTRA domain.mission.service.MissionService -> BROKER domain.account.entity.AccountStock
+EXTRA domain.mission.service.MissionService -> BROKER domain.account.repository.AccountRepository
+EXTRA domain.mission.service.MissionService -> BROKER domain.account.repository.AccountStockRepository
+EXTRA domain.mission.service.MissionService -> BROKER domain.member.entity.Member
+EXTRA domain.mission.service.MissionService -> BROKER domain.member.repository.MemberRepository
+EXTRA domain.notification.controller.AdminNotificationController -> BROKER domain.member.entity.Member
+EXTRA domain.notification.controller.AdminNotificationController -> BROKER domain.member.repository.MemberRepository
+EXTRA domain.notification.controller.NotificationController -> BROKER domain.member.entity.Member
+EXTRA domain.notification.controller.NotificationController -> BROKER domain.member.repository.MemberRepository
+EXTRA domain.notification.controller.TestNotificationController -> BROKER domain.member.entity.Member
+EXTRA domain.notification.controller.TestNotificationController -> BROKER domain.member.repository.MemberRepository
+EXTRA domain.notification.entity.Notification -> BROKER domain.member.entity.Member
+EXTRA domain.notification.repository.NotificationRepository -> BROKER domain.member.entity.Member
+EXTRA domain.notification.service.AdminNotificationService -> BROKER domain.member.entity.Member
+EXTRA domain.notification.service.ExecutionNotificationService -> BROKER domain.member.entity.Member
+EXTRA domain.notification.service.ExecutionNotificationService -> BROKER domain.member.repository.MemberRepository
+EXTRA domain.notification.service.FcmTokenService -> BROKER domain.member.entity.Member
+EXTRA domain.notification.service.FcmTokenService -> BROKER domain.member.repository.MemberRepository
+EXTRA domain.notification.service.MarketNotificationService -> BROKER domain.member.entity.Member
+EXTRA domain.notification.service.MarketNotificationService -> BROKER domain.member.repository.MemberRepository
+EXTRA domain.notification.service.MissionNotificationService -> BROKER domain.member.entity.Member
+EXTRA domain.notification.service.MissionNotificationService -> BROKER domain.member.repository.MemberRepository
+EXTRA domain.notification.service.NotificationService -> BROKER domain.member.entity.Member
+EXTRA domain.notification.service.NotificationService -> BROKER domain.member.repository.MemberRepository
+EXTRA domain.title.entity.MemberTitle -> BROKER domain.member.entity.Member
+EXTRA domain.title.repository.MemberTitleRepository -> BROKER domain.member.entity.Member
+
+# 증권사 → 부가: 회원의 칭호·미션 연관, 미션 이벤트 발행 (6단계) — 17건
+BROKER domain.member.dto.MemberResponse -> EXTRA domain.title.dto.TitleResponse
+BROKER domain.member.dto.MemberResponse -> EXTRA domain.title.entity.MemberTitle
+BROKER domain.member.dto.MemberResponse -> EXTRA domain.title.entity.Title
+BROKER domain.member.dto.RepresentativeTitleResponse -> EXTRA domain.title.entity.Title
+BROKER domain.member.entity.Member -> EXTRA domain.mission.entity.MissionProgress
+BROKER domain.member.entity.Member -> EXTRA domain.title.entity.MemberTitle
+BROKER domain.member.entity.Member -> EXTRA domain.title.entity.Title
+BROKER domain.member.service.MemberTitleService -> EXTRA domain.title.entity.Title
+BROKER domain.member.service.MemberTitleService -> EXTRA domain.title.repository.MemberTitleRepository
+BROKER domain.member.service.MemberTitleService -> EXTRA domain.title.repository.TitleRepository
+BROKER domain.ranking.service.RankingService -> EXTRA domain.mission.dto.UserTierStatusResponse
+BROKER domain.ranking.service.RankingService -> EXTRA domain.mission.event.RankerAchievedEvent
+BROKER domain.ranking.service.RankingService -> EXTRA domain.mission.service.MissionQueryService
+BROKER domain.ranking.service.RankingService -> EXTRA domain.title.entity.Title
+BROKER domain.settlement.service.ExecutionSettlementService -> EXTRA domain.notification.event.ExecutionFilledEvent
+BROKER domain.stock.analysis.service.PortfolioAnalysisService -> EXTRA domain.mission.event.PortfolioAnalyzedEvent
+BROKER domain.stock.analysis.service.StockAnalysisService -> EXTRA domain.mission.event.StockAnalyzedEvent
