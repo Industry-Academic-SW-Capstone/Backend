@@ -26,11 +26,13 @@ import grit.stockIt.domain.stock.entity.Stock;
 import grit.stockIt.domain.stock.repository.StockRepository;
 import grit.stockIt.domain.stock.service.StockDetailService;
 import grit.stockIt.global.support.IntegrationTestSupport;
+import grit.stockIt.global.support.OutboxReports;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.test.annotation.DirtiesContext;
@@ -60,6 +62,12 @@ class MarketOrderExpiryTest extends IntegrationTestSupport {
 
     @Autowired
     private OrderCancelService orderCancelService;
+
+    @Autowired
+    private OrderHoldReleaseService orderHoldReleaseService;
+
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
 
     @Autowired
     private MarketOrderExpiryScheduler marketOrderExpiryScheduler;
@@ -194,9 +202,12 @@ class MarketOrderExpiryTest extends IntegrationTestSupport {
                 .isEqualByComparingTo(BigDecimal.ZERO);
     }
 
-    // 워커가 꺼낸 만료 명령 처리를 흉내 낸다. 큐 없이 위치만 넘긴다.
+    // 워커가 꺼낸 만료 명령 처리와, 그 결과 통보를 받은 증권사의 홀딩 해제까지 흉내 낸다. 큐 없이 위치만 넘긴다.
     private QueuedCancelOutcome expireByWorker(Fixture fx, Long orderId) {
-        return orderCancelService.expireOnce(fx.stock().getCode(), orderId, new CommandPosition(topic, 0, nextOffset++));
+        QueuedCancelOutcome outcome = orderCancelService.expireOnce(
+                fx.stock().getCode(), orderId, new CommandPosition(topic, 0, nextOffset++));
+        OutboxReports.take(jdbcTemplate, fx.account().getAccountId()).forEach(orderHoldReleaseService::release);
+        return outcome;
     }
 
     private AccountStock holdingOf(Fixture fx) {

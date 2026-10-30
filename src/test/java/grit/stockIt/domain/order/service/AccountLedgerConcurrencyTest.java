@@ -1,6 +1,7 @@
 package grit.stockIt.domain.order.service;
 
 import grit.stockIt.contract.ExecutionReport;
+import grit.stockIt.contract.ExecutionReportType;
 import grit.stockIt.domain.account.entity.Account;
 import grit.stockIt.domain.account.repository.AccountRepository;
 import grit.stockIt.domain.contest.entity.Contest;
@@ -24,6 +25,7 @@ import grit.stockIt.domain.stock.entity.Stock;
 import grit.stockIt.domain.stock.repository.StockRepository;
 import grit.stockIt.domain.stock.service.StockDetailService;
 import grit.stockIt.global.support.IntegrationTestSupport;
+import grit.stockIt.global.support.OutboxReports;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -79,6 +81,7 @@ class AccountLedgerConcurrencyTest extends IntegrationTestSupport {
 
     @Autowired private OrderService orderService;
     @Autowired private OrderCancelService orderCancelService;
+    @Autowired private OrderHoldReleaseService orderHoldReleaseService;
     @Autowired private ExecutionSettlementService executionSettlementService;
     @Autowired private LimitOrderFillCoordinator limitOrderFillCoordinator;
     @Autowired private JdbcTemplate jdbcTemplate;
@@ -103,7 +106,7 @@ class AccountLedgerConcurrencyTest extends IntegrationTestSupport {
     }
 
     @Test
-    @DisplayName("정산이 계좌를 잠근 사이에 들어온 취소는 기다렸다가 정산이 바꾼 현금 위에서 홀딩을 푼다 — 정산의 변경이 사라지지 않는다")
+    @DisplayName("정산이 계좌를 잠근 사이에도 워커의 취소는 끝나고, 홀딩 해제는 기다렸다가 정산이 바꾼 현금 위에서 푼다")
     void cancelWaitsForSettlementLock_settlementChangeSurvives() throws Exception {
         Fixture fixture = transactionTemplate.execute(status -> createFixture(1));
         Long orderId = fixture.orderIds().get(0);
@@ -123,15 +126,18 @@ class AccountLedgerConcurrencyTest extends IntegrationTestSupport {
                     }), pool);
             assertThat(locked.await(10, TimeUnit.SECONDS)).isTrue();
 
-            CompletableFuture<QueuedCancelOutcome> cancel = CompletableFuture.supplyAsync(() ->
-                    orderCancelService.cancelOnce(fixture.stockCode(), orderId, nextPosition()), pool);
+            assertThat(orderCancelService.cancelOnce(fixture.stockCode(), orderId, nextPosition()))
+                    .as("워커는 계좌를 잠그지 않으므로 계좌가 잠겨 있어도 취소를 끝낸다").isEqualTo(QueuedCancelOutcome.CANCELLED);
+            ExecutionReport report = OutboxReports.take(jdbcTemplate, fixture.accountId()).get(0);
+            CompletableFuture<Void> holdRelease = CompletableFuture.runAsync(
+                    () -> orderHoldReleaseService.release(report), pool);
 
             Thread.sleep(500);
-            assertThat(cancel).as("계좌가 잠겨 있는 동안 취소는 끝나지 않는다").isNotDone();
+            assertThat(holdRelease).as("계좌가 잠겨 있는 동안 홀딩 해제는 끝나지 않는다").isNotDone();
 
             release.countDown();
             settlement.get(10, TimeUnit.SECONDS);
-            assertThat(cancel.get(10, TimeUnit.SECONDS)).isEqualTo(QueuedCancelOutcome.CANCELLED);
+            holdRelease.get(10, TimeUnit.SECONDS);
         } finally {
             release.countDown();
             pool.shutdownNow();
@@ -154,11 +160,12 @@ class AccountLedgerConcurrencyTest extends IntegrationTestSupport {
         // 미리 체결만 해 두어 정산할 거리를 만든다. 정산 전이라 일부 주문은 "체결됐지만 미정산" 상태로 취소를 맞는다.
         BlockingQueue<ExecutionReport> toSettle = new LinkedBlockingQueue<>();
         for (int i = 0; i < PREFILL_TICKS; i++) {
-            fill(fixture.stockCode()).forEach(execution -> toSettle.add(execution.toReport(System.currentTimeMillis())));
+            fill(fixture.stockCode());
         }
+        toSettle.addAll(OutboxReports.take(jdbcTemplate, fixture.accountId()));
         assertThat(toSettle).isNotEmpty();
         // 보유 종목 행은 첫 정산이 만든다. 미리 하나 정산해 두어, 경합이 행 생성 충돌이 아니라 계좌 행 갱신에서 나게 한다.
-        executionSettlementService.settle(toSettle.poll());
+        apply(toSettle.poll());
 
         AtomicBoolean workerDone = new AtomicBoolean();
         List<Throwable> errors = Collections.synchronizedList(new ArrayList<>());
@@ -174,8 +181,10 @@ class AccountLedgerConcurrencyTest extends IntegrationTestSupport {
                     if (random.nextInt(10) < 3) {
                         cancelSomeActiveOrder(fixture, random);
                     } else {
-                        fill(fixture.stockCode()).forEach(execution -> toSettle.add(execution.toReport(System.currentTimeMillis())));
+                        fill(fixture.stockCode());
                     }
+                    // 워커가 커밋한 결과 통보를 적힌 순서대로 넘긴다 — 운영에서 릴레이가 하는 일이다.
+                    toSettle.addAll(OutboxReports.take(jdbcTemplate, fixture.accountId()));
                 }
             } finally {
                 workerDone.set(true);
@@ -187,7 +196,7 @@ class AccountLedgerConcurrencyTest extends IntegrationTestSupport {
                 while (!(workerDone.get() && toSettle.isEmpty())) {
                     ExecutionReport report = pollQuietly(toSettle);
                     if (report != null) {
-                        executionSettlementService.settle(report);
+                        apply(report);
                     }
                 }
             });
@@ -218,6 +227,15 @@ class AccountLedgerConcurrencyTest extends IntegrationTestSupport {
     }
 
     // ===== 워커 동작 =====
+
+    // 정산 워커가 통보 종류에 따라 하는 일 — 체결은 정산, 취소·만료는 홀딩 해제.
+    private void apply(ExecutionReport report) {
+        if (report.type() == ExecutionReportType.FILL) {
+            executionSettlementService.settle(report);
+        } else {
+            orderHoldReleaseService.release(report);
+        }
+    }
 
     private List<FilledExecution> fill(String stockCode) {
         LimitOrderFillEvent tick = new LimitOrderFillEvent(

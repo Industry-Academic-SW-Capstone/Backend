@@ -98,12 +98,13 @@ class MatchingQueueFlowIntegrationTest extends KafkaIntegrationTestSupport {
 
         assertThat(orderRepository.findById(buy.orderId()).orElseThrow().getStatus()).isEqualTo(OrderStatus.CANCELLED);
         assertThat(executionOf(buy.orderId())).isNull();
-        assertThat(accountRepository.findById(buy.accountId()).orElseThrow().getHoldAmount())
-                .isEqualByComparingTo(BigDecimal.ZERO);
+        // 홀딩은 취소 통보를 받은 증권사가 푼다 — 워커보다 조금 늦다.
+        await().atMost(WAIT).until(() ->
+                accountRepository.findById(buy.accountId()).orElseThrow().getHoldAmount().signum() == 0);
     }
 
     @Test
-    @DisplayName("만료 명령도 같은 줄로 들어가 워커가 주문을 끝내고 홀딩을 푼다")
+    @DisplayName("만료 명령도 같은 줄로 들어가 워커가 주문을 끝내고, 만료 통보를 받은 증권사가 홀딩을 푼다")
     void expire_viaQueue_cancelsAndReleasesHold() {
         BuyOrder buy = transactionTemplate.execute(status -> createBuyOrder());
 
@@ -111,8 +112,8 @@ class MatchingQueueFlowIntegrationTest extends KafkaIntegrationTestSupport {
 
         await().atMost(WAIT).until(() ->
                 orderRepository.findById(buy.orderId()).orElseThrow().getStatus() == OrderStatus.CANCELLED);
-        assertThat(accountRepository.findById(buy.accountId()).orElseThrow().getHoldAmount())
-                .isEqualByComparingTo(BigDecimal.ZERO);
+        await().atMost(WAIT).until(() ->
+                accountRepository.findById(buy.accountId()).orElseThrow().getHoldAmount().signum() == 0);
     }
 
     @Test

@@ -344,14 +344,22 @@ class SingleStockCommandConcurrencyIntegrationTest extends KafkaIntegrationTestS
     // ===== 다 처리될 때까지 =====
 
     // 맨 끝에 표식 틱을 붙여 그 위치까지 워커가 기록하면 앞의 명령이 모두 처리된 것이다(한 파티션은 차례로 처리된다).
-    // 그다음 체결마다 정산이 하나씩 생길 때까지 기다린다.
+    // 그다음 체결마다 정산이, 취소·만료된 주문마다 홀딩 해제가 하나씩 생길 때까지 기다린다 — 둘 다 통보로 늦게 온다.
     private void drain(Fixture fixture, int partition) {
         FillDispatchResult.Queued marker = publishNoMatchTick(fixture.stockCode());
         assertThat(marker.partition()).isEqualTo(partition);
         await().atMost(DRAIN_WAIT).pollInterval(Duration.ofMillis(200))
                 .until(() -> watermarkOf(partition) >= marker.offset());
         await().atMost(DRAIN_WAIT).pollInterval(Duration.ofMillis(200))
-                .until(() -> unsettledExecutions(fixture.stockCode()) == 0);
+                .until(() -> unsettledExecutions(fixture.stockCode()) == 0 && unreleasedCancels(fixture.stockCode()) == 0);
+    }
+
+    private long unreleasedCancels(String stockCode) {
+        return jdbcTemplate.queryForObject("""
+                SELECT count(*) FROM trade_order o
+                WHERE o.stock_code = ? AND o.status = 'CANCELLED'
+                  AND NOT EXISTS (SELECT 1 FROM hold_release r WHERE r.order_id = o.order_id)
+                """, Long.class, stockCode);
     }
 
     private long watermarkOf(int partition) {

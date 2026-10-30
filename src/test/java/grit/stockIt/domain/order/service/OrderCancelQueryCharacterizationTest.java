@@ -1,5 +1,7 @@
 package grit.stockIt.domain.order.service;
 
+import grit.stockIt.contract.ExecutionReport;
+import grit.stockIt.contract.ExecutionReportType;
 import grit.stockIt.domain.account.entity.Account;
 import grit.stockIt.domain.account.entity.AccountStock;
 import grit.stockIt.domain.account.repository.AccountRepository;
@@ -28,6 +30,7 @@ import grit.stockIt.global.exception.BadRequestException;
 import grit.stockIt.global.exception.ForbiddenException;
 import grit.stockIt.global.exception.ServiceUnavailableException;
 import grit.stockIt.global.support.IntegrationTestSupport;
+import grit.stockIt.global.support.OutboxReports;
 import grit.stockIt.global.websocket.manager.OrderSubscriptionCoordinator;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -75,6 +78,9 @@ class OrderCancelQueryCharacterizationTest extends IntegrationTestSupport {
 
     @Autowired
     private OrderCancelService orderCancelService;
+
+    @Autowired
+    private OrderHoldReleaseService orderHoldReleaseService;
 
     @MockitoBean
     private OrderCommandPublisher orderCommandPublisher;
@@ -204,9 +210,16 @@ class OrderCancelQueryCharacterizationTest extends IntegrationTestSupport {
         return accountStockRepository.save(accountStock);
     }
 
-    // 워커가 꺼낸 취소 명령 처리를 흉내 낸다. 큐 없이 위치만 넘긴다.
+    // 워커가 꺼낸 취소 명령 처리와, 그 결과 통보를 받은 증권사의 홀딩 해제까지 흉내 낸다. 큐 없이 위치만 넘긴다.
     private QueuedCancelOutcome cancelByWorker(Order order) {
-        return orderCancelService.cancelOnce(stock.getCode(), order.getOrderId(), new CommandPosition(topic, 0, nextOffset++));
+        QueuedCancelOutcome outcome = orderCancelService.cancelOnce(
+                stock.getCode(), order.getOrderId(), new CommandPosition(topic, 0, nextOffset++));
+        deliverReports();
+        return outcome;
+    }
+
+    private void deliverReports() {
+        OutboxReports.take(jdbcTemplate, account.getAccountId()).forEach(orderHoldReleaseService::release);
     }
 
     private long nextOffset;
@@ -405,6 +418,41 @@ class OrderCancelQueryCharacterizationTest extends IntegrationTestSupport {
 
         AccountStock reloadedAccountStock = accountStockRepository.findByAccountAndStock(account, stock).orElseThrow();
         assertThat(reloadedAccountStock.getHoldQuantity()).isEqualTo(2);
+    }
+
+    @Test
+    @DisplayName("같은 취소 통보가 두 번 와도 매도 홀딩은 한 번만 풀린다")
+    void releaseHold_duplicateReport_releasesOnce() {
+        BigDecimal price = new BigDecimal("10000");
+        Order order = saveLimitOrder(account, stock, OrderMethod.SELL, price, 5);
+        grantSellHold(account, stock, 7, price);
+
+        orderCancelService.cancelOnce(stock.getCode(), order.getOrderId(), new CommandPosition(topic, 0, nextOffset++));
+        ExecutionReport report = OutboxReports.take(jdbcTemplate, account.getAccountId()).get(0);
+        orderHoldReleaseService.release(report);
+        orderHoldReleaseService.release(report);
+
+        // 다른 주문 몫 2주가 더 묶여 있다. 두 번 풀리면 이 몫까지 풀린다.
+        assertThat(accountStockRepository.findByAccountAndStock(account, stock).orElseThrow().getHoldQuantity())
+                .isEqualTo(2);
+    }
+
+    @Test
+    @DisplayName("워커는 계좌를 건드리지 않고 취소 결과를 통보로 적는다")
+    void cancelByWorker_writesReportWithoutTouchingAccount() {
+        BigDecimal price = new BigDecimal("10000");
+        Order order = saveLimitOrder(account, stock, OrderMethod.SELL, price, 5);
+        grantSellHold(account, stock, 5, price);
+
+        orderCancelService.cancelOnce(stock.getCode(), order.getOrderId(), new CommandPosition(topic, 0, nextOffset++));
+
+        assertThat(accountStockRepository.findByAccountAndStock(account, stock).orElseThrow().getHoldQuantity())
+                .as("통보를 처리하기 전에는 홀딩이 그대로다").isEqualTo(5);
+        assertThat(OutboxReports.take(jdbcTemplate, account.getAccountId())).singleElement().satisfies(report -> {
+            assertThat(report.type()).isEqualTo(ExecutionReportType.CANCELED);
+            assertThat(report.orderId()).isEqualTo(order.getOrderId());
+            assertThat(report.canceledQuantity()).isEqualTo(5);
+        });
     }
 
     @Test

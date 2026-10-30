@@ -30,10 +30,11 @@ matching.commands  파티션 24 — 파티션당 워커 1 (MatchingCommandConsum
    │            체결마다 FILL 통보를 아웃박스(outbox_message)에 적고 함께 커밋
    │            → OutboxRelay 가 id 순서대로 exchange.reports (key=계좌) 로 보낸 뒤 지움
    ├─ CANCEL → OrderCancelService.cancelOnce   (한 트랜잭션)
-   └─ EXPIRE → OrderCancelService.expireOnce   워터마크 전진 → 상태 확인 → 취소 → 계좌 잠금 → 홀딩 해제
+   └─ EXPIRE → OrderCancelService.expireOnce   워터마크 전진 → 상태 확인 → 취소 → CANCELED/EXPIRED 통보를 아웃박스에
 
 exchange.reports  파티션 24 — 워커 8 (ExecutionReportConsumer, 리스너 id·그룹 settlement)
-   └─ ExecutionSettlementService.settle   계좌 잠금 → 현금·보유·홀딩 반영 → Settlement 저장
+   ├─ FILL             → ExecutionSettlementService.settle   계좌 잠금 → 현금·보유·홀딩 반영 → Settlement 저장
+   └─ CANCELED/EXPIRED → OrderHoldReleaseService.release     hold_release 기록 → 계좌 잠금 → 홀딩 해제 → 구독 해제
 ```
 
 ## 왜 단일 작성자인가
@@ -96,15 +97,22 @@ ON CONFLICT (topic, partition_no) DO UPDATE
 
 ## 취소·만료 (`OrderCancelService`)
 
-`cancelOnce`·`expireOnce` 는 같은 처리(`endOnce`)를 쓰고 로그 사유만 다르다.
+`cancelOnce`·`expireOnce` 는 같은 처리(`endOnce`)를 쓰고 통보 종류만 다르다. **워커는 계좌를 건드리지 않는다.**
 
 1. 워터마크 전진 (0행이면 `DUPLICATE`)
-2. 주문이 없거나 이미 `CANCELLED`·`FILLED` 면 `NOT_CANCELLABLE` — 아무것도 바꾸지 않는다
+2. 주문이 없거나 이미 `CANCELLED`·`FILLED` 면 `NOT_CANCELLABLE` — 아무것도 바꾸지 않고 통보도 없다
 3. `markCancelled`
-4. **계좌를 잠근 뒤**(`findByIdWithLock`) 홀딩 해제 — 같은 계좌의 정산과 한 줄로 서서 계좌 행 덮어쓰기를 막는다
+4. 같은 트랜잭션에서 `CANCELED`/`EXPIRED` 통보(주문, 계좌, 종목, 매수·매도, 취소 시점의 남은 수량)를 아웃박스에 적는다
+
+증권사의 정산 워커가 통보를 받아 `OrderHoldReleaseService.release` 로 홀딩을 푼다(한 트랜잭션).
+
+1. `hold_release` 에 주문 번호를 넣는다(`ON CONFLICT DO NOTHING`). 0행이면 이미 푼 주문이라 건너뛴다 — 통보는 최소 한 번 전달이다
+2. **계좌를 잠근 뒤**(`findByIdWithLock`) 홀딩 해제 — 같은 계좌의 정산과 한 줄로 서서 계좌 행 덮어쓰기를 막는다
    - 매수: `OrderHold` 에서 미정산 체결분을 뺀 나머지만 푼다(늦게 도착한 정산이 뺄 몫을 남긴다)
-   - 매도: 잔여 수량만큼 보유 홀딩 수량을 푼다
-5. 잔여 수량이 있으면 커밋 뒤 시세 구독 해제
+   - 매도: 통보의 남은 수량만큼 보유 홀딩 수량을 푼다
+3. 남은 수량이 있으면 커밋 뒤 시세 구독 해제
+
+통보는 아웃박스 id 순서로 나가고 계좌 키라 같은 파티션에 들어가므로, 같은 주문의 앞선 체결 통보가 먼저 정산된다.
 
 - **취소 API는 접수만 한다.** 권한과 "이미 취소/체결"을 먼저 보고 400/403, 통과하면 명령을 넣고 202(`OrderCancelAcceptedResponse`),
   넣지 못하면 503. 최종 결과는 주문 상태로 확인한다.
@@ -168,7 +176,7 @@ lag 과 DLT 적재 수는 kafka-exporter 로 본다. 대시보드는 `monitoring
 - `LimitOrderExecutionServiceTest` — 배분·우선순위·부분 체결 (단위)
 - `LimitOrderFillCoordinatorConcurrencyTest` — 재전달 건너뜀, 주문 없던 틱의 재전달, 같은 위치를 두 워커가 동시에 처리(좀비)
 - `ConsumerWatermarkWriterTest` — 앞으로만 전진, 파티션별, 롤백 시 미기록
-- `OrderCancelQueryCharacterizationTest` / `MarketOrderExpiryTest` — 접수(400/403/503)와 워커 취소·만료의 홀딩 해제
+- `OrderCancelQueryCharacterizationTest` / `MarketOrderExpiryTest` — 접수(400/403/503), 워커 취소·만료의 통보, 통보로 하는 홀딩 해제와 중복 통보
 - `MatchingQueueFlowIntegrationTest` (Testcontainers Kafka) — 입구 → 체결 → 정산, 취소 뒤 체결은 체결되지 않음, 만료
 - `MatchingCommandConsumerIntegrationTest` — 위치 기록, 독 메시지 DLT 후에도 파티션이 계속 흐름
 
@@ -180,7 +188,8 @@ lag 과 DLT 적재 수는 kafka-exporter 로 본다. 대시보드는 `monitoring
 - `domain/matching/repository/OrderBookRepository.java` — 후보 조회
 - `domain/matching/repository/ConsumerWatermarkWriter.java` — 워터마크
 - `domain/order/service/OrderService.java` — 주문 접수·홀딩·취소 접수
-- `domain/order/service/OrderCancelService.java` — 워커의 취소·만료
+- `domain/order/service/OrderCancelService.java` — 워커의 취소·만료(통보까지)
+- `domain/order/service/OrderHoldReleaseService.java` — 취소·만료 통보로 홀딩 해제
 - `domain/order/scheduler/MarketOrderExpiryScheduler.java` — 만료 명령 발행
 - `domain/settlement/` — 정산 큐·워커·복구 배치
 - `global/config/KafkaConfig.java` — 실패 처리·DLT

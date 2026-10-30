@@ -61,8 +61,8 @@ public class OrderHoldService {
         accountStockRepository.save(accountStock);
     }
 
-    public void releaseSellHold(Order order) {
-        int releaseQuantity = order.getRemainingQuantity();
+    // 풀 수량은 거래소가 취소 시점의 남은 수량으로 알려 준다.
+    public void releaseSellHold(Order order, int releaseQuantity) {
         if (releaseQuantity <= 0) {
             return;
         }
