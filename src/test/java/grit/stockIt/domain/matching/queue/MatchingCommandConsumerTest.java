@@ -1,6 +1,5 @@
 package grit.stockIt.domain.matching.queue;
 
-import grit.stockIt.contract.ExecutionReport;
 import grit.stockIt.domain.matching.dto.LimitOrderFillEvent;
 import grit.stockIt.domain.matching.service.FilledExecution;
 import grit.stockIt.domain.matching.service.LimitOrderFillCoordinator;
@@ -12,19 +11,16 @@ import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.mockito.ArgumentCaptor;
 
 import java.math.BigDecimal;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.assertj.core.api.Assertions.tuple;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -34,39 +30,30 @@ class MatchingCommandConsumerTest {
     private static final CommandPosition POSITION = new CommandPosition(MatchingTopics.COMMANDS, 7, 42L);
 
     private final LimitOrderFillCoordinator coordinator = mock(LimitOrderFillCoordinator.class);
-    private final ExecutionReportPublisher executionReportPublisher = mock(ExecutionReportPublisher.class);
     private final SimpleMeterRegistry registry = new SimpleMeterRegistry();
     private final OrderCancelService orderCancelService = mock(OrderCancelService.class);
     private final MatchingCommandConsumer consumer = new MatchingCommandConsumer(
-            coordinator, orderCancelService, executionReportPublisher, new MatchingQueueMetrics(registry));
+            coordinator, orderCancelService, new MatchingQueueMetrics(registry));
 
     @Test
-    @DisplayName("체결마다 체결 내용을 실은 결과 통보를 보내고 처리 지표를 남긴다")
-    void filled_publishesReportPerExecution() {
+    @DisplayName("체결하면 처리 지표를 남긴다 — 결과 통보는 체결 트랜잭션이 아웃박스에 적는다")
+    void filled_recordsMetrics() {
         when(coordinator.processQueuedFill(eq("005930"), any(), eq(POSITION))).thenReturn(new QueuedFillOutcome(false,
-                List.of(new FilledExecution(501L, 11L, 77L, "005930", OrderMethod.BUY, new BigDecimal("70000"), 1),
-                        new FilledExecution(502L, 12L, 31L, "005930", OrderMethod.BUY, new BigDecimal("70000"), 2))));
+                List.of(new FilledExecution(501L, 11L, 77L, "005930", OrderMethod.BUY, new BigDecimal("70000"), 1))));
 
         consumer.consume(record(fillCommand(1)));
 
-        ArgumentCaptor<ExecutionReport> reports = ArgumentCaptor.forClass(ExecutionReport.class);
-        verify(executionReportPublisher, times(2)).publish(reports.capture());
-        assertThat(reports.getAllValues())
-                .extracting(ExecutionReport::executionId, ExecutionReport::orderId, ExecutionReport::accountId,
-                        ExecutionReport::quantity)
-                .containsExactly(tuple(501L, 11L, 77L, 1), tuple(502L, 12L, 31L, 2));
         assertThat(registry.get("matching.fill.e2e").timer().count()).isEqualTo(1L);
         assertThat(registry.get("matching.fill.queue.wait").timer().count()).isEqualTo(1L);
     }
 
     @Test
-    @DisplayName("이미 반영한 위치면 결과 통보를 보내지 않고 중복으로 센다")
+    @DisplayName("이미 반영한 위치면 중복으로 센다")
     void duplicate_skipsSettlement() {
         when(coordinator.processQueuedFill(any(), any(), any())).thenReturn(new QueuedFillOutcome(true, List.of()));
 
         consumer.consume(record(fillCommand(1)));
 
-        verify(executionReportPublisher, never()).publish(any());
         assertThat(registry.get("matching.fill.duplicate").counter().count()).isEqualTo(1.0);
         assertThat(registry.get("matching.fill.e2e").timer().count()).isZero();
     }
@@ -88,7 +75,6 @@ class MatchingCommandConsumerTest {
 
         verify(orderCancelService).cancelOnce("005930", 9L, POSITION);
         verify(coordinator, never()).processQueuedFill(any(), any(), any());
-        verify(executionReportPublisher, never()).publish(any());
         assertThat(registry.get("matching.fill.e2e").timer().count()).isZero();
     }
 

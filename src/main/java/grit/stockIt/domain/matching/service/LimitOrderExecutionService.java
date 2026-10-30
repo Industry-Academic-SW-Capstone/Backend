@@ -5,6 +5,7 @@ import grit.stockIt.domain.execution.service.ExecutionService;
 import grit.stockIt.domain.matching.dto.LimitOrderFillEvent;
 import grit.stockIt.domain.matching.dto.OrderBookEntry;
 import grit.stockIt.domain.matching.queue.CommandPosition;
+import grit.stockIt.domain.matching.queue.ExecutionReportOutbox;
 import grit.stockIt.domain.matching.repository.ConsumerWatermarkWriter;
 import grit.stockIt.domain.matching.repository.OrderBookRepository;
 import grit.stockIt.domain.order.entity.Order;
@@ -36,6 +37,7 @@ public class LimitOrderExecutionService {
     private final OrderBookRepository orderBookRepository;
     private final OrderSubscriptionCoordinator orderSubscriptionCoordinator;
     private final ConsumerWatermarkWriter consumerWatermarkWriter;
+    private final ExecutionReportOutbox executionReportOutbox;
 
     private final LimitOrderMatchPlanner matchPlanner = new LimitOrderMatchPlanner();
 
@@ -46,12 +48,15 @@ public class LimitOrderExecutionService {
     // 종목 락은 없다 — 이 종목의 오더북을 바꾸는 명령(체결, 취소, 만료)은 모두 한 파티션에서 이 워커 하나가 차례로 처리한다.
     // 계좌를 보지 않는다 — 체결 수량은 배분 계획과 주문 잔여 수량만으로 정해지므로,
     // 정산에 필요한 계좌 조회·잠금이 이 트랜잭션에 들어오지 않는다.
+    // 체결 결과 통보도 같은 트랜잭션에서 아웃박스에 적는다 — 커밋된 체결이면 통보도 반드시 나간다.
     @Transactional
     public Optional<List<FilledExecution>> fillOnce(String stockCode, LimitOrderFillEvent event, CommandPosition position) {
         if (!consumerWatermarkWriter.advance(position)) {
             return Optional.empty();
         }
-        return Optional.of(doFill(stockCode, event));
+        List<FilledExecution> executions = doFill(stockCode, event);
+        executionReportOutbox.append(executions, System.currentTimeMillis());
+        return Optional.of(executions);
     }
 
     private List<FilledExecution> doFill(String stockCode, LimitOrderFillEvent event) {

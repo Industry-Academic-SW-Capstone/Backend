@@ -11,6 +11,7 @@ import grit.stockIt.domain.execution.service.ExecutionService;
 import grit.stockIt.domain.matching.dto.LimitOrderFillEvent;
 import grit.stockIt.domain.matching.dto.OrderBookEntry;
 import grit.stockIt.domain.matching.queue.CommandPosition;
+import grit.stockIt.domain.matching.queue.ExecutionReportOutbox;
 import grit.stockIt.domain.matching.repository.ConsumerWatermarkWriter;
 import grit.stockIt.domain.matching.repository.OrderBookRepository;
 import grit.stockIt.domain.order.entity.Order;
@@ -74,6 +75,9 @@ class LimitOrderExecutionServiceTest {
 
     @Mock
     private ConsumerWatermarkWriter consumerWatermarkWriter;
+
+    @Mock
+    private ExecutionReportOutbox executionReportOutbox;
 
     @InjectMocks
     private LimitOrderExecutionService limitOrderExecutionService;
@@ -180,6 +184,33 @@ class LimitOrderExecutionServiceTest {
         assertThat(testBuyOrder.getStatus()).isEqualTo(OrderStatus.FILLED);
 
         verify(orderSubscriptionCoordinator, times(1)).unregisterLimitOrder(stockCode);
+    }
+
+    @Test
+    @DisplayName("체결한 건은 같은 호출(트랜잭션) 안에서 아웃박스에 적고, 재전달된 위치는 적지 않는다")
+    void fillOnce_appendsReportsToOutbox_onlyWhenApplied() {
+        String stockCode = "005930";
+        LimitOrderFillEvent event = new LimitOrderFillEvent(
+                UUID.randomUUID().toString(), OrderMethod.SELL, new BigDecimal("100"), 10, Instant.now().toEpochMilli());
+        when(orderBookRepository.fetchMatchingEntries(stockCode, OrderMethod.SELL, event.price(), 100))
+                .thenReturn(List.of(new OrderBookEntry(1L, stockCode, OrderMethod.BUY, new BigDecimal("100"),
+                        10, 10, Instant.now().toEpochMilli(), 1L)));
+        when(orderRepository.findAllByIdInWithStock(anyList())).thenReturn(List.of(testBuyOrder));
+        when(executionService.record(eq(testBuyOrder), eq(event.price()), eq(10)))
+                .thenReturn(createExecution(testBuyOrder, event.price(), 10));
+
+        List<FilledExecution> executions = limitOrderExecutionService.fillOnce(stockCode, event, POSITION).orElseThrow();
+
+        verify(executionReportOutbox).append(eq(executions), anyLong());
+        assertThat(executions).singleElement().satisfies(execution -> {
+            assertThat(execution.orderId()).isEqualTo(testBuyOrder.getOrderId());
+            assertThat(execution.quantity()).isEqualTo(10);
+            assertThat(execution.price()).isEqualByComparingTo("100");
+        });
+
+        when(consumerWatermarkWriter.advance(any())).thenReturn(false);
+        assertThat(limitOrderExecutionService.fillOnce(stockCode, event, POSITION)).isEmpty();
+        verify(executionReportOutbox, times(1)).append(any(), anyLong());
     }
 
     @Test

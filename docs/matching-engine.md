@@ -8,7 +8,7 @@ KIS 실시간 체결 틱에 맞춰 사용자 주문을 체결하는 엔진의 �
 - **오더북 = 주문 테이블(`trade_order`)**. 미체결 잔량이 있는 `PENDING`·`PARTIALLY_FILLED` 주문이 곧 오더북이다. 따로 동기화할 사본이 없다.
 - **종목마다 작성자가 하나(단일 작성자).** 오더북을 바꾸는 명령(체결·취소·만료)은 모두 종목 코드를 키로 Kafka `matching.commands` 에 들어가고,
   그 파티션을 맡은 워커 스레드 하나가 도착 순서대로 처리한다. 종목 락이 없다.
-- **정산은 따로.** 체결 워커는 체결만 커밋하고 결과를 계좌 키 통로(`exchange.reports`)로 알린다. 계좌 반영은 그 통보를 받은 정산 워커가 한다.
+- **정산은 따로.** 체결 워커는 체결과 함께 결과 통보를 아웃박스에 적어 커밋하고, 릴레이가 계좌 키 통로(`exchange.reports`)로 보낸다. 계좌 반영은 그 통보를 받은 정산 워커가 한다.
 
 ## 전체 흐름
 
@@ -27,7 +27,8 @@ KIS 실시간 체결 틱에 맞춰 사용자 주문을 체결하는 엔진의 �
 matching.commands  파티션 24 — 파티션당 워커 1 (MatchingCommandConsumer, 리스너 id·그룹 matching-fill)
    ├─ FILL   → LimitOrderFillCoordinator → LimitOrderExecutionService.fillOnce   (한 트랜잭션)
    │            워터마크 전진 → 후보 조회 → 배분 계획 → 주문 갱신·Execution 저장
-   │            커밋 후 체결마다 FILL 통보 → exchange.reports (key=계좌, 비동기)
+   │            체결마다 FILL 통보를 아웃박스(outbox_message)에 적고 함께 커밋
+   │            → OutboxRelay 가 id 순서대로 exchange.reports (key=계좌) 로 보낸 뒤 지움
    ├─ CANCEL → OrderCancelService.cancelOnce   (한 트랜잭션)
    └─ EXPIRE → OrderCancelService.expireOnce   워터마크 전진 → 상태 확인 → 취소 → 계좌 잠금 → 홀딩 해제
 
@@ -121,12 +122,17 @@ ON CONFLICT (topic, partition_no) DO UPDATE
 
 ## 정산 (`ExecutionSettlementService`)
 
-- 체결 워커가 체결을 커밋한 뒤 체결마다 `ExecutionReport`(FILL — 체결 번호, 주문, 계좌, 종목, 매수·매도, 가격, 수량, 체결 시각)를 계좌 키로 보낸다.
-  정산은 체결 내용을 이 통보에서 읽고 `execution` 테이블을 다시 읽지 않는다. 통보 형식은 `grit.stockIt.contract` 에 있고 필드는 추가만 한다.
-  **ack 를 기다리지 않는다** — 기다리면 그 시간이 종목의 한 줄 구간에 들어간다. 잃어도 체결이 DB 에 있어 복구 배치가 정산한다.
+- 체결 워커는 체결마다 `ExecutionReport`(FILL — 체결 번호, 주문, 계좌, 종목, 매수·매도, 가격, 수량, 체결 시각)를
+  **체결과 같은 트랜잭션에서 아웃박스(`outbox_message`)에 적는다**. 함께 커밋되거나 함께 롤백되므로 커밋된 체결의 통보는 반드시 나간다.
+  워커는 Kafka 를 기다리지 않는다 — 비용은 JDBC 배치 INSERT 하나다.
+- `OutboxRelay`(전용 스레드, 스케줄링이 꺼져도 돈다)가 아웃박스를 id 순서대로 읽어 계좌 키로 보내고, 브로커가 받은 뒤 지운다.
+  보내고 지우기 전에 죽으면 다시 보낸다(최소 한 번). PostgreSQL advisory lock 으로 인스턴스가 여럿이어도 한 곳만 보낸다.
+  보낼 것이 없으면 `outbox.relay.poll-interval`(20ms) 쉬므로 그만큼 정산 지연에 더해진다.
+- 정산은 체결 내용을 통보에서 읽고 `execution` 테이블을 다시 읽지 않는다. 통보 형식은 `grit.stockIt.contract` 에 있고 필드는 추가만 한다.
 - 정산 워커(`settlement.queue.concurrency`, 기본 8)는 계좌를 잠그고 현금·보유·홀딩을 반영한 뒤 `Settlement` 를 저장한다.
   `settlement.execution_id` 유니크가 중복 정산의 방어선이다(두 번 와도 한 번만 반영).
 - **복구 배치** (`UnsettledExecutionScheduler`, `settlement.recovery.interval` 기본 60초): 정산 없이 남은 체결을 찾아 정산한다.
+  통보 유실은 아웃박스가 막으므로 여기 남는 것은 정산이 재시도를 다 쓰고 DLT 로 간 건이다.
   방금 만든 체결은 `grace-period`(30초) 동안 건드리지 않는다. 스케줄링이 꺼진 환경(스테이징 측정)에서는 돌지 않는다.
 
 ## 실패 처리 (`KafkaConfig`)

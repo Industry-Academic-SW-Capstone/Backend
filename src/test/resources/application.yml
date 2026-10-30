@@ -69,3 +69,8 @@ app:
     allowed-origins: http://localhost:3000
   admin:
     emails: admin@stockit.test
+
+# 아웃박스 릴레이는 브로커가 있는 Kafka 통합 테스트만 켠다. 꺼 두면 아웃박스에 적힌 행은 그대로 남는다.
+outbox:
+  relay:
+    enabled: false

@@ -15,8 +15,8 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicLong;
 
-// 체결은 커밋됐는데 정산이 남은 건을 주워 마저 처리한다.
-// 정산 실패는 되돌리지 않고 미정산으로 남기므로, 이 배치가 없으면 영영 반영되지 않는다.
+// 체결은 커밋됐는데 정산이 남은 건을 주워 마저 처리한다. 통보 유실은 아웃박스가 막으므로, 여기 남는 것은
+// 정산이 재시도를 다 쓰고 DLT 로 간 건이다. 이 배치가 없으면 그 건은 영영 반영되지 않는다.
 // 체결과 정산을 한 쿼리로 비교하므로 DB 를 나누면 쓸 수 없다 — 거래소 아웃박스로 바꿀 자리다.
 @Slf4j
 @Component

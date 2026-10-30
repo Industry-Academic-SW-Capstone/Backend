@@ -153,6 +153,15 @@ matching:
     # 체결 워커 스레드 수. 파티션(24)마다 하나라 종목이 서로 다른 스레드에 갈 확률이 가장 높다.
     fill-concurrency: ${MATCHING_QUEUE_FILL_CONCURRENCY:24}
 
+# 아웃박스 릴레이 — 체결 결과 통보를 아웃박스에서 Kafka 로 보낸다
+outbox:
+  relay:
+    enabled: ${OUTBOX_RELAY_ENABLED:true}
+    # 한 번에 읽어 보내는 최대 행 수
+    batch-size: ${OUTBOX_RELAY_BATCH_SIZE:500}
+    # 보낼 것이 없을 때 쉬는 시간. 체결 → 정산 지연에 그대로 더해진다.
+    poll-interval: ${OUTBOX_RELAY_POLL_INTERVAL:20ms}
+
 # 정산 복구
 settlement:
   recovery:
