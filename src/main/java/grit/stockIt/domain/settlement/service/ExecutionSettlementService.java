@@ -1,17 +1,17 @@
 package grit.stockIt.domain.settlement.service;
 
+import grit.stockIt.contract.ExecutionReport;
 import grit.stockIt.domain.account.entity.Account;
 import grit.stockIt.domain.account.entity.AccountStock;
 import grit.stockIt.domain.account.repository.AccountRepository;
 import grit.stockIt.domain.account.repository.AccountStockRepository;
-import grit.stockIt.domain.execution.entity.Execution;
-import grit.stockIt.domain.execution.repository.ExecutionRepository;
 import grit.stockIt.domain.notification.event.ExecutionFilledEvent;
 import grit.stockIt.domain.order.entity.Order;
 import grit.stockIt.domain.order.entity.OrderHold;
 import grit.stockIt.domain.order.entity.OrderMethod;
 import grit.stockIt.domain.order.event.TradeCompletionEvent;
 import grit.stockIt.domain.order.repository.OrderHoldRepository;
+import grit.stockIt.domain.order.repository.OrderRepository;
 import grit.stockIt.domain.settlement.entity.Settlement;
 import grit.stockIt.domain.settlement.repository.SettlementRepository;
 import grit.stockIt.domain.stock.entity.Stock;
@@ -26,7 +26,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 // 체결 하나를 계좌에 반영한다. 체결 트랜잭션이 커밋된 뒤 정산 워커가 돌므로 종목의 체결 줄 밖이고,
-// 여기서 쓰는 왕복은 종목당 상한에 영향을 주지 않는다.
+// 여기서 쓰는 왕복은 종목당 상한에 영향을 주지 않는다. 체결 내용은 결과 통보에서 읽고 거래소 테이블은 읽지 않는다.
 //
 // 정산 워커와 복구 배치 두 곳에서 같은 메서드로 들어온다.
 @Slf4j
@@ -34,10 +34,10 @@ import java.util.List;
 @RequiredArgsConstructor
 public class ExecutionSettlementService {
 
-    private final ExecutionRepository executionRepository;
     private final SettlementRepository settlementRepository;
     private final AccountRepository accountRepository;
     private final AccountStockRepository accountStockRepository;
+    private final OrderRepository orderRepository;
     private final OrderHoldRepository orderHoldRepository;
     private final ApplicationEventPublisher eventPublisher;
 
@@ -54,12 +54,8 @@ public class ExecutionSettlementService {
     }
 
     @Transactional
-    public void settle(Long executionId) {
-        Execution execution = executionRepository.findById(executionId).orElse(null);
-        if (execution == null) {
-            log.warn("정산할 체결을 찾을 수 없습니다. executionId={}", executionId);
-            return;
-        }
+    public void settle(ExecutionReport report) {
+        Long executionId = report.executionId();
 
         // 조회와 정산 사이에 다른 경로가 먼저 끝냈을 수 있다. 빠른 반환일 뿐이고
         // 실제 방어선은 아래 INSERT 의 유니크 제약이다.
@@ -67,10 +63,14 @@ public class ExecutionSettlementService {
             return;
         }
 
-        Order order = execution.getOrder();
-        Account account = accountRepository.findByIdWithLock(execution.getAccount().getAccountId())
+        Order order = orderRepository.findById(report.orderId()).orElse(null);
+        if (order == null) {
+            log.warn("정산할 체결의 주문을 찾을 수 없습니다. executionId={} orderId={}", executionId, report.orderId());
+            return;
+        }
+        Account account = accountRepository.findByIdWithLock(report.accountId())
                 .orElseThrow(() -> new IllegalStateException(
-                        "계좌를 찾을 수 없습니다. accountId=" + execution.getAccount().getAccountId()));
+                        "계좌를 찾을 수 없습니다. accountId=" + report.accountId()));
 
         AccountStock holding = accountStockRepository
                 .findByAccountAndStock(account, order.getStock())
@@ -81,8 +81,8 @@ public class ExecutionSettlementService {
                 ? holding.getAveragePrice()
                 : BigDecimal.ZERO;
 
-        int quantity = execution.getQuantity();
-        BigDecimal fillAmount = execution.getPrice().multiply(BigDecimal.valueOf(quantity));
+        int quantity = report.quantity();
+        BigDecimal fillAmount = report.price().multiply(BigDecimal.valueOf(quantity));
 
         // 유니크 제약이 실제 방어선이다. 이미 정산된 체결이면 여기서 예외가 나고 트랜잭션이 통째로
         // 되돌아가므로, 현금이 두 번 빠지는 일이 구조적으로 없다.
@@ -92,13 +92,13 @@ public class ExecutionSettlementService {
                 order.getOrderMethod() == OrderMethod.BUY ? fillAmount.negate() : fillAmount,
                 order.getOrderMethod() == OrderMethod.BUY ? quantity : -quantity));
 
-        publishExecutionFilledEvent(execution, order, account);
-        applyToAccount(order, execution.getPrice(), quantity, account, holding);
+        publishExecutionFilledEvent(report, order, account);
+        applyToAccount(order, report.price(), quantity, account, holding);
 
         // 체결이 이미 커밋됐으므로 주문의 잔여 수량이 곧 진실이다.
         if (order.getRemainingQuantity() <= 0) {
             releaseRemainingHold(order, account);
-            publishTradeCompletionEvent(order, execution.getPrice(), account, currentAvgPrice);
+            publishTradeCompletionEvent(order, report.price(), account, currentAvgPrice);
         }
     }
 
@@ -186,23 +186,23 @@ public class ExecutionSettlementService {
         eventPublisher.publishEvent(missionEvent);
     }
 
-    private void publishExecutionFilledEvent(Execution execution, Order order, Account account) {
+    private void publishExecutionFilledEvent(ExecutionReport report, Order order, Account account) {
         try {
             eventPublisher.publishEvent(new ExecutionFilledEvent(
-                    execution.getExecutionId(),
+                    report.executionId(),
                     order.getOrderId(),
                     account.getAccountId(),
                     account.getMember().getMemberId(),
                     account.getContest().getContestId(),
                     account.getContest().getContestName(),
                     order.getStock().getCode(),
-                    execution.getStock().getName(),
-                    execution.getPrice(),
-                    execution.getQuantity(),
-                    execution.getOrderMethod().name()
+                    order.getStock().getName(),
+                    report.price(),
+                    report.quantity(),
+                    report.orderMethod().name()
             ));
         } catch (Exception e) {
-            log.error("체결 완료 이벤트 발행 실패: executionId={}", execution.getExecutionId(), e);
+            log.error("체결 완료 이벤트 발행 실패: executionId={}", report.executionId(), e);
         }
     }
 }

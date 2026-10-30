@@ -85,7 +85,7 @@ services:
 
   # 파티션 수는 나중에 늘리면 키 → 파티션 매핑이 바뀌어 종목 안의 순서가 깨진다. 처음에 정해 만든다.
   #   matching.commands   종목 키, 24  (체결 워커 24 = 파티션당 하나)
-  #   settlement.requests 계좌 키, 24  (정산 워커 8 이 나눠 맡는다)
+  #   exchange.reports    계좌 키, 24  (정산 워커 8 이 나눠 맡는다)
   #   *.DLT               처리할 수 없는 메시지만, 1
   kafka-init:
     image: apache/kafka:3.9.1
@@ -103,8 +103,8 @@ services:
         }
         create matching.commands 24
         create matching.commands.DLT 1
-        create settlement.requests 24
-        create settlement.requests.DLT 1
+        create exchange.reports 24
+        create exchange.reports.DLT 1
         /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:29092 --describe | grep -E "^Topic:"
     restart: "no"
 

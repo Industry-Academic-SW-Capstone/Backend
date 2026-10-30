@@ -1,7 +1,7 @@
 package grit.stockIt.global.config;
 
+import grit.stockIt.contract.InvalidExecutionReportException;
 import grit.stockIt.domain.matching.queue.InvalidMatchingCommandException;
-import grit.stockIt.domain.settlement.queue.InvalidSettlementRequestException;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.serialization.ByteArraySerializer;
@@ -62,7 +62,7 @@ public class KafkaConfig {
 
         DefaultErrorHandler errorHandler = new DefaultErrorHandler(
                 deadLetterRecoverer(kafkaTemplate, producerFactory), backOff);
-        errorHandler.addNotRetryableExceptions(InvalidSettlementRequestException.class);
+        errorHandler.addNotRetryableExceptions(InvalidExecutionReportException.class);
         factory.setCommonErrorHandler(errorHandler);
         return factory;
     }

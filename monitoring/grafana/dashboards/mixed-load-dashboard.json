@@ -590,7 +590,7 @@
       "id": 31,
       "type": "timeseries",
       "title": "Settlement Throughput",
-      "description": "정산 요청이 들어온 속도(settlement.requests 토픽 유입)와 정산 워커가 끝낸 속도. 두 선의 차이만큼 정산 lag 이 쌓인다. 정산 워커는 8개로 고정이라 한 건이 길어지면 처리 속도가 바로 떨어진다.",
+      "description": "체결 통보가 들어온 속도(exchange.reports 토픽 유입)와 정산 워커가 끝낸 속도. 두 선의 차이만큼 정산 lag 이 쌓인다. 정산 워커는 8개로 고정이라 한 건이 길어지면 처리 속도가 바로 떨어진다.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -634,7 +634,7 @@
             "uid": "prometheus"
           },
           "refId": "A",
-          "expr": "sum(rate(kafka_topic_partition_current_offset{topic=\"settlement.requests\"}[1m]))",
+          "expr": "sum(rate(kafka_topic_partition_current_offset{topic=\"exchange.reports\"}[1m]))",
           "legendFormat": "정산 요청 유입/s"
         },
         {
@@ -1761,7 +1761,7 @@
       "id": 26,
       "type": "timeseries",
       "title": "Settlement In by Partition",
-      "description": "settlement.requests 파티션별 유입(초당). 계좌 키라 계좌 수가 적으면 고르지 않다 — 정산 워커 쏠림의 원인.",
+      "description": "exchange.reports 파티션별 유입(초당). 계좌 키라 계좌 수가 적으면 고르지 않다 — 정산 워커 쏠림의 원인.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -1805,7 +1805,7 @@
             "uid": "prometheus"
           },
           "refId": "A",
-          "expr": "sum by (partition) (rate(kafka_topic_partition_current_offset{topic=\"settlement.requests\"}[1m])) > 0.5",
+          "expr": "sum by (partition) (rate(kafka_topic_partition_current_offset{topic=\"exchange.reports\"}[1m])) > 0.5",
           "legendFormat": "p{{partition}}"
         }
       ]

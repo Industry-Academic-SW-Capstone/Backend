@@ -5,7 +5,6 @@ import grit.stockIt.domain.matching.service.LimitOrderFillCoordinator;
 import grit.stockIt.domain.matching.service.LimitOrderFillCoordinator.QueuedFillOutcome;
 import grit.stockIt.domain.order.service.OrderCancelService;
 import grit.stockIt.domain.order.service.QueuedCancelOutcome;
-import grit.stockIt.domain.settlement.queue.SettlementRequestPublisher;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
@@ -13,7 +12,7 @@ import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.stereotype.Component;
 
 // 체결 워커. 파티션 하나를 스레드 하나가 맡아 그 안의 명령(체결, 취소, 만료)을 도착 순서대로 처리한다.
-// 체결 결과는 정산 큐로 넘긴다.
+// 체결 결과는 exchange.reports 로 증권사에 알린다.
 @Slf4j
 @Component
 @RequiredArgsConstructor
@@ -21,7 +20,7 @@ public class MatchingCommandConsumer {
 
     private final LimitOrderFillCoordinator limitOrderFillCoordinator;
     private final OrderCancelService orderCancelService;
-    private final SettlementRequestPublisher settlementRequestPublisher;
+    private final ExecutionReportPublisher executionReportPublisher;
     private final MatchingQueueMetrics metrics;
 
     // 리스너 id·그룹은 지표 태그와 커밋된 offset 의 이름이다. 바꾸면 그룹이 처음부터 다시 읽는다.
@@ -57,7 +56,7 @@ public class MatchingCommandConsumer {
 
         long filledAt = System.currentTimeMillis();
         for (FilledExecution execution : outcome.executions()) {
-            settlementRequestPublisher.publish(execution.executionId(), execution.accountId(), filledAt);
+            executionReportPublisher.publish(execution.toReport(filledAt));
         }
         metrics.filled(command.enqueuedAt());
     }

@@ -126,7 +126,9 @@ public class LimitOrderExecutionService {
                 }
 
                 updatedOrders.add(order);
-                executions.add(new FilledExecution(execution.getExecutionId(), order.getAccount().getAccountId()));
+                executions.add(new FilledExecution(execution.getExecutionId(), order.getOrderId(),
+                        order.getAccount().getAccountId(), order.getStock().getCode(), order.getOrderMethod(),
+                        event.price(), desiredFillQuantity));
             } catch (IllegalArgumentException ex) {
                 log.error("주문 체결 처리 중 오류 발생. orderId={} fillQuantity={}", orderId, desiredFillQuantity, ex);
                 orderSubscriptionCoordinator.unregisterLimitOrder(order.getStock().getCode());

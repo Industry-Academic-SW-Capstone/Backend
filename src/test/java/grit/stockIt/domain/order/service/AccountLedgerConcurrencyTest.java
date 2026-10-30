@@ -1,5 +1,6 @@
 package grit.stockIt.domain.order.service;
 
+import grit.stockIt.contract.ExecutionReport;
 import grit.stockIt.domain.account.entity.Account;
 import grit.stockIt.domain.account.repository.AccountRepository;
 import grit.stockIt.domain.contest.entity.Contest;
@@ -151,9 +152,9 @@ class AccountLedgerConcurrencyTest extends IntegrationTestSupport {
         Fixture fixture = transactionTemplate.execute(status -> createFixture(INITIAL_ORDERS));
 
         // 미리 체결만 해 두어 정산할 거리를 만든다. 정산 전이라 일부 주문은 "체결됐지만 미정산" 상태로 취소를 맞는다.
-        BlockingQueue<Long> toSettle = new LinkedBlockingQueue<>();
+        BlockingQueue<ExecutionReport> toSettle = new LinkedBlockingQueue<>();
         for (int i = 0; i < PREFILL_TICKS; i++) {
-            fill(fixture.stockCode()).forEach(execution -> toSettle.add(execution.executionId()));
+            fill(fixture.stockCode()).forEach(execution -> toSettle.add(execution.toReport(System.currentTimeMillis())));
         }
         assertThat(toSettle).isNotEmpty();
         // 보유 종목 행은 첫 정산이 만든다. 미리 하나 정산해 두어, 경합이 행 생성 충돌이 아니라 계좌 행 갱신에서 나게 한다.
@@ -173,7 +174,7 @@ class AccountLedgerConcurrencyTest extends IntegrationTestSupport {
                     if (random.nextInt(10) < 3) {
                         cancelSomeActiveOrder(fixture, random);
                     } else {
-                        fill(fixture.stockCode()).forEach(execution -> toSettle.add(execution.executionId()));
+                        fill(fixture.stockCode()).forEach(execution -> toSettle.add(execution.toReport(System.currentTimeMillis())));
                     }
                 }
             } finally {
@@ -184,9 +185,9 @@ class AccountLedgerConcurrencyTest extends IntegrationTestSupport {
         for (int t = 0; t < SETTLEMENT_THREADS; t++) {
             submit(pool, ready, start, errors, () -> {
                 while (!(workerDone.get() && toSettle.isEmpty())) {
-                    Long executionId = pollQuietly(toSettle);
-                    if (executionId != null) {
-                        executionSettlementService.settle(executionId);
+                    ExecutionReport report = pollQuietly(toSettle);
+                    if (report != null) {
+                        executionSettlementService.settle(report);
                     }
                 }
             });
@@ -374,7 +375,7 @@ class AccountLedgerConcurrencyTest extends IntegrationTestSupport {
         });
     }
 
-    private static Long pollQuietly(BlockingQueue<Long> queue) {
+    private static ExecutionReport pollQuietly(BlockingQueue<ExecutionReport> queue) {
         try {
             return queue.poll(50, TimeUnit.MILLISECONDS);
         } catch (InterruptedException e) {

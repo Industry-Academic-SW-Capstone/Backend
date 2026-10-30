@@ -8,7 +8,7 @@ KIS 실시간 체결 틱에 맞춰 사용자 주문을 체결하는 엔진의 �
 - **오더북 = 주문 테이블(`trade_order`)**. 미체결 잔량이 있는 `PENDING`·`PARTIALLY_FILLED` 주문이 곧 오더북이다. 따로 동기화할 사본이 없다.
 - **종목마다 작성자가 하나(단일 작성자).** 오더북을 바꾸는 명령(체결·취소·만료)은 모두 종목 코드를 키로 Kafka `matching.commands` 에 들어가고,
   그 파티션을 맡은 워커 스레드 하나가 도착 순서대로 처리한다. 종목 락이 없다.
-- **정산은 따로.** 체결 워커는 체결만 커밋하고, 계좌 반영은 계좌 키 큐(`settlement.requests`)의 정산 워커가 한다.
+- **정산은 따로.** 체결 워커는 체결만 커밋하고 결과를 계좌 키 통로(`exchange.reports`)로 알린다. 계좌 반영은 그 통보를 받은 정산 워커가 한다.
 
 ## 전체 흐름
 
@@ -27,11 +27,11 @@ KIS 실시간 체결 틱에 맞춰 사용자 주문을 체결하는 엔진의 �
 matching.commands  파티션 24 — 파티션당 워커 1 (MatchingCommandConsumer, 리스너 id·그룹 matching-fill)
    ├─ FILL   → LimitOrderFillCoordinator → LimitOrderExecutionService.fillOnce   (한 트랜잭션)
    │            워터마크 전진 → 후보 조회 → 배분 계획 → 주문 갱신·Execution 저장
-   │            커밋 후 체결마다 정산 요청 → settlement.requests (key=계좌, 비동기)
+   │            커밋 후 체결마다 FILL 통보 → exchange.reports (key=계좌, 비동기)
    ├─ CANCEL → OrderCancelService.cancelOnce   (한 트랜잭션)
    └─ EXPIRE → OrderCancelService.expireOnce   워터마크 전진 → 상태 확인 → 취소 → 계좌 잠금 → 홀딩 해제
 
-settlement.requests 파티션 24 — 워커 8 (SettlementRequestConsumer)
+exchange.reports  파티션 24 — 워커 8 (ExecutionReportConsumer, 리스너 id·그룹 settlement)
    └─ ExecutionSettlementService.settle   계좌 잠금 → 현금·보유·홀딩 반영 → Settlement 저장
 ```
 
@@ -121,7 +121,8 @@ ON CONFLICT (topic, partition_no) DO UPDATE
 
 ## 정산 (`ExecutionSettlementService`)
 
-- 체결 워커가 체결을 커밋한 뒤 체결마다 `SettlementRequest(executionId, accountId, filledAt)` 를 계좌 키로 보낸다.
+- 체결 워커가 체결을 커밋한 뒤 체결마다 `ExecutionReport`(FILL — 체결 번호, 주문, 계좌, 종목, 매수·매도, 가격, 수량, 체결 시각)를 계좌 키로 보낸다.
+  정산은 체결 내용을 이 통보에서 읽고 `execution` 테이블을 다시 읽지 않는다. 통보 형식은 `grit.stockIt.contract` 에 있고 필드는 추가만 한다.
   **ack 를 기다리지 않는다** — 기다리면 그 시간이 종목의 한 줄 구간에 들어간다. 잃어도 체결이 DB 에 있어 복구 배치가 정산한다.
 - 정산 워커(`settlement.queue.concurrency`, 기본 8)는 계좌를 잠그고 현금·보유·홀딩을 반영한 뒤 `Settlement` 를 저장한다.
   `settlement.execution_id` 유니크가 중복 정산의 방어선이다(두 번 와도 한 번만 반영).
@@ -133,7 +134,7 @@ ON CONFLICT (topic, partition_no) DO UPDATE
 | 대상 | 일시 실패 | 처리할 수 없는 메시지 |
 |------|-----------|------------------------|
 | `matching.commands` | **무한 재시도** (200ms → 5s 지수 백오프). 건너뛰면 유실되고 종목 안의 순서가 깨진다. 그동안 파티션이 멈추므로 lag 으로 드러난다 | 역직렬화 실패·`InvalidMatchingCommandException` → `matching.commands.DLT` |
-| `settlement.requests` | 10회 재시도 후 DLT. 계좌 하나 때문에 파티션이 멈추지 않게 하고, 건너뛴 건은 복구 배치가 정산 | `InvalidSettlementRequestException` → `settlement.requests.DLT` |
+| `exchange.reports` | 10회 재시도 후 DLT. 계좌 하나 때문에 파티션이 멈추지 않게 하고, 건너뛴 건은 복구 배치가 정산 | `InvalidExecutionReportException` → `exchange.reports.DLT` |
 
 - 에러 핸들러 빈(`DefaultErrorHandler`)은 하나만 둔다. 둘이면 Boot 가 기본 팩토리에 어느 쪽도 붙이지 않는다. 정산은 전용 컨테이너 팩토리를 쓴다.
 - 역직렬화 실패는 `ErrorHandlingDeserializer` 가 감싸 원래 바이트 그대로 DLT 에 남긴다.

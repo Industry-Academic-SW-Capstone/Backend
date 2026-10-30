@@ -1,5 +1,7 @@
 package grit.stockIt.domain.matching.queue;
 
+import grit.stockIt.contract.ExchangeTopics;
+import grit.stockIt.contract.ExecutionReport;
 import grit.stockIt.domain.account.entity.Account;
 import grit.stockIt.domain.account.repository.AccountRepository;
 import grit.stockIt.domain.account.repository.AccountStockRepository;
@@ -21,8 +23,6 @@ import grit.stockIt.domain.order.entity.OrderMethod;
 import grit.stockIt.domain.order.entity.OrderStatus;
 import grit.stockIt.domain.order.repository.OrderHoldRepository;
 import grit.stockIt.domain.order.repository.OrderRepository;
-import grit.stockIt.domain.settlement.queue.SettlementRequest;
-import grit.stockIt.domain.settlement.queue.SettlementTopics;
 import grit.stockIt.domain.settlement.repository.SettlementRepository;
 import grit.stockIt.domain.stock.entity.Stock;
 import grit.stockIt.domain.stock.repository.StockRepository;
@@ -51,7 +51,7 @@ class MatchingQueueFlowIntegrationTest extends KafkaIntegrationTestSupport {
     @Autowired private FillCommandPublisher fillCommandPublisher;
     @Autowired private OrderCommandPublisher orderCommandPublisher;
     @Autowired private ConsumerWatermarkRepository consumerWatermarkRepository;
-    @Autowired private KafkaTemplate<String, SettlementRequest> settlementTemplate;
+    @Autowired private KafkaTemplate<String, ExecutionReport> reportTemplate;
     @Autowired private SettlementRepository settlementRepository;
     @Autowired private ExecutionRepository executionRepository;
     @Autowired private OrderRepository orderRepository;
@@ -116,12 +116,13 @@ class MatchingQueueFlowIntegrationTest extends KafkaIntegrationTestSupport {
     }
 
     @Test
-    @DisplayName("처리할 수 없는 정산 요청은 재시도하지 않고 DLT 로 보낸다")
-    void invalidSettlementRequest_toDlt() throws Exception {
+    @DisplayName("처리할 수 없는 결과 통보는 재시도하지 않고 DLT 로 보낸다")
+    void invalidReport_toDlt() throws Exception {
         long marker = System.nanoTime();
-        settlementTemplate.send(SettlementTopics.REQUESTS, "1", new SettlementRequest(null, 1L, marker)).get();
+        ExecutionReport invalid = ExecutionReport.fill(null, 1L, 1L, "005930", OrderMethod.BUY, BigDecimal.ONE, 1, marker);
+        reportTemplate.send(ExchangeTopics.REPORTS, "1", invalid).get();
 
-        assertThat(findDeadLetter(SettlementTopics.REQUESTS, value -> value.contains(String.valueOf(marker)))).isTrue();
+        assertThat(findDeadLetter(ExchangeTopics.REPORTS, value -> value.contains(String.valueOf(marker)))).isTrue();
     }
 
     private Execution executionOf(Long orderId) {

@@ -8,6 +8,7 @@ import grit.stockIt.domain.contest.entity.Contest;
 import grit.stockIt.domain.contest.repository.ContestRepository;
 import grit.stockIt.domain.execution.entity.Execution;
 import grit.stockIt.domain.execution.repository.ExecutionRepository;
+import grit.stockIt.domain.execution.service.ExecutionService;
 import grit.stockIt.domain.member.entity.AuthProvider;
 import grit.stockIt.domain.member.entity.Member;
 import grit.stockIt.domain.member.repository.MemberRepository;
@@ -35,6 +36,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -45,6 +47,7 @@ class ExecutionSettlementServiceTest extends IntegrationTestSupport {
     private static final LocalDateTime FUTURE = LocalDateTime.now().plusYears(1);
 
     @Autowired private ExecutionSettlementService executionSettlementService;
+    @Autowired private ExecutionService executionService;
     @Autowired private UnsettledExecutionScheduler unsettledExecutionScheduler;
     @Autowired private SettlementRepository settlementRepository;
     @Autowired private ExecutionRepository executionRepository;
@@ -62,7 +65,7 @@ class ExecutionSettlementServiceTest extends IntegrationTestSupport {
     void settle_buyExecution_appliesCashAndHolding() {
         Fixture fx = buyFixture(10);
 
-        executionSettlementService.settle(fx.execution().getExecutionId());
+        settle(fx.execution().getExecutionId());
 
         Account account = accountRepository.findById(fx.account().getAccountId()).orElseThrow();
         assertThat(account.getCash()).isEqualByComparingTo(new BigDecimal("999000"));
@@ -80,8 +83,8 @@ class ExecutionSettlementServiceTest extends IntegrationTestSupport {
     void settle_twice_appliesOnce() {
         Fixture fx = buyFixture(10);
 
-        executionSettlementService.settle(fx.execution().getExecutionId());
-        executionSettlementService.settle(fx.execution().getExecutionId());
+        settle(fx.execution().getExecutionId());
+        settle(fx.execution().getExecutionId());
 
         Account account = accountRepository.findById(fx.account().getAccountId()).orElseThrow();
         assertThat(account.getCash()).isEqualByComparingTo(new BigDecimal("999000"));
@@ -97,7 +100,7 @@ class ExecutionSettlementServiceTest extends IntegrationTestSupport {
         assertThat(executionSettlementService.findUnsettledExecutionIds(FUTURE, 100))
                 .contains(first.execution().getExecutionId(), second.execution().getExecutionId());
 
-        executionSettlementService.settle(first.execution().getExecutionId());
+        settle(first.execution().getExecutionId());
 
         assertThat(executionSettlementService.findUnsettledExecutionIds(FUTURE, 100))
                 .doesNotContain(first.execution().getExecutionId())
@@ -170,5 +173,10 @@ class ExecutionSettlementServiceTest extends IntegrationTestSupport {
         Execution execution = executionRepository.save(
                 Execution.of(order, new BigDecimal("100"), quantity));
         return new Fixture(account, stock, order, execution);
+    }
+
+    // 정산 워커가 받을 결과 통보를 저장된 체결로 만든다.
+    private void settle(Long executionId) {
+        executionSettlementService.settle(executionService.findFillReports(List.of(executionId)).get(0));
     }
 }

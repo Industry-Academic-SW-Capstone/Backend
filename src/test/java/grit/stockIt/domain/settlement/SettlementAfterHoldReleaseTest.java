@@ -6,6 +6,7 @@ import grit.stockIt.domain.contest.entity.Contest;
 import grit.stockIt.domain.contest.repository.ContestRepository;
 import grit.stockIt.domain.execution.entity.Execution;
 import grit.stockIt.domain.execution.repository.ExecutionRepository;
+import grit.stockIt.domain.execution.service.ExecutionService;
 import grit.stockIt.domain.member.entity.AuthProvider;
 import grit.stockIt.domain.member.entity.Member;
 import grit.stockIt.domain.member.repository.MemberRepository;
@@ -44,6 +45,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class SettlementAfterHoldReleaseTest extends IntegrationTestSupport {
 
     @Autowired private ExecutionSettlementService executionSettlementService;
+    @Autowired private ExecutionService executionService;
     @Autowired private OrderHoldService orderHoldService;
     @Autowired private SettlementRepository settlementRepository;
     @Autowired private ExecutionRepository executionRepository;
@@ -90,7 +92,7 @@ class SettlementAfterHoldReleaseTest extends IntegrationTestSupport {
         Fixture fx = fixture(10, 4);
         releaseHold(fx.orderId());
 
-        executionSettlementService.settle(fx.executionIds().get(0));
+        settle(fx.executionIds().get(0));
 
         assertThat(settlementRepository.existsByExecutionId(fx.executionIds().get(0))).isTrue();
         Account account = accountRepository.findById(fx.accountId()).orElseThrow();
@@ -103,13 +105,13 @@ class SettlementAfterHoldReleaseTest extends IntegrationTestSupport {
     void settle_lateFirstFill_afterOrderFullyFilled() {
         Fixture fx = fixture(10, 4, 6);
 
-        executionSettlementService.settle(fx.executionIds().get(1));
+        settle(fx.executionIds().get(1));
 
         // 주문이 다 찼지만 첫 체결이 미정산이라, 그 몫은 홀딩에 남아 있어야 한다.
         assertThat(orderHoldRepository.findById(fx.orderId()).orElseThrow().getHoldAmount())
                 .isEqualByComparingTo(new BigDecimal("400"));
 
-        executionSettlementService.settle(fx.executionIds().get(0));
+        settle(fx.executionIds().get(0));
 
         assertThat(settlementRepository.existsByExecutionId(fx.executionIds().get(0))).isTrue();
         Account account = accountRepository.findById(fx.accountId()).orElseThrow();
@@ -124,7 +126,7 @@ class SettlementAfterHoldReleaseTest extends IntegrationTestSupport {
         // 계좌에 묶인 돈이 남지 않는다.
         Fixture fx = fixture(10, new BigDecimal("1200"), 10);
 
-        executionSettlementService.settle(fx.executionIds().get(0));
+        settle(fx.executionIds().get(0));
 
         OrderHold hold = orderHoldRepository.findById(fx.orderId()).orElseThrow();
         assertThat(hold.getHoldAmount()).isEqualByComparingTo(BigDecimal.ZERO);
@@ -203,5 +205,10 @@ class SettlementAfterHoldReleaseTest extends IntegrationTestSupport {
             transactionManager.rollback(status);
             throw e;
         }
+    }
+
+    // 정산 워커가 받을 결과 통보를 저장된 체결로 만든다.
+    private void settle(Long executionId) {
+        executionSettlementService.settle(executionService.findFillReports(List.of(executionId)).get(0));
     }
 }

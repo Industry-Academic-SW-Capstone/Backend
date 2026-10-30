@@ -40,8 +40,6 @@ class ServiceBoundaryTest {
         CLASS_OVERRIDES.put("domain.matching.queue.MatchingTopics", Service.CONTRACT);
         CLASS_OVERRIDES.put("domain.matching.queue.MatchingCommandSender", Service.CONTRACT);
         CLASS_OVERRIDES.put("domain.matching.dto.LimitOrderFillEvent", Service.CONTRACT);
-        CLASS_OVERRIDES.put("domain.settlement.queue.SettlementRequest", Service.CONTRACT);
-        CLASS_OVERRIDES.put("domain.settlement.queue.SettlementTopics", Service.CONTRACT);
         CLASS_OVERRIDES.put("domain.order.entity.OrderMethod", Service.CONTRACT);
         CLASS_OVERRIDES.put("domain.order.entity.OrderType", Service.CONTRACT);
 
@@ -56,8 +54,8 @@ class ServiceBoundaryTest {
 
         CLASS_OVERRIDES.put("domain.order.service.OrderCancelService", Service.EXCHANGE);
         CLASS_OVERRIDES.put("domain.order.service.QueuedCancelOutcome", Service.EXCHANGE);
-        CLASS_OVERRIDES.put("domain.settlement.queue.SettlementRequestPublisher", Service.EXCHANGE);
 
+        PACKAGES.put("contract.", Service.CONTRACT);
         PACKAGES.put("global.websocket.", Service.MARKET);
         PACKAGES.put("domain.matching.", Service.EXCHANGE);
         PACKAGES.put("domain.execution.", Service.EXCHANGE);
