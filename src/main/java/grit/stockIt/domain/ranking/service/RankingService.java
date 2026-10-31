@@ -6,7 +6,7 @@ import grit.stockIt.domain.account.repository.AccountRepository;
 import grit.stockIt.domain.account.repository.AccountStockRepository;
 import grit.stockIt.domain.contest.entity.Contest;
 import grit.stockIt.domain.contest.repository.ContestRepository;
-import grit.stockIt.domain.mission.event.RankerAchievedEvent;
+import grit.stockIt.domain.member.event.MemberEventOutbox;
 import grit.stockIt.domain.mission.service.MissionQueryService;
 import grit.stockIt.domain.mission.dto.UserTierStatusResponse;
 import grit.stockIt.domain.ranking.dto.MyRankResponse;
@@ -14,7 +14,6 @@ import grit.stockIt.domain.ranking.dto.RankingItemResponse;
 import grit.stockIt.domain.ranking.dto.RankingResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.ApplicationContext;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
@@ -44,7 +43,7 @@ public class RankingService {
     private final AccountRepository accountRepository;
     private final AccountStockRepository accountStockRepository;
     private final ContestRepository contestRepository;
-    private final ApplicationEventPublisher eventPublisher;
+    private final MemberEventOutbox memberEventOutbox;
     private final MissionQueryService missionQueryService;
     private final Environment environment;
     private final RankingCalculationService rankingCalculationService;
@@ -87,7 +86,7 @@ public class RankingService {
 
                 // 랭커 달성 이벤트 발행 (동기 리스너가 미션 달성 처리 — 예외는 아래 catch에 흡수)
                 if (!top10MemberIds.isEmpty()) {
-                    eventPublisher.publishEvent(new RankerAchievedEvent(top10MemberIds));
+                    memberEventOutbox.rankersAchieved(top10MemberIds);
                 }
             }
             // 각 대회의 'contest:id:sortBy' 캐시 워밍

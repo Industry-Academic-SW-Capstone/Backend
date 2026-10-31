@@ -11,13 +11,7 @@ import java.util.concurrent.Executor;
 @Configuration
 public class AsyncConfig implements AsyncConfigurer {
 
-    public static final String MISSION_EXECUTOR = "missionExecutor";
     public static final String NOTIFICATION_EXECUTOR = "notificationExecutor";
-
-    @Bean(MISSION_EXECUTOR)
-    public ThreadPoolTaskExecutor missionExecutor(@Value("${app.async.mission.pool-size:2}") int poolSize) {
-        return fixedSizeExecutor("mission-", poolSize);
-    }
 
     @Bean(NOTIFICATION_EXECUTOR)
     public ThreadPoolTaskExecutor notificationExecutor(@Value("${app.async.notification.pool-size:2}") int poolSize) {

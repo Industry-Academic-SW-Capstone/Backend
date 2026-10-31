@@ -1,4 +1,4 @@
-package grit.stockIt.domain.order.event;
+package grit.stockIt.domain.mission.event;
 
 import grit.stockIt.domain.order.entity.OrderMethod;
 import lombok.Getter;
@@ -10,6 +10,8 @@ public class TradeCompletionEvent {
 
     private final Long memberId;
     private final Long accountId;
+    // 기본 계좌 거래인지. 미션은 기본 계좌 거래만 센다(증권사가 이벤트에 실어 보낸다).
+    private final boolean defaultAccount;
     private final String stockCode;
     private final OrderMethod orderMethod; // BUY or SELL
 
@@ -24,11 +26,12 @@ public class TradeCompletionEvent {
 
     private final BigDecimal buyAveragePrice; // 내가 샀던 가격 (평단가) [NEW!]
 
-    public TradeCompletionEvent(Long memberId, Long accountId, String stockCode,
+    public TradeCompletionEvent(Long memberId, Long accountId, boolean defaultAccount, String stockCode,
                                 OrderMethod orderMethod, int filledQuantity, BigDecimal filledPrice,
                                 BigDecimal profitAmount, BigDecimal profitRate, int holdingDays, BigDecimal buyAveragePrice) {
         this.memberId = memberId;
         this.accountId = accountId;
+        this.defaultAccount = defaultAccount;
         this.stockCode = stockCode;
         this.orderMethod = orderMethod;
         this.filledQuantity = filledQuantity;
@@ -42,10 +45,18 @@ public class TradeCompletionEvent {
         this.holdingDays = holdingDays;
     }
 
-    // (기존 생성자 호환용)
+    // 회원 이벤트(member.events)의 거래 완료로 만든다.
+    public TradeCompletionEvent(Long memberId, Long accountId, boolean defaultAccount, String stockCode,
+                                OrderMethod orderMethod, int filledQuantity, BigDecimal filledPrice,
+                                BigDecimal buyAveragePrice) {
+        this(memberId, accountId, defaultAccount, stockCode, orderMethod, filledQuantity, filledPrice,
+                BigDecimal.ZERO, BigDecimal.ZERO, 0, buyAveragePrice);
+    }
+
+    // (기존 생성자 호환용) 기본 계좌 거래로 본다.
     public TradeCompletionEvent(Long memberId, Long accountId, String stockCode,
                                 OrderMethod orderMethod, int filledQuantity, BigDecimal filledPrice) {
-        this(memberId, accountId, stockCode, orderMethod, filledQuantity, filledPrice,
-                BigDecimal.ZERO, BigDecimal.ZERO, 0, BigDecimal.ZERO); // [수정] 마지막 인자 0 -> BigDecimal.ZERO
+        this(memberId, accountId, true, stockCode, orderMethod, filledQuantity, filledPrice,
+                BigDecimal.ZERO, BigDecimal.ZERO, 0, BigDecimal.ZERO);
     }
 }

@@ -7,21 +7,23 @@ import grit.stockIt.domain.contest.repository.ContestRepository;
 import grit.stockIt.domain.member.entity.AuthProvider;
 import grit.stockIt.domain.member.entity.Member;
 import grit.stockIt.domain.member.repository.MemberRepository;
-import grit.stockIt.domain.mission.event.RankerAchievedEvent;
+import grit.stockIt.contract.MemberEvent;
+import grit.stockIt.contract.MemberEventType;
+import grit.stockIt.domain.mission.queue.MissionEventConsumer;
 import grit.stockIt.domain.mission.entity.Mission;
 import grit.stockIt.domain.mission.entity.MissionProgress;
 import grit.stockIt.domain.mission.enums.MissionStatus;
 import grit.stockIt.domain.mission.repository.MissionProgressRepository;
 import grit.stockIt.domain.mission.repository.MissionRepository;
 import grit.stockIt.domain.order.entity.OrderMethod;
-import grit.stockIt.domain.order.event.TradeCompletionEvent;
+import grit.stockIt.domain.mission.event.TradeCompletionEvent;
 import grit.stockIt.domain.title.repository.MemberTitleRepository;
 import grit.stockIt.global.support.IntegrationTestSupport;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.jdbc.datasource.init.ResourceDatabasePopulator;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -36,7 +38,7 @@ import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatCode;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * MissionService 리팩토링 전 특성화(characterization) 테스트.
@@ -75,7 +77,9 @@ class MissionServiceIntegrationTest extends IntegrationTestSupport {
     @Autowired
     private MemberTitleRepository memberTitleRepository;
     @Autowired
-    private ApplicationEventPublisher eventPublisher;
+    private MissionEventConsumer missionEventConsumer;
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
     @Autowired
     private PlatformTransactionManager transactionManager;
     @Autowired
@@ -122,7 +126,7 @@ class MissionServiceIntegrationTest extends IntegrationTestSupport {
                     .build());
 
             // 시나리오 1의 대상이자, 나머지 시나리오의 공용 픽스처 경로
-            missionService.initializeMissionsForNewMember(member);
+            missionService.initializeMissionsForNewMember(member.getMemberId());
 
             memberId = member.getMemberId();
             defaultAccountId = defaultAccount.getAccountId();
@@ -146,26 +150,6 @@ class MissionServiceIntegrationTest extends IntegrationTestSupport {
         return accountRepository.findById(defaultAccountId).orElseThrow().getCash();
     }
 
-    /** AFTER_COMMIT + @Async 리스너는 별도 스레드에서 실행되므로 기대값 도달까지 폴링한다(최대 5초). */
-    private void awaitProgress(long missionId, int expected) {
-        long deadline = System.currentTimeMillis() + 5000;
-        while (System.currentTimeMillis() < deadline) {
-            try {
-                if (progress(missionId).getCurrentValue() == expected) {
-                    return;
-                }
-            } catch (RuntimeException ignored) {
-                // 진행도 행이 아직 커밋되지 않았을 수 있음 — 재시도
-            }
-            try {
-                Thread.sleep(50);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                break;
-            }
-        }
-    }
-
     private List<String> titleNames() {
         return txTemplate.execute(status -> {
             Member member = memberRepository.findById(memberId).orElseThrow();
@@ -181,7 +165,7 @@ class MissionServiceIntegrationTest extends IntegrationTestSupport {
     }
 
     private TradeCompletionEvent sellEvent(Long accountId, int quantity, String sellPrice, String buyAveragePrice) {
-        return new TradeCompletionEvent(memberId, accountId, STOCK_CODE,
+        return new TradeCompletionEvent(memberId, accountId, true, STOCK_CODE,
                 OrderMethod.SELL, quantity, new BigDecimal(sellPrice),
                 null, null, 0, new BigDecimal(buyAveragePrice));
     }
@@ -299,7 +283,9 @@ class MissionServiceIntegrationTest extends IntegrationTestSupport {
             return aux.getAccountId();
         });
 
-        missionProgressService.updateMissionProgress(buyEvent(auxAccountId, 2, "10000"));
+        // 기본 계좌인지는 증권사가 이벤트에 실어 보낸다.
+        missionProgressService.updateMissionProgress(new TradeCompletionEvent(memberId, auxAccountId, false, STOCK_CODE,
+                OrderMethod.BUY, 2, new BigDecimal("10000"), BigDecimal.ZERO));
 
         // 아무것도 집계되지 않는다
         assertThat(progress(201L).getCurrentValue()).isZero();
@@ -432,11 +418,10 @@ class MissionServiceIntegrationTest extends IntegrationTestSupport {
     }
 
     @Test
-    @DisplayName("8-1. RankerAchievedEvent 발행 경유: 동기 리스너 배선으로 랭커 미션이 처리된다")
-    void 랭커이벤트_발행경유_리스너배선_동작() {
-        // Risk 9(리스너 미배선 = 조용한 미션 미처리) 방어선 — 이벤트 배선이 끊기면 이 테스트가 red
-        txTemplate.executeWithoutResult(status ->
-                eventPublisher.publishEvent(new RankerAchievedEvent(List.of(memberId))));
+    @DisplayName("8-1. 회원 이벤트 경유: 미션 워커가 랭커 이벤트로 랭커 미션을 처리한다")
+    void 랭커이벤트_미션워커_경유_동작() {
+        // Risk 9(배선 누락 = 조용한 미션 미처리) 방어선 — 미션 워커의 랭커 분기가 끊기면 이 테스트가 red
+        missionEventConsumer.consume(MemberEvent.of(MemberEventType.RANKER_ACHIEVED, memberId));
 
         assertThat(progress(909L).getStatus()).isEqualTo(MissionStatus.COMPLETED);
         assertThat(titleNames()).containsExactly("랭커");
@@ -475,14 +460,9 @@ class MissionServiceIntegrationTest extends IntegrationTestSupport {
     // --- 시나리오 10 ---
 
     @Test
-    @DisplayName("10. 비동기 리스너 경유: 커밋된 TradeCompletionEvent가 커밋 후 진행도에 반영된다")
-    void 비동기리스너_경유_이벤트발행_커밋후_반영() {
-        // handleTradeCompletionEvent는 @Async + @TransactionalEventListener(AFTER_COMMIT)라
-        // 발행자 트랜잭션 커밋 후 별도 스레드에서 실행된다 → 반영을 폴링으로 대기한다
-        txTemplate.executeWithoutResult(status ->
-                eventPublisher.publishEvent(buyEvent(defaultAccountId, 2, "10000")));
-
-        awaitProgress(201L, 1);
+    @DisplayName("10. 미션 워커 경유: 거래 완료 이벤트가 진행도에 반영된다")
+    void 미션워커_경유_거래완료_반영() {
+        missionEventConsumer.consume(tradeCompleted());
 
         assertThat(progress(201L).getCurrentValue()).isEqualTo(1);
         assertThat(progress(904L).getCurrentValue()).isEqualTo(1);
@@ -491,33 +471,32 @@ class MissionServiceIntegrationTest extends IntegrationTestSupport {
     }
 
     @Test
-    @DisplayName("10-1. 비동기 리스너 경유: 발행자 트랜잭션이 롤백되면 미션 진행도가 반영되지 않는다")
-    void 비동기리스너_경유_발행자_롤백시_진행도_미반영() {
-        // AFTER_COMMIT 리스너는 발행자 트랜잭션이 롤백되면 아예 트리거되지 않는다.
-        // → 미션 로직이 실행되지 않아 진행도/현금이 그대로 유지된다(롤백된 거래에 보상 미지급).
-        int before = progress(201L).getCurrentValue();
+    @DisplayName("10-1. 같은 거래 완료 이벤트가 다시 와도(최소 한 번 전달) 진행도는 한 번만 반영된다")
+    void 같은이벤트_재전달_한번만_반영() {
+        MemberEvent event = tradeCompleted();
 
-        txTemplate.executeWithoutResult(status -> {
-            eventPublisher.publishEvent(buyEvent(defaultAccountId, 2, "10000"));
-            status.setRollbackOnly();
-        });
+        missionEventConsumer.consume(event);
+        missionEventConsumer.consume(event);
 
-        assertThat(progress(201L).getCurrentValue()).isEqualTo(before);
-        assertThat(progress(102L).getStatus()).isEqualTo(MissionStatus.IN_PROGRESS);
-        assertThat(defaultAccountCash()).isEqualByComparingTo(INITIAL_CASH);
+        assertThat(progress(201L).getCurrentValue()).isEqualTo(1);
+        assertThat(defaultAccountCash()).isEqualByComparingTo(new BigDecimal("1150000"));
     }
 
     @Test
-    @DisplayName("10-2. 미션 로직이 예외를 던져도 발행자(체결) 트랜잭션은 정상 커밋된다")
-    void 미션예외_발행자트랜잭션_정상커밋() {
-        // 존재하지 않는 memberId → updateMissionProgress가 예외를 던지지만, AFTER_COMMIT + @Async라
-        // 그 예외가 별도 스레드에서 발생해 발행자 트랜잭션 커밋에 영향을 주지 않아야 한다.
+    @DisplayName("10-2. 미션 로직이 실패하면 워커가 예외를 던지고 처리 기록도 남지 않아 다시 받을 수 있다")
+    void 미션실패_예외_전파_처리기록_없음() {
+        // 예전 메모리 스레드 풀은 예외를 삼켜 그 진행도가 영영 빠졌다. 이제는 던져서 재시도·DLT 로 간다.
         Long ghostMemberId = 999_999_999L;
-        TradeCompletionEvent poison = new TradeCompletionEvent(
-                ghostMemberId, defaultAccountId, STOCK_CODE, OrderMethod.BUY, 1, new BigDecimal("10000"));
+        MemberEvent poison = MemberEvent.tradeCompleted(ghostMemberId, new MemberEvent.TradeCompleted(
+                defaultAccountId, true, STOCK_CODE, OrderMethod.BUY, 1, new BigDecimal("10000"), BigDecimal.ZERO));
 
-        assertThatCode(() ->
-                txTemplate.executeWithoutResult(status -> eventPublisher.publishEvent(poison))
-        ).doesNotThrowAnyException();
+        assertThatThrownBy(() -> missionEventConsumer.consume(poison)).isInstanceOf(RuntimeException.class);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM processed_event WHERE event_id = ?", Long.class, poison.eventId())).isZero();
+    }
+
+    private MemberEvent tradeCompleted() {
+        return MemberEvent.tradeCompleted(memberId, new MemberEvent.TradeCompleted(
+                defaultAccountId, true, STOCK_CODE, OrderMethod.BUY, 2, new BigDecimal("10000"), BigDecimal.ZERO));
     }
 }

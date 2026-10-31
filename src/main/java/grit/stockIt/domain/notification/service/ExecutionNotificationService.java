@@ -7,11 +7,8 @@ import grit.stockIt.domain.notification.entity.NotificationSetting;
 import grit.stockIt.domain.notification.enums.NotificationType;
 import grit.stockIt.domain.notification.event.ExecutionFilledEvent;
 import grit.stockIt.domain.notification.repository.NotificationRepository;
-import grit.stockIt.global.config.AsyncConfig;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.context.event.EventListener;
-import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -38,8 +35,7 @@ public class ExecutionNotificationService {
     }
 
     // 체결 완료 이벤트 수신
-    @Async(AsyncConfig.NOTIFICATION_EXECUTOR)
-    @EventListener
+    // 알림 워커(NotificationEventConsumer)가 member.events 의 체결 이벤트로 부른다. 실패는 던져 다시 받게 한다.
     @Transactional
     public void handleExecutionFilledEvent(ExecutionFilledEvent event) {
         log.debug("체결 완료 이벤트 수신: executionId={}, memberId={}, contestId={}", 

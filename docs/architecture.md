@@ -44,8 +44,11 @@ job/        배치 작업 (KIS 마스터 파일 다운로드/파싱)
 
 - **`LimitOrderFillEventMessage`** — KIS 체결 틱. `LimitOrderFillEventListener`(@EventListener)가 받아
   체결 명령을 Kafka `matching.commands` 에 넣습니다. 상세 흐름은 [matching-engine.md](matching-engine.md).
-- **`TradeCompletionEvent`** — 거래 완료 후 후속 처리(미션/알림 등) 트리거.
-- 미션·알림 도메인도 각자 `event/` 패키지에서 이벤트를 발행/구독합니다.
+- **회원 이벤트 (`contract.MemberEvent`, Kafka `member.events`, 키 = 회원)** — 증권사가 회원에게 일어난 일(거래 완료, 체결,
+  가입, 랭커 달성, AI 분석 완료)을 부가 서비스에 알립니다. 트랜잭션 안의 일은 `MemberEventOutbox` 로 아웃박스에 적어 커밋된 것만
+  나가고, AI 분석 완료만 바로 보냅니다. 미션(`MissionEventConsumer`, 그룹 `mission`)과 알림(`NotificationEventConsumer`,
+  그룹 `notification`)이 각자 받아, 처리 기록(`processed_event`)으로 같은 이벤트를 한 번만 처리합니다. 실패는 재시도 후 DLT.
+- **`MissionCompletedEvent`** — 부가 서비스 안의 메모리 이벤트. 미션 트랜잭션이 커밋된 뒤 같은 스레드에서 알림을 보냅니다.
 
 ## 캐싱 전략 (3계층)
 

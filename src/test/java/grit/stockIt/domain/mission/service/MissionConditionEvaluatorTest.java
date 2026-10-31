@@ -5,7 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import grit.stockIt.domain.mission.entity.Mission;
 import grit.stockIt.domain.mission.enums.MissionConditionType;
 import grit.stockIt.domain.order.entity.OrderMethod;
-import grit.stockIt.domain.order.event.TradeCompletionEvent;
+import grit.stockIt.domain.mission.event.TradeCompletionEvent;
 import java.math.BigDecimal;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;

@@ -15,7 +15,10 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.springframework.context.event.EventListener;
 import org.springframework.scheduling.annotation.Async;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.event.TransactionPhase;
+import org.springframework.transaction.event.TransactionalEventListener;
 
 import java.lang.reflect.Method;
 import java.math.BigDecimal;
@@ -664,23 +667,25 @@ class NotificationWiringCharacterizationTest {
         }
 
         @Test
-        void w7_execution_entryPointKeepsAsyncEventListenerTransactional() throws Exception {
+        // 체결 알림은 알림 워커(Kafka member.events)가 부른다 — 메모리 스레드 풀·스프링 이벤트로 받지 않는다.
+        void w7_execution_entryPointIsCalledByKafkaWorkerInTransaction() throws Exception {
             Method m = method(ExecutionNotificationService.class,
                     "handleExecutionFilledEvent", ExecutionFilledEvent.class);
 
-            assertThat(m.isAnnotationPresent(Async.class)).isTrue();
-            assertThat(m.isAnnotationPresent(EventListener.class)).isTrue();
+            assertThat(m.isAnnotationPresent(Async.class)).isFalse();
+            assertThat(m.isAnnotationPresent(EventListener.class)).isFalse();
             assertThat(m.isAnnotationPresent(Transactional.class)).isTrue();
         }
 
         @Test
-        void w7_mission_entryPointKeepsAsyncEventListenerTransactional() throws Exception {
+        // 미션 완료 알림은 미션 트랜잭션이 커밋된 뒤에만, 새 트랜잭션에서 보낸다(같은 워커 스레드).
+        void w7_mission_entryPointRunsAfterCommitInNewTransaction() throws Exception {
             Method m = method(MissionNotificationService.class,
                     "handleMissionCompletedEvent", MissionCompletedEvent.class);
 
-            assertThat(m.isAnnotationPresent(Async.class)).isTrue();
-            assertThat(m.isAnnotationPresent(EventListener.class)).isTrue();
-            assertThat(m.isAnnotationPresent(Transactional.class)).isTrue();
+            assertThat(m.isAnnotationPresent(Async.class)).isFalse();
+            assertThat(m.getAnnotation(TransactionalEventListener.class).phase()).isEqualTo(TransactionPhase.AFTER_COMMIT);
+            assertThat(m.getAnnotation(Transactional.class).propagation()).isEqualTo(Propagation.REQUIRES_NEW);
         }
 
         @Test

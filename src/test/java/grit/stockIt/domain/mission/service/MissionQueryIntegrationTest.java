@@ -384,7 +384,7 @@ class MissionQueryIntegrationTest extends IntegrationTestSupport {
                 .provider(AuthProvider.LOCAL)
                 .build());
         accountService.createDefaultAccountForMember(member);
-        missionService.initializeMissionsForNewMember(member);
+        missionService.initializeMissionsForNewMember(member.getMemberId());
         missionProgressRepository.flush();
         return member;
     }

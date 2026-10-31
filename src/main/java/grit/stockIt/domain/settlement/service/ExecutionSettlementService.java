@@ -1,17 +1,17 @@
 package grit.stockIt.domain.settlement.service;
 
 import grit.stockIt.contract.ExecutionReport;
+import grit.stockIt.contract.MemberEvent;
 import grit.stockIt.domain.account.entity.Account;
 import grit.stockIt.domain.account.entity.AccountStock;
 import grit.stockIt.domain.account.repository.AccountRepository;
 import grit.stockIt.domain.account.repository.AccountStockRepository;
 import grit.stockIt.domain.execution.entity.Execution;
+import grit.stockIt.domain.member.event.MemberEventOutbox;
 import grit.stockIt.domain.execution.repository.ExecutionRepository;
-import grit.stockIt.domain.notification.event.ExecutionFilledEvent;
 import grit.stockIt.domain.order.entity.Order;
 import grit.stockIt.domain.order.entity.OrderHold;
 import grit.stockIt.domain.order.entity.OrderMethod;
-import grit.stockIt.domain.order.event.TradeCompletionEvent;
 import grit.stockIt.domain.order.repository.OrderHoldRepository;
 import grit.stockIt.domain.order.repository.OrderRepository;
 import grit.stockIt.domain.settlement.entity.Settlement;
@@ -19,7 +19,6 @@ import grit.stockIt.domain.settlement.repository.SettlementRepository;
 import grit.stockIt.domain.stock.entity.Stock;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -40,7 +39,7 @@ public class ExecutionSettlementService {
     private final AccountStockRepository accountStockRepository;
     private final OrderRepository orderRepository;
     private final OrderHoldRepository orderHoldRepository;
-    private final ApplicationEventPublisher eventPublisher;
+    private final MemberEventOutbox memberEventOutbox;
 
     @Transactional
     public void settle(ExecutionReport report) {
@@ -164,38 +163,24 @@ public class ExecutionSettlementService {
 
     private void publishTradeCompletionEvent(Order order, BigDecimal price,
                                              Account account, BigDecimal currentAvgPrice) {
-        TradeCompletionEvent missionEvent = new TradeCompletionEvent(
-                account.getMember().getMemberId(),
-                account.getAccountId(),
-                order.getStock().getCode(),
-                order.getOrderMethod(),
-                order.getQuantity(),
-                price,
-                null,
-                null,
-                0,
-                currentAvgPrice
-        );
-        eventPublisher.publishEvent(missionEvent);
+        memberEventOutbox.append(MemberEvent.tradeCompleted(account.getMember().getMemberId(),
+                new MemberEvent.TradeCompleted(account.getAccountId(), Boolean.TRUE.equals(account.getIsDefault()),
+                        order.getStock().getCode(), order.getOrderMethod(), order.getQuantity(), price, currentAvgPrice)));
     }
 
+    // 정산과 같은 트랜잭션에서 아웃박스에 적는다 — 정산이 롤백되면 알림도 나가지 않는다.
     private void publishExecutionFilledEvent(ExecutionReport report, Order order, Account account) {
-        try {
-            eventPublisher.publishEvent(new ExecutionFilledEvent(
-                    report.executionId(),
-                    order.getOrderId(),
-                    account.getAccountId(),
-                    account.getMember().getMemberId(),
-                    account.getContest().getContestId(),
-                    account.getContest().getContestName(),
-                    order.getStock().getCode(),
-                    order.getStock().getName(),
-                    report.price(),
-                    report.quantity(),
-                    report.orderMethod().name()
-            ));
-        } catch (Exception e) {
-            log.error("체결 완료 이벤트 발행 실패: executionId={}", report.executionId(), e);
-        }
+        memberEventOutbox.append(MemberEvent.executionFilled(account.getMember().getMemberId(),
+                new MemberEvent.ExecutionFilled(
+                        report.executionId(),
+                        order.getOrderId(),
+                        account.getAccountId(),
+                        account.getContest().getContestId(),
+                        account.getContest().getContestName(),
+                        order.getStock().getCode(),
+                        order.getStock().getName(),
+                        report.price(),
+                        report.quantity(),
+                        report.orderMethod().name())));
     }
 }

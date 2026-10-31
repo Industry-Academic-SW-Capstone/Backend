@@ -1,7 +1,5 @@
 package grit.stockIt.domain.mission.service;
 
-import grit.stockIt.domain.account.entity.Account;
-import grit.stockIt.domain.account.repository.AccountRepository;
 import grit.stockIt.domain.member.entity.Member;
 import grit.stockIt.domain.member.repository.MemberRepository;
 import grit.stockIt.domain.mission.entity.Mission;
@@ -12,7 +10,7 @@ import grit.stockIt.domain.mission.enums.MissionTrack;
 import grit.stockIt.domain.mission.repository.MissionProgressRepository;
 import grit.stockIt.domain.mission.repository.MissionRepository;
 import grit.stockIt.domain.order.entity.OrderMethod;
-import grit.stockIt.domain.order.event.TradeCompletionEvent;
+import grit.stockIt.domain.mission.event.TradeCompletionEvent;
 import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -36,7 +34,6 @@ public class MissionProgressService {
     private final MemberRepository memberRepository;
     private final MissionRepository missionRepository;
     private final MissionProgressRepository missionProgressRepository;
-    private final AccountRepository accountRepository;
     private final MissionConditionEvaluator missionConditionEvaluator;
     private final MissionProgressCalculator missionProgressCalculator;
     private final MissionRewardService missionRewardService;
@@ -52,21 +49,10 @@ public class MissionProgressService {
         log.info("수신된 거래 이벤트: MemberId={}, Method={}, Qty={}",
                 event.getMemberId(), event.getOrderMethod(), event.getFilledQuantity());
 
-        // 🛑 [신규 추가] 기본 계좌 검증 로직
-        // 1. 이벤트에 계좌 ID가 없거나, 기본 계좌가 아니면 미션 집계에서 제외
-        if (event.getAccountId() != null) {
-            boolean isDefaultAccount = accountRepository.findById(event.getAccountId())
-                    .map(Account::getIsDefault)
-                    .orElse(false); // 계좌가 없으면 false 취급
-
-            if (!isDefaultAccount) {
-                log.info("보조 계좌 거래 감지: 미션 및 랭킹 집계에서 제외합니다. (AccountId={})", event.getAccountId());
-                return; // 여기서 메서드 종료!
-            }
-        } else {
-            // (선택 사항) AccountId가 null인 옛날 코드 호환성을 위해 경고만 찍고 진행할지, 막을지 결정
-            // 여기서는 안전하게 로그 찍고 진행 (혹은 return으로 막으셔도 됨)
-            log.warn("거래 이벤트에 AccountId가 없습니다. 기본 계좌 여부를 확인할 수 없습니다.");
+        // 기본 계좌 거래만 센다. 기본 계좌인지는 증권사가 이벤트에 실어 보낸다.
+        if (!event.isDefaultAccount()) {
+            log.info("보조 계좌 거래 감지: 미션 및 랭킹 집계에서 제외합니다. (AccountId={})", event.getAccountId());
+            return;
         }
 
         Member member = memberRepository.findById(event.getMemberId())

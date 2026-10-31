@@ -7,13 +7,13 @@ import grit.stockIt.domain.notification.entity.NotificationSetting;
 import grit.stockIt.domain.notification.enums.NotificationType;
 import grit.stockIt.domain.notification.event.MissionCompletedEvent;
 import grit.stockIt.domain.notification.repository.NotificationRepository;
-import grit.stockIt.global.config.AsyncConfig;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.context.event.EventListener;
-import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.event.TransactionPhase;
+import org.springframework.transaction.event.TransactionalEventListener;
 
 import java.util.Map;
 
@@ -38,9 +38,10 @@ public class MissionNotificationService {
     }
 
     // 미션 완료 이벤트 수신
-    @Async(AsyncConfig.NOTIFICATION_EXECUTOR)
-    @EventListener
-    @Transactional
+    // 미션 완료는 같은 부가 서비스 안의 일이라 메모리 이벤트로 받는다. 미션 트랜잭션이 커밋된 뒤에만 보내고(롤백된 완료는 알리지 않는다),
+    // 그 뒤의 저장은 새 트랜잭션이다. 미션 워커 스레드에서 이어서 돈다.
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void handleMissionCompletedEvent(MissionCompletedEvent event) {
         log.debug("미션 완료 이벤트 수신: missionId={}, memberId={}, missionName={}", 
                 event.missionId(), event.memberId(), event.missionName());

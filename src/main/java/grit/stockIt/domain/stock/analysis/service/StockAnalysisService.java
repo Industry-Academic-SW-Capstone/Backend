@@ -1,11 +1,12 @@
 package grit.stockIt.domain.stock.analysis.service;
 
-import grit.stockIt.domain.mission.event.StockAnalyzedEvent;
+import grit.stockIt.contract.MemberEvent;
+import grit.stockIt.contract.MemberEventType;
+import grit.stockIt.domain.member.event.MemberEventOutbox;
 import grit.stockIt.domain.stock.analysis.dto.*;
 import grit.stockIt.domain.stock.analysis.repository.RedisStockAnalysisRepository;
 import grit.stockIt.domain.stock.service.StockDetailService;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Mono;
@@ -20,7 +21,7 @@ public class StockAnalysisService {
     private final KisDividendService kisDividendService;
     private final PythonAnalysisClient pythonAnalysisClient;
     private final RedisStockAnalysisRepository redisStockAnalysisRepository;
-    private final ApplicationEventPublisher eventPublisher;
+    private final MemberEventOutbox memberEventOutbox;
 
     public StockAnalysisService(
             @Lazy StockDetailService stockDetailService,
@@ -28,14 +29,14 @@ public class StockAnalysisService {
             KisDividendService kisDividendService,
             PythonAnalysisClient pythonAnalysisClient,
             RedisStockAnalysisRepository redisStockAnalysisRepository,
-            ApplicationEventPublisher eventPublisher
+            MemberEventOutbox memberEventOutbox
     ) {
         this.stockDetailService = stockDetailService;
         this.kisFinancialRatioService = kisFinancialRatioService;
         this.kisDividendService = kisDividendService;
         this.pythonAnalysisClient = pythonAnalysisClient;
         this.redisStockAnalysisRepository = redisStockAnalysisRepository;
-        this.eventPublisher = eventPublisher;
+        this.memberEventOutbox = memberEventOutbox;
     }
 
     // 종목분석 수행
@@ -73,7 +74,7 @@ public class StockAnalysisService {
                     // email이 있는 경우(로그인 유저)에만 발행
                     if (email != null) {
                         log.info("종목 분석 성공 이벤트 발행: {}", email);
-                        eventPublisher.publishEvent(new StockAnalyzedEvent(email, stockCode));
+                        memberEventOutbox.sendNow(MemberEvent.analyzed(MemberEventType.STOCK_ANALYZED, email));
                     }
                 })
                 .doOnError(e -> log.error("종목분석 실패: stockCode={}", stockCode, e))

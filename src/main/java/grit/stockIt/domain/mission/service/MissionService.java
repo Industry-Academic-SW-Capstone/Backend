@@ -104,8 +104,8 @@ public class MissionService {
     }
 
     @Transactional
-    public void initializeMissionsForNewMember(Member newMember) {
-        log.info("신규 회원 초기 미션 세팅 시작: MemberId={}", newMember.getMemberId());
+    public void initializeMissionsForNewMember(Long memberId) {
+        log.info("신규 회원 초기 미션 세팅 시작: MemberId={}", memberId);
 
         List<MissionTrack> tracks = Arrays.asList(MissionTrack.SHORT_TERM, MissionTrack.SWING, MissionTrack.LONG_TERM);
         List<Mission> dailyMissions = missionRepository.findAllByTrack(MissionTrack.DAILY);
@@ -138,7 +138,7 @@ public class MissionService {
             }
 
             MissionProgress newProgress = MissionProgress.builder()
-                    .memberId(newMember.getMemberId())
+                    .memberId(memberId)
                     .mission(mission)
                     .currentValue(initialValue)
                     .status(initialStatus)

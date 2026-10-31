@@ -1,6 +1,7 @@
 package grit.stockIt.global.config;
 
 import grit.stockIt.contract.InvalidExecutionReportException;
+import grit.stockIt.contract.InvalidMemberEventException;
 import grit.stockIt.domain.matching.queue.InvalidMatchingCommandException;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.common.TopicPartition;
@@ -55,6 +56,27 @@ public class KafkaConfig {
         ConcurrentKafkaListenerContainerFactory<Object, Object> factory = new ConcurrentKafkaListenerContainerFactory<>();
         configurer.configure(factory, consumerFactory);
 
+        factory.setCommonErrorHandler(boundedRetryHandler(kafkaTemplate, producerFactory, InvalidExecutionReportException.class));
+        return factory;
+    }
+
+    // 회원 이벤트(미션·알림)도 정해진 횟수만 다시 시도하고 DLT 로 넘긴다. 한 회원의 이벤트 때문에 그 파티션의 다른 회원이
+    // 모두 멈추지 않게 한다.
+    @Bean
+    public ConcurrentKafkaListenerContainerFactory<Object, Object> memberEventListenerContainerFactory(
+            ConcurrentKafkaListenerContainerFactoryConfigurer configurer,
+            ConsumerFactory<Object, Object> consumerFactory,
+            KafkaTemplate<Object, Object> kafkaTemplate,
+            ProducerFactory<Object, Object> producerFactory) {
+        ConcurrentKafkaListenerContainerFactory<Object, Object> factory = new ConcurrentKafkaListenerContainerFactory<>();
+        configurer.configure(factory, consumerFactory);
+        factory.setCommonErrorHandler(boundedRetryHandler(kafkaTemplate, producerFactory, InvalidMemberEventException.class));
+        return factory;
+    }
+
+    private DefaultErrorHandler boundedRetryHandler(KafkaTemplate<Object, Object> kafkaTemplate,
+                                                    ProducerFactory<Object, Object> producerFactory,
+                                                    Class<? extends Exception> notRetryable) {
         ExponentialBackOffWithMaxRetries backOff = new ExponentialBackOffWithMaxRetries(SETTLEMENT_MAX_RETRIES);
         backOff.setInitialInterval(INITIAL_BACKOFF_MS);
         backOff.setMultiplier(2.0);
@@ -62,9 +84,8 @@ public class KafkaConfig {
 
         DefaultErrorHandler errorHandler = new DefaultErrorHandler(
                 deadLetterRecoverer(kafkaTemplate, producerFactory), backOff);
-        errorHandler.addNotRetryableExceptions(InvalidExecutionReportException.class);
-        factory.setCommonErrorHandler(errorHandler);
-        return factory;
+        errorHandler.addNotRetryableExceptions(notRetryable);
+        return errorHandler;
     }
 
     private DeadLetterPublishingRecoverer deadLetterRecoverer(KafkaTemplate<Object, Object> jsonTemplate,

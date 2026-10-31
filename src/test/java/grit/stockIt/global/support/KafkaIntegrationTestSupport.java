@@ -1,6 +1,7 @@
 package grit.stockIt.global.support;
 
 import grit.stockIt.contract.ExchangeTopics;
+import grit.stockIt.contract.MemberTopics;
 import grit.stockIt.domain.matching.queue.MatchingTopics;
 import grit.stockIt.global.outbox.OutboxRelay;
 import org.apache.kafka.clients.admin.AdminClient;
@@ -74,7 +75,9 @@ public abstract class KafkaIntegrationTestSupport extends IntegrationTestSupport
                     new NewTopic(MatchingTopics.COMMANDS, PARTITIONS, (short) 1),
                     new NewTopic(MatchingTopics.COMMANDS + ".DLT", 1, (short) 1),
                     new NewTopic(ExchangeTopics.REPORTS, PARTITIONS, (short) 1),
-                    new NewTopic(ExchangeTopics.REPORTS + ".DLT", 1, (short) 1)
+                    new NewTopic(ExchangeTopics.REPORTS + ".DLT", 1, (short) 1),
+                    new NewTopic(MemberTopics.EVENTS, PARTITIONS, (short) 1),
+                    new NewTopic(MemberTopics.EVENTS + ".DLT", 1, (short) 1)
             )).all().get();
         } catch (Exception e) {
             throw new IllegalStateException("테스트 토픽 생성 실패", e);

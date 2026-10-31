@@ -141,6 +141,8 @@ services:
         create matching.commands.DLT 1
         create exchange.reports 24
         create exchange.reports.DLT 1
+        create member.events 24
+        create member.events.DLT 1
     restart: "no"
     networks:
       - backend

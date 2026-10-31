@@ -3,7 +3,7 @@ package grit.stockIt.domain.mission.service;
 import grit.stockIt.domain.mission.entity.Mission;
 import grit.stockIt.domain.mission.enums.MissionConditionType;
 import grit.stockIt.domain.order.entity.OrderMethod;
-import grit.stockIt.domain.order.event.TradeCompletionEvent;
+import grit.stockIt.domain.mission.event.TradeCompletionEvent;
 import org.springframework.stereotype.Component;
 
 /**

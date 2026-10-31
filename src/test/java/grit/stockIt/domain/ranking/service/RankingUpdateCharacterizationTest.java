@@ -10,7 +10,7 @@ import grit.stockIt.domain.member.entity.AuthProvider;
 import grit.stockIt.domain.member.entity.Member;
 import grit.stockIt.domain.member.repository.MemberRepository;
 import grit.stockIt.domain.mission.dto.UserTierStatusResponse;
-import grit.stockIt.domain.mission.event.RankerAchievedEvent;
+import grit.stockIt.contract.MemberTopics;
 import grit.stockIt.domain.mission.service.MissionQueryService;
 import grit.stockIt.domain.stock.service.StockDetailService;
 import grit.stockIt.global.support.IntegrationTestSupport;
@@ -19,13 +19,11 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.boot.test.mock.mockito.SpyBean;
 import org.springframework.cache.Cache;
 import org.springframework.cache.CacheManager;
-import org.springframework.context.annotation.Bean;
-import org.springframework.context.event.EventListener;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.core.env.ConfigurableEnvironment;
 import org.springframework.core.env.MapPropertySource;
 import org.springframework.test.annotation.DirtiesContext;
@@ -34,7 +32,6 @@ import reactor.core.publisher.Mono;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -65,7 +62,7 @@ import static org.mockito.Mockito.when;
  * - ApplicationEventPublisher는 @SpyBean 불가능 — Spring 컨텍스트는 이를 일반 빈이 아니라
  *   resolvableDependency(ApplicationContext 자기 자신)로 주입하므로, 스파이가 감쌀 기존 빈이 없어
  *   인터페이스를 직접 인스턴스화하려다 BeanInstantiationException이 발생한다. 대신 실제 컨텍스트에
- *   이벤트 리스너 빈(RankerAchievedEventCaptor)을 추가로 등록해 real publish 이벤트를 그대로 캡처한다.
+ *   랭커 이벤트는 아웃박스에 적히므로, 테스트 시작 뒤 적힌 행을 읽어 확인한다.
  * - Environment도 @SpyBean 불가능 — Spring이 beanFactory.registerSingleton()으로 BeanDefinition 우회
  *   직접 등록하므로 MockitoPostProcessor가 대체하지 못하고, 주입된 필드가 여전히 원본 인스턴스라
  *   Mockito.reset() 시 NotAMockException이 발생한다(실측 확인). 대신 실 ConfigurableEnvironment의
@@ -81,32 +78,6 @@ class RankingUpdateCharacterizationTest extends IntegrationTestSupport {
 
     private static final String GATE_OVERRIDE_SOURCE_NAME = "ranking-update-gate-override";
 
-    @TestConfiguration
-    static class RankerAchievedEventCaptureConfig {
-        @Bean
-        RankerAchievedEventCaptor rankerAchievedEventCaptor() {
-            return new RankerAchievedEventCaptor();
-        }
-    }
-
-    /** RankingService가 발행하는 RankerAchievedEvent를 실제 이벤트 버스를 통해 그대로 캡처하는 테스트 전용 리스너. */
-    static class RankerAchievedEventCaptor {
-        private final List<RankerAchievedEvent> captured = Collections.synchronizedList(new ArrayList<>());
-
-        @EventListener
-        void onRankerAchieved(RankerAchievedEvent event) {
-            captured.add(event);
-        }
-
-        List<RankerAchievedEvent> captured() {
-            return captured;
-        }
-
-        void reset() {
-            captured.clear();
-        }
-    }
-
     @Autowired
     private RankingService rankingService;
 
@@ -117,7 +88,10 @@ class RankingUpdateCharacterizationTest extends IntegrationTestSupport {
     private CacheManager cacheManager;
 
     @Autowired
-    private RankerAchievedEventCaptor rankerAchievedEventCaptor;
+    private JdbcTemplate jdbcTemplate;
+
+    // 이 테스트가 시작하기 전 아웃박스의 마지막 행. 그 뒤에 적힌 랭커 이벤트만 본다(DB 를 다른 테스트와 함께 쓴다).
+    private long outboxBaseline;
 
     @Autowired
     private ConfigurableEnvironment configurableEnvironment;
@@ -145,7 +119,7 @@ class RankingUpdateCharacterizationTest extends IntegrationTestSupport {
         // @SpyBean/@MockBean은 캐시된 컨텍스트에서 테스트 간 공유되므로, 각 테스트 시작 시
         // 호출기록·스텁을 초기화한다(격리).
         reset(accountRepository, contestRepository, accountStockRepository, redisMarketDataRepository);
-        rankerAchievedEventCaptor.reset();
+        outboxBaseline = jdbcTemplate.queryForObject("SELECT COALESCE(MAX(id), 0) FROM outbox_message", Long.class);
         when(missionQueryService.getTierInfo(anyString()))
                 .thenReturn(UserTierStatusResponse.builder().currentTier("BRONZE 1").build());
         // 컨테이너 DB에 형제 테스트가 남긴 보유종목이 있어도(캐시미스) 실패하지 않도록 기본 스텁.
@@ -267,13 +241,13 @@ class RankingUpdateCharacterizationTest extends IntegrationTestSupport {
 
         // 워밍 과정에서 발생한 호출기록을 초기화 후, 배치 조기리턴 시 추가 호출이 없음을 단언
         reset(accountStockRepository, redisMarketDataRepository);
-        rankerAchievedEventCaptor.reset();
+        outboxBaseline = jdbcTemplate.queryForObject("SELECT COALESCE(MAX(id), 0) FROM outbox_message", Long.class);
 
         assertThatCode(() -> rankingService.updateAllRankings()).doesNotThrowAnyException();
 
         verify(accountStockRepository, never()).findDistinctStockCodes();
         verify(redisMarketDataRepository, never()).getLastPrice(anyString());
-        assertThat(rankerAchievedEventCaptor.captured()).isEmpty();
+        assertThat(rankerMemberIds()).isEmpty();
 
         // @CacheEvict(allEntries=true, beforeInvocation=true)는 본문 실행 전에 발화하므로
         // 조기 return 경로라도 캐시는 무효화되며, 조기 return이라 self-워밍도 일어나지 않아 비어 있다.
@@ -283,7 +257,7 @@ class RankingUpdateCharacterizationTest extends IntegrationTestSupport {
     // ===== U3: Top10 → RankerAchievedEvent 1회 발행, rank<=10만 포함 =====
 
     @Test
-    @DisplayName("U3: Main 랭킹 12명 중 Top10만 RankerAchievedEvent로 1회 발행된다")
+    @DisplayName("U3: Main 랭킹 12명 중 Top10만 랭커 이벤트로 아웃박스에 적힌다")
     void u3_top10_publishesRankerAchievedEventOnceWithRankLE10Only() {
         openSchedulingGate();
         List<Account> accounts = new ArrayList<>();
@@ -304,8 +278,8 @@ class RankingUpdateCharacterizationTest extends IntegrationTestSupport {
 
         rankingService.updateAllRankings();
 
-        assertThat(rankerAchievedEventCaptor.captured()).hasSize(1);
-        assertThat(rankerAchievedEventCaptor.captured().get(0).top10MemberIds())
+        // 랭커는 회원마다 한 이벤트로 아웃박스에 적힌다.
+        assertThat(rankerMemberIds())
                 .hasSize(10)
                 .containsExactlyInAnyOrderElementsOf(expectedTop10);
     }
@@ -313,7 +287,7 @@ class RankingUpdateCharacterizationTest extends IntegrationTestSupport {
     // ===== U4: Top10 empty → 이벤트 never =====
 
     @Test
-    @DisplayName("U4: Main 계좌가 없으면 RankerAchievedEvent가 발행되지 않는다")
+    @DisplayName("U4: Main 계좌가 없으면 랭커 이벤트가 적히지 않는다")
     void u4_noMainAccounts_neverPublishesRankerAchievedEvent() {
         openSchedulingGate();
         doReturn(List.of()).when(accountRepository).findMainAccountsOrderByBalance();
@@ -321,7 +295,7 @@ class RankingUpdateCharacterizationTest extends IntegrationTestSupport {
 
         assertThatCode(() -> rankingService.updateAllRankings()).doesNotThrowAnyException();
 
-        assertThat(rankerAchievedEventCaptor.captured()).isEmpty();
+        assertThat(rankerMemberIds()).isEmpty();
     }
 
     // ===== U5: @CacheEvict(beforeInvocation=true) → evict 후 self-워밍으로 main만 재적재, 미대상 대회는 비어있음 =====
@@ -365,7 +339,7 @@ class RankingUpdateCharacterizationTest extends IntegrationTestSupport {
 
         // 예외가 Main 랭킹 계산(accountStockRepository.findAll()) 단계에서 발생하므로
         // 이후의 Top10 이벤트 발행 단계까지 도달하지 못한다.
-        assertThat(rankerAchievedEventCaptor.captured()).isEmpty();
+        assertThat(rankerMemberIds()).isEmpty();
     }
 
     // ===== U7: 진행 중 대회 totalAssets·returnRate 2회 갱신 호출 =====
@@ -385,5 +359,13 @@ class RankingUpdateCharacterizationTest extends IntegrationTestSupport {
         // getContestRankingsWithPrices는 대회당 (totalAssets, returnRate) 각 1회씩 호출되며
         // 매 호출마다 accountRepository.findByContest(contest)를 1회씩 사용한다 → 총 2회.
         verify(accountRepository, times(2)).findByContest(any(Contest.class));
+    }
+
+    private List<Long> rankerMemberIds() {
+        return jdbcTemplate.queryForList("""
+                SELECT message_key FROM outbox_message
+                WHERE id > ? AND topic = ? AND payload LIKE '%"type":"RANKER_ACHIEVED"%'
+                ORDER BY id
+                """, String.class, outboxBaseline, MemberTopics.EVENTS).stream().map(Long::valueOf).toList();
     }
 }

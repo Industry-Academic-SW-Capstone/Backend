@@ -4,7 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import grit.stockIt.domain.mission.enums.MissionConditionType;
 import grit.stockIt.domain.order.entity.OrderMethod;
-import grit.stockIt.domain.order.event.TradeCompletionEvent;
+import grit.stockIt.domain.mission.event.TradeCompletionEvent;
 import java.math.BigDecimal;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -25,7 +25,7 @@ class MissionProgressCalculatorTest {
     }
 
     private static TradeCompletionEvent sellEvent(int quantity, String sellPrice, String buyAveragePrice) {
-        return new TradeCompletionEvent(1L, 1L, "005930", OrderMethod.SELL, quantity, new BigDecimal(sellPrice),
+        return new TradeCompletionEvent(1L, 1L, true, "005930", OrderMethod.SELL, quantity, new BigDecimal(sellPrice),
                 null, null, 0, new BigDecimal(buyAveragePrice));
     }
 

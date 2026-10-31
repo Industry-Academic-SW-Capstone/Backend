@@ -4,13 +4,14 @@ import grit.stockIt.domain.account.entity.Account;
 import grit.stockIt.domain.account.entity.AccountStock;
 import grit.stockIt.domain.account.repository.AccountRepository;
 import grit.stockIt.domain.account.repository.AccountStockRepository;
-import grit.stockIt.domain.mission.event.PortfolioAnalyzedEvent;
+import grit.stockIt.contract.MemberEvent;
+import grit.stockIt.contract.MemberEventType;
+import grit.stockIt.domain.member.event.MemberEventOutbox;
 import grit.stockIt.domain.stock.analysis.dto.*;
 import grit.stockIt.global.exception.BadRequestException;
 import grit.stockIt.global.exception.ForbiddenException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
@@ -34,7 +35,7 @@ public class PortfolioAnalysisService {
     private final AccountStockRepository accountStockRepository;
     private final StockAnalysisService stockAnalysisService;
     private final PythonAnalysisClient pythonAnalysisClient;
-    private final ApplicationEventPublisher eventPublisher;
+    private final MemberEventOutbox memberEventOutbox;
 
     @Transactional(readOnly = true)
     public Mono<PortfolioAnalysisResponse> analyzePortfolio(Long accountId, String email) {
@@ -94,7 +95,7 @@ public class PortfolioAnalysisService {
                     // null 체크도 함께 해주면 더 안전합니다.
                     if (response.stockDetails() != null && !response.stockDetails().isEmpty()) {
                         log.info("포트폴리오 분석 성공 이벤트 발행: {}", email);
-                        eventPublisher.publishEvent(new PortfolioAnalyzedEvent(email, accountId));
+                        memberEventOutbox.sendNow(MemberEvent.analyzed(MemberEventType.PORTFOLIO_ANALYZED, email));
                     }
                 })
                 .onErrorResume(e -> {

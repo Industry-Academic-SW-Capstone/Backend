@@ -2,9 +2,11 @@ package grit.stockIt.domain.mission.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.reset;
 
+import grit.stockIt.contract.MemberEvent;
+import grit.stockIt.contract.MemberEventType;
 import grit.stockIt.domain.account.entity.Account;
 import grit.stockIt.domain.account.repository.AccountRepository;
 import grit.stockIt.domain.auth.service.KakaoAuthService;
@@ -13,17 +15,21 @@ import grit.stockIt.domain.member.entity.Member;
 import grit.stockIt.domain.member.repository.MemberRepository;
 import grit.stockIt.domain.member.service.LocalAuthService;
 import grit.stockIt.domain.mission.entity.Mission;
+import grit.stockIt.domain.mission.queue.MissionEventConsumer;
 import grit.stockIt.domain.mission.entity.MissionProgress;
 import grit.stockIt.domain.mission.enums.MissionStatus;
 import grit.stockIt.domain.mission.repository.MissionProgressRepository;
 import grit.stockIt.domain.mission.repository.MissionRepository;
 import grit.stockIt.global.jwt.JwtToken;
 import grit.stockIt.global.support.IntegrationTestSupport;
+import grit.stockIt.global.support.OutboxMemberEvents;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.test.context.jdbc.Sql;
 
@@ -41,6 +47,12 @@ class MemberSignupMissionFlowIntegrationTest extends IntegrationTestSupport {
 
     @Autowired
     private LocalAuthService localAuthService;
+
+    @Autowired
+    private MissionEventConsumer missionEventConsumer;
+
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
 
     @Autowired
     private KakaoAuthService kakaoAuthService;
@@ -89,6 +101,9 @@ class MemberSignupMissionFlowIntegrationTest extends IntegrationTestSupport {
         Optional<Account> defaultAccount = accountRepository.findByMemberAndIsDefaultTrue(member);
         assertThat(defaultAccount).isPresent();
 
+        // 미션 초기화는 가입 이벤트를 받은 미션 워커가 한다.
+        deliverMemberEvents(member);
+
         // then: 트랙 첫 미션(201/301/401)만 IN_PROGRESS, 진행도 0
         assertTrackFirstMissionActive(member, 201L);
         assertTrackFirstMissionActive(member, 301L);
@@ -121,6 +136,7 @@ class MemberSignupMissionFlowIntegrationTest extends IntegrationTestSupport {
 
         assertThat(accountRepository.findByMemberAndIsDefaultTrue(member)).isPresent();
 
+        deliverMemberEvents(member);
         assertTrackFirstMissionActive(member, 201L);
         assertTrackFirstMissionActive(member, 301L);
         assertTrackFirstMissionActive(member, 401L);
@@ -131,25 +147,30 @@ class MemberSignupMissionFlowIntegrationTest extends IntegrationTestSupport {
     }
 
     @Test
-    @DisplayName("미션 초기화 실패 시 signup 트랜잭션 전체가 롤백된다 (member/account 행 부재)")
-    void 미션_초기화_실패시_signup_전체가_롤백된다() {
+    @DisplayName("미션 초기화가 실패해도 가입은 커밋되고, 가입 이벤트는 처리 기록 없이 남아 다시 처리하면 미션이 생긴다")
+    void 미션_초기화_실패해도_가입은_커밋되고_다시_처리할_수_있다() {
         // given
-        String email = uniqueEmail("rbk");
-        MemberSignupRequest request = new MemberSignupRequest(email, "password123!");
-        long accountCountBefore = accountRepository.count();
+        String email = uniqueEmail("rty");
+        localAuthService.signup(new MemberSignupRequest(email, "password123!"));
+        Member member = memberRepository.findByEmail(email).orElseThrow();
+        List<MemberEvent> events = OutboxMemberEvents.take(jdbcTemplate, member.getMemberId());
+        assertThat(events).extracting(MemberEvent::type).containsExactly(MemberEventType.MEMBER_REGISTERED);
 
+        // when: 미션 초기화가 한 번 실패한다 — 가입은 이미 커밋돼 있다
         doThrow(new RuntimeException("미션 초기화 강제 실패"))
-                .when(missionService).initializeMissionsForNewMember(any(Member.class));
-
-        // when & then: 예외가 signup 호출자까지 전파된다
-        // 특성화: 현재 동작 — 미션 초기화 실패가 가입 전체를 실패시킴 (커맨드 방식 동기 결합)
-        assertThatThrownBy(() -> localAuthService.signup(request))
-                .isInstanceOf(RuntimeException.class)
+                .when(missionService).initializeMissionsForNewMember(member.getMemberId());
+        assertThatThrownBy(() -> missionEventConsumer.consume(events.get(0)))
                 .hasMessage("미션 초기화 강제 실패");
+        assertThat(accountRepository.findByMemberAndIsDefaultTrue(member)).isPresent();
 
-        // then: member/account 행 부재 (전체 롤백)
-        assertThat(memberRepository.findByEmail(email)).isEmpty();
-        assertThat(accountRepository.count()).isEqualTo(accountCountBefore);
+        // then: 같은 이벤트를 다시 받으면(재시도) 처리된다
+        reset(missionService);
+        missionEventConsumer.consume(events.get(0));
+        assertTrackFirstMissionActive(member, 201L);
+    }
+
+    private void deliverMemberEvents(Member member) {
+        OutboxMemberEvents.take(jdbcTemplate, member.getMemberId()).forEach(missionEventConsumer::consume);
     }
 
     private void assertTrackFirstMissionActive(Member member, long missionId) {
