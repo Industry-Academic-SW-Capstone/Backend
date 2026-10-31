@@ -1,6 +1,5 @@
 package grit.stockIt.domain.notification.entity;
 
-import grit.stockIt.domain.member.entity.Member;
 import grit.stockIt.domain.notification.enums.NotificationType;
 import grit.stockIt.global.common.BaseEntity;
 import jakarta.persistence.*;
@@ -31,9 +30,9 @@ public class Notification extends BaseEntity {
     @Column(name = "notification_id")
     private Long notificationId;
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "member_id", nullable = false)
-    private Member member;
+    // 회원은 증권사가 가진다. 부가는 번호로만 가리킨다.
+    @Column(name = "member_id", nullable = false)
+    private Long memberId;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "type", nullable = false, length = 30)
@@ -73,7 +72,7 @@ public class Notification extends BaseEntity {
 
     // 특정 회원의 알림인지 확인
     public boolean isOwnedBy(Long memberId) {
-        return this.member.getMemberId().equals(memberId);
+        return this.memberId.equals(memberId);
     }
 }
 

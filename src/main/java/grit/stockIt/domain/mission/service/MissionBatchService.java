@@ -1,7 +1,6 @@
 package grit.stockIt.domain.mission.service;
 
 import grit.stockIt.domain.account.repository.AccountStockRepository;
-import grit.stockIt.domain.member.entity.Member;
 import grit.stockIt.domain.mission.entity.MissionProgress;
 import grit.stockIt.domain.mission.enums.MissionConditionType;
 import grit.stockIt.domain.mission.enums.MissionStatus;
@@ -38,15 +37,15 @@ public class MissionBatchService {
                 .findAllByMission_ConditionTypeAndStatus(MissionConditionType.HOLDING_DAYS, MissionStatus.IN_PROGRESS);
 
         for (MissionProgress progress : holdingProgressList) {
-            Member member = progress.getMember();
+            Long memberId = progress.getMemberId();
 
             // 2. 회원이 주식을 하나라도 가지고 있는지 확인 (수량 > 0)
-            boolean hasStock = accountStockRepository.existsByAccount_MemberAndQuantityGreaterThan(member, 0);
+            boolean hasStock = accountStockRepository.existsByAccount_Member_MemberIdAndQuantityGreaterThan(memberId, 0);
 
             if (hasStock) {
                 progress.incrementProgress(1);
                 log.info("홀딩 미션 +1일 증가: MemberId={}, MissionId={}, NewValue={}",
-                        member.getMemberId(), progress.getMission().getId(), progress.getCurrentValue());
+                        memberId, progress.getMission().getId(), progress.getCurrentValue());
                 missionRewardService.checkMissionCompletion(progress);
             }
         }

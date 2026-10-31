@@ -1,6 +1,5 @@
 package grit.stockIt.domain.title.entity;
 
-import grit.stockIt.domain.member.entity.Member;
 import grit.stockIt.global.common.BaseEntity;
 import jakarta.persistence.*;
 import lombok.AccessLevel;
@@ -27,9 +26,9 @@ public class MemberTitle extends BaseEntity { // 생성(획득) 시간은 BaseEn
     @Column(name = "member_title_id")
     private Long id;
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "member_id", nullable = false)
-    private Member member;
+    // 회원은 증권사가 가진다. 부가는 번호로만 가리킨다.
+    @Column(name = "member_id", nullable = false)
+    private Long memberId;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "title_id", nullable = false)
@@ -40,17 +39,9 @@ public class MemberTitle extends BaseEntity { // 생성(획득) 시간은 BaseEn
     // private boolean isRepresentative = false;
 
     @Builder
-    public MemberTitle(Member member, Title title) {
-        this.member = member;
+    public MemberTitle(Long memberId, Title title) {
+        this.memberId = memberId;
         this.title = title;
     }
 
-    // --- 연관관계 편의 메서드 ---
-
-    /**
-     * Member 엔티티에서 호출하여 양방향 관계를 설정합니다. (Member의 addMemberTitle)
-     */
-    public void setMember(Member member) {
-        this.member = member;
-    }
 }

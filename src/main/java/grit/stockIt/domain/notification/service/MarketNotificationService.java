@@ -127,7 +127,7 @@ public class MarketNotificationService {
 
         // Notification 엔티티 생성
         Notification notification = Notification.builder()
-                .member(member)
+                .memberId(member.getMemberId())
                 .type(notificationType)
                 .title(title)
                 .message(message)

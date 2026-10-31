@@ -52,7 +52,7 @@ public class AdminNotificationService {
             try {
                 // DB에 알림 저장 (모든 회원에게 저장)
                 Notification notification = Notification.builder()
-                        .member(member)
+                        .memberId(member.getMemberId())
                         .type(NotificationType.SYSTEM)
                         .title(title)
                         .message(body)

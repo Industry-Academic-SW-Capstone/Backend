@@ -33,7 +33,7 @@ public class NotificationService {
         Member member = findMemberById(memberId);
 
         Pageable pageable = PageRequest.of(page, size);
-        Page<Notification> notificationPage = notificationRepository.findByMemberOrderByCreatedAtDesc(member, pageable);
+        Page<Notification> notificationPage = notificationRepository.findByMemberIdOrderByCreatedAtDesc(member.getMemberId(), pageable);
 
         Page<NotificationResponse> responsePage = notificationPage.map(NotificationResponse::from);
 
@@ -43,7 +43,7 @@ public class NotificationService {
     // 읽지 않은 알림 개수 조회
     public UnreadCountResponse getUnreadCount(Long memberId) {
         Member member = findMemberById(memberId);
-        long count = notificationRepository.countByMemberAndIsReadFalse(member);
+        long count = notificationRepository.countByMemberIdAndIsReadFalse(member.getMemberId());
         return UnreadCountResponse.of(count);
     }
 
@@ -71,7 +71,7 @@ public class NotificationService {
     @Transactional
     public void markAllAsRead(Long memberId) {
         Member member = findMemberById(memberId);
-        List<Notification> unreadNotifications = notificationRepository.findByMemberAndIsReadFalseOrderByCreatedAtDesc(member);
+        List<Notification> unreadNotifications = notificationRepository.findByMemberIdAndIsReadFalseOrderByCreatedAtDesc(member.getMemberId());
 
         unreadNotifications.forEach(Notification::markAsRead);
 
@@ -95,7 +95,7 @@ public class NotificationService {
     // 타입별 알림 조회
     public List<NotificationResponse> getNotificationsByType(Long memberId, NotificationType type) {
         Member member = findMemberById(memberId);
-        List<Notification> notifications = notificationRepository.findByMemberAndTypeOrderByCreatedAtDesc(member, type);
+        List<Notification> notifications = notificationRepository.findByMemberIdAndTypeOrderByCreatedAtDesc(member.getMemberId(), type);
 
         return notifications.stream()
                 .map(NotificationResponse::from)

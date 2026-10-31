@@ -21,7 +21,7 @@ public class MemberProfileService {
     public MemberResponse getMemberByEmail(String email) {
         Member member = memberRepository.findByEmail(email)
                 .orElseThrow(() -> new IllegalArgumentException("회원을 찾을 수 없습니다."));
-        return MemberResponse.from(member);
+        return MemberResponse.from(member, memberTitleService.titlesOf(member.getMemberId()));
     }
 
     @Transactional
@@ -59,7 +59,7 @@ public class MemberProfileService {
         }
 
         Member saved = memberRepository.save(member);
-        return MemberResponse.from(saved);
+        return MemberResponse.from(saved, memberTitleService.titlesOf(saved.getMemberId()));
     }
 
     /**

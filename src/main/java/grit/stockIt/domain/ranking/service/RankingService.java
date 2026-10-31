@@ -182,12 +182,8 @@ public class RankingService {
             BigDecimal myTotalAssets = myEntry != null ? myEntry.getTotalAssets() : myAccount.getCash();
 
             grit.stockIt.domain.member.entity.Member member = myAccount.getMember();
-            String representativeTitle = member.getRepresentativeTitle() != null 
-                    ? member.getRepresentativeTitle().getName() 
-                    : null;
-            Long representativeTitleId = member.getRepresentativeTitle() != null
-                    ? member.getRepresentativeTitle().getId()
-                    : null;
+            String representativeTitle = member.getRepresentativeTitleName();
+            Long representativeTitleId = member.getRepresentativeTitleId();
             String tier = getTierForMember(member);
             
             return MyRankResponse.builder()
@@ -219,12 +215,8 @@ public class RankingService {
         BigDecimal myReturnRate = returnRateEntry != null ? returnRateEntry.getReturnRate() : null;
 
         grit.stockIt.domain.member.entity.Member member = myAccount.getMember();
-        String representativeTitle = member.getRepresentativeTitle() != null 
-                ? member.getRepresentativeTitle().getName() 
-                : null;
-        Long representativeTitleId = member.getRepresentativeTitle() != null
-                ? member.getRepresentativeTitle().getId()
-                : null;
+        String representativeTitle = member.getRepresentativeTitleName();
+        Long representativeTitleId = member.getRepresentativeTitleId();
         String tier = getTierForMember(member);
 
         return MyRankResponse.builder()
@@ -316,12 +308,8 @@ public class RankingService {
             // returnRate는 총자산순 변환에서는 항상 null (수익률순은 ForReturnRate 변환기가 별도 처리)
             BigDecimal returnRate = null;
 
-            String representativeTitle = account.getMember().getRepresentativeTitle() != null 
-                    ? account.getMember().getRepresentativeTitle().getName() 
-                    : null;
-            Long representativeTitleId = account.getMember().getRepresentativeTitle() != null
-                    ? account.getMember().getRepresentativeTitle().getId()
-                    : null;
+            String representativeTitle = account.getMember().getRepresentativeTitleName();
+            Long representativeTitleId = account.getMember().getRepresentativeTitleId();
             String tier = getTierForMember(account.getMember());
 
             RankingItemResponse dto = RankingItemResponse.builder()
@@ -367,12 +355,8 @@ public class RankingService {
             BigDecimal actualTotalAssets =
                     rankingCalculationService.calculateTotalAssets(account, currentPrices, accountStocksMap);
 
-            String representativeTitle = account.getMember().getRepresentativeTitle() != null 
-                    ? account.getMember().getRepresentativeTitle().getName() 
-                    : null;
-            Long representativeTitleId = account.getMember().getRepresentativeTitle() != null
-                    ? account.getMember().getRepresentativeTitle().getId()
-                    : null;
+            String representativeTitle = account.getMember().getRepresentativeTitleName();
+            Long representativeTitleId = account.getMember().getRepresentativeTitleId();
             String tier = getTierForMember(account.getMember());
 
             RankingItemResponse dto = RankingItemResponse.builder()

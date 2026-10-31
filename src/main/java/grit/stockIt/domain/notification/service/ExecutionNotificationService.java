@@ -78,7 +78,7 @@ public class ExecutionNotificationService {
 
         // Notification 엔티티 생성
         Notification notification = Notification.builder()
-                .member(member)
+                .memberId(member.getMemberId())
                 .type(NotificationType.EXECUTION)
                 .title(title)
                 .message(message)

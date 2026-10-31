@@ -79,7 +79,7 @@ public class MissionService {
 
         // 5. 업적 달성 처리
         MissionProgress bankruptcyProgress = missionProgressRepository
-                .findByMemberAndMissionTypeWithMission(member, MissionTrack.ACHIEVEMENT, MissionConditionType.ASSET_UNDER_THRESHOLD)
+                .findByMemberAndMissionTypeWithMission(member.getMemberId(), MissionTrack.ACHIEVEMENT, MissionConditionType.ASSET_UNDER_THRESHOLD)
                 .orElseThrow(() -> new EntityNotFoundException("인생 2회차 미션 데이터를 찾을 수 없습니다."));
 
         if (bankruptcyProgress.isCompleted()) {
@@ -88,15 +88,15 @@ public class MissionService {
 
         bankruptcyProgress.setCurrentValue(bankruptcyProgress.getMission().getGoalValue()); // 조건 충족 표시
         bankruptcyProgress.complete();
-        missionRewardService.distributeReward(member, bankruptcyProgress.getMission().getReward());
+        missionRewardService.distributeReward(member.getMemberId(), bankruptcyProgress.getMission().getReward());
 
         log.info("파산 신청 승인! 구조지원금 지급 완료. Member={}", member.getName());
 
         // [추가] 2. 티어 점수 완전 초기화 (Bronze 0점으로 강등)
-        missionProgressRepository.findByMemberAndMissionTypeWithMission(member, MissionTrack.ACHIEVEMENT, MissionConditionType.ACTIVITY_SCORE)
+        missionProgressRepository.findByMemberAndMissionTypeWithMission(member.getMemberId(), MissionTrack.ACHIEVEMENT, MissionConditionType.ACTIVITY_SCORE)
                 .ifPresent(p -> p.setCurrentValue(0));
 
-        missionProgressRepository.findByMemberAndMissionTypeWithMission(member, MissionTrack.ACHIEVEMENT, MissionConditionType.SKILL_SCORE)
+        missionProgressRepository.findByMemberAndMissionTypeWithMission(member.getMemberId(), MissionTrack.ACHIEVEMENT, MissionConditionType.SKILL_SCORE)
                 .ifPresent(p -> p.setCurrentValue(0));
 
         log.info("파산 승인 및 티어 초기화 완료: Member={}", member.getName());
@@ -138,12 +138,12 @@ public class MissionService {
             }
 
             MissionProgress newProgress = MissionProgress.builder()
-                    .member(newMember)
+                    .memberId(newMember.getMemberId())
                     .mission(mission)
                     .currentValue(initialValue)
                     .status(initialStatus)
                     .build();
-            newMember.addMissionProgress(newProgress);
+            missionProgressRepository.save(newProgress);
         }
         log.info("신규 회원 초기 미션 총 {}건 세팅 완료.", allMissions.size());
     }
@@ -154,7 +154,7 @@ public class MissionService {
     public Reward claimDailyAttendance(String email) {
         Member member = getMemberByEmail(email);
         MissionProgress attendanceProgress = missionProgressRepository
-                .findByMemberAndMissionTypeWithMission(member, MissionTrack.DAILY, MissionConditionType.LOGIN_COUNT)
+                .findByMemberAndMissionTypeWithMission(member.getMemberId(), MissionTrack.DAILY, MissionConditionType.LOGIN_COUNT)
                 .orElseThrow(() -> new EntityNotFoundException("일일 출석 미션을 찾을 수 없습니다."));
 
         if (attendanceProgress.getStatus() == MissionStatus.COMPLETED || attendanceProgress.isCompleted()) {
@@ -178,7 +178,7 @@ public class MissionService {
 
     private void handleDailySimpleMission(String email, MissionConditionType type) {
         Member member = getMemberByEmail(email);
-        missionProgressRepository.findByMemberAndMissionTypeWithMission(member, MissionTrack.DAILY, type)
+        missionProgressRepository.findByMemberAndMissionTypeWithMission(member.getMemberId(), MissionTrack.DAILY, type)
                 .ifPresent(progress -> {
                     if (progress.getStatus() != MissionStatus.COMPLETED && !progress.isCompleted()) {
                         progress.incrementProgress(1);

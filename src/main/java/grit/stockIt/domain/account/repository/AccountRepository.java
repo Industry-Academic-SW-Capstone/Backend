@@ -23,6 +23,8 @@ public interface AccountRepository extends JpaRepository<Account, Long> {
     // 회원의 기본 계좌를 찾음 (isDefault = true)
     Optional<Account> findByMemberAndIsDefaultTrue(Member member);
 
+    Optional<Account> findByMember_MemberIdAndIsDefaultTrue(Long memberId);
+
     // Main 계좌 전체 랭킹 조회 (잔액 순)
     @Query("SELECT a FROM Account a " +
            "JOIN FETCH a.member m " +

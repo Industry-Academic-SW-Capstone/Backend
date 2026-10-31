@@ -11,6 +11,8 @@ import grit.stockIt.global.jwt.JwtToken;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+
+import java.util.List;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
@@ -46,7 +48,8 @@ public class LocalAuthService {
 
         Member savedMember = memberRegistrationService.register(member);
 
-        return MemberResponse.from(savedMember);
+        // 방금 가입한 회원은 보유 칭호가 없다.
+        return MemberResponse.from(savedMember, List.of());
     }
 
     /**

@@ -52,7 +52,7 @@ class MissionRewardCashConcurrencyTest extends IntegrationTestSupport {
                     accountRepository.findByIdWithLock(accountId).orElseThrow().decreaseCash(SETTLED_AMOUNT)))
                     .join();
 
-            missionRewardService.distributeReward(member, reward);
+            missionRewardService.distributeReward(member.getMemberId(), reward);
         });
 
         BigDecimal cash = accountRepository.findById(accountId).orElseThrow().getCash();

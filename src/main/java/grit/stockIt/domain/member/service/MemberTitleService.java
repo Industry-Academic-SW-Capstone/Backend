@@ -3,12 +3,15 @@ package grit.stockIt.domain.member.service;
 import grit.stockIt.domain.member.dto.RepresentativeTitleResponse;
 import grit.stockIt.domain.member.entity.Member;
 import grit.stockIt.domain.member.repository.MemberRepository;
+import grit.stockIt.domain.title.dto.TitleResponse;
 import grit.stockIt.domain.title.entity.Title;
 import grit.stockIt.domain.title.repository.MemberTitleRepository;
 import grit.stockIt.domain.title.repository.TitleRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
+import java.util.List;
 
 /**
  * 대표 칭호 조회·변경.
@@ -29,7 +32,9 @@ public class MemberTitleService {
         Member member = memberRepository.findByEmail(email)
                 .orElseThrow(() -> new IllegalArgumentException("회원을 찾을 수 없습니다."));
 
-        return RepresentativeTitleResponse.from(member.getRepresentativeTitle());
+        Title title = member.getRepresentativeTitleId() == null ? null
+                : titleRepository.findById(member.getRepresentativeTitleId()).orElse(null);
+        return RepresentativeTitleResponse.from(title);
     }
 
     @Transactional
@@ -38,7 +43,7 @@ public class MemberTitleService {
                 .orElseThrow(() -> new IllegalArgumentException("회원을 찾을 수 없습니다."));
 
         if (titleId == null) {
-            member.updateRepresentativeTitle(null);
+            member.updateRepresentativeTitle(null, null);
             // 더티 체킹으로 반영되므로 저장 호출 없이 종료
             return;
         }
@@ -49,7 +54,7 @@ public class MemberTitleService {
             throw new IllegalArgumentException("획득하지 않은 칭호는 장착할 수 없습니다.");
         }
 
-        member.updateRepresentativeTitle(title);
+        member.updateRepresentativeTitle(title.getId(), title.getName());
 
         memberRepository.save(member);
     }
@@ -66,7 +71,7 @@ public class MemberTitleService {
             throw new IllegalArgumentException("보유하지 않은 칭호는 장착할 수 없습니다.");
         }
 
-        member.updateRepresentativeTitle(title);
+        member.updateRepresentativeTitle(title.getId(), title.getName());
     }
 
     private Title findTitle(Long titleId) {
@@ -74,7 +79,15 @@ public class MemberTitleService {
                 .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 칭호입니다."));
     }
 
+    // 회원 프로필에 보여 줄 보유 칭호 목록. 칭호는 부가 서비스의 데이터다.
+    @Transactional(readOnly = true)
+    public List<TitleResponse> titlesOf(Long memberId) {
+        return memberTitleRepository.findAllByMemberId(memberId).stream()
+                .map(memberTitle -> new TitleResponse(memberTitle.getTitle()))
+                .toList();
+    }
+
     private boolean owns(Member member, Title title) {
-        return memberTitleRepository.existsByMemberAndTitle(member, title);
+        return memberTitleRepository.existsByMemberIdAndTitle(member.getMemberId(), title);
     }
 }

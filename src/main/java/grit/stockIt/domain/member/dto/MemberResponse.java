@@ -14,7 +14,6 @@ import lombok.NoArgsConstructor;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
-import java.util.stream.Collectors;
 
 @Getter
 @Builder
@@ -40,7 +39,8 @@ public class MemberResponse {
     private Long representativeTitleId;
     private BigDecimal balance;
 
-    public static MemberResponse from(Member member) {
+    // 보유 칭호는 부가 서비스의 데이터라 호출하는 쪽이 넘긴다.
+    public static MemberResponse from(Member member, List<TitleResponse> titles) {
 
         // --- [수정] 로직 추가: 기본 계좌 잔액 찾기 ---
         // Member 엔티티의 accounts 리스트와 Account의 isDefault 필드를 사용
@@ -50,11 +50,6 @@ public class MemberResponse {
                 .map(Account::getCash) // 해당 계좌의 잔액(cash)을 가져옴
                 .orElse(BigDecimal.ZERO); // 기본 계좌가 없으면 0으로 표시
 
-        // --- [수정] 로직 추가: 칭호 목록 변환 ---
-        // Member 엔티티의 memberTitles 리스트를 사용
-        List<TitleResponse> titlesList = member.getMemberTitles().stream()
-                .map(memberTitle -> new TitleResponse(memberTitle.getTitle())) // (TitleResponse DTO로 변환)
-                .collect(Collectors.toList());
 
         return MemberResponse.builder()
                 .memberId(member.getMemberId())
@@ -63,8 +58,8 @@ public class MemberResponse {
                 .profileImage(member.getProfileImage())
                 .provider(member.getProvider() != null ? member.getProvider().name() : null)
                 .createdAt(member.getCreatedAt())
-                .titles(titlesList)
-                .representativeTitleId(member.getRepresentativeTitle() != null ? member.getRepresentativeTitle().getId() : null)
+                .titles(titles)
+                .representativeTitleId(member.getRepresentativeTitleId())
                 .balance(currentBalance)
                 .twoFactorEnabled(member.isTwoFactorEnabled())
                 .notificationAgreement(member.isNotificationAgreement())

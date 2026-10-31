@@ -256,6 +256,6 @@ class MissionSchedulerFlowIntegrationTest extends IntegrationTestSupport {
 
     private MissionProgress progressOf(Member member, long missionId) {
         Mission mission = missionRepository.findById(missionId).orElseThrow();
-        return missionProgressRepository.findByMemberAndMission(member, mission).orElseThrow();
+        return missionProgressRepository.findByMemberIdAndMission(member.getMemberId(), mission).orElseThrow();
     }
 }

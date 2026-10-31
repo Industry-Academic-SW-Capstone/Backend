@@ -161,7 +161,7 @@ class MemberSignupMissionFlowIntegrationTest extends IntegrationTestSupport {
     private MissionProgress progressOf(Member member, long missionId) {
         Mission mission = missionRepository.findById(missionId)
                 .orElseThrow(() -> new IllegalStateException("data.sql 시드 미션 없음: " + missionId));
-        return missionProgressRepository.findByMemberAndMission(member, mission)
+        return missionProgressRepository.findByMemberIdAndMission(member.getMemberId(), mission)
                 .orElseThrow(() -> new IllegalStateException("mission_progress 없음: missionId=" + missionId));
     }
 }

@@ -1,6 +1,5 @@
 package grit.stockIt.domain.mission.repository;
 
-import grit.stockIt.domain.member.entity.Member;
 import grit.stockIt.domain.mission.entity.Mission;
 import grit.stockIt.domain.mission.entity.MissionProgress;
 import grit.stockIt.domain.mission.enums.MissionConditionType;
@@ -16,37 +15,37 @@ import java.util.Optional;
 
 public interface MissionProgressRepository extends JpaRepository<MissionProgress, Long> {
 
-    Optional<MissionProgress> findByMemberAndMission(Member member, Mission mission);
+    Optional<MissionProgress> findByMemberIdAndMission(Long memberId, Mission mission);
 
-    List<MissionProgress> findByMemberAndStatus(Member member, MissionStatus status);
+    List<MissionProgress> findByMemberIdAndStatus(Long memberId, MissionStatus status);
 
     // --- [추가] 시드 복사기 업적용: 완료된 미션 개수 카운트 ---
-    long countByMemberAndStatus(Member member, MissionStatus status);
+    long countByMemberIdAndStatus(Long memberId, MissionStatus status);
 
     List<MissionProgress> findAllByMission_Track(MissionTrack track);
 
-    List<MissionProgress> findAllByMemberAndMission_Track(Member member, MissionTrack track);
+    List<MissionProgress> findAllByMemberIdAndMission_Track(Long memberId, MissionTrack track);
 
     @Query("SELECT mp FROM MissionProgress mp " +
             "JOIN FETCH mp.mission m " +
             "LEFT JOIN FETCH m.reward r " +
-            "WHERE mp.member = :member")
-    List<MissionProgress> findByMemberWithMissionAndReward(@Param("member") Member member);
+            "WHERE mp.memberId = :memberId")
+    List<MissionProgress> findByMemberWithMissionAndReward(@Param("memberId") Long memberId);
 
     @Query("SELECT mp FROM MissionProgress mp JOIN FETCH mp.mission m " +
-            "WHERE mp.member = :member " +
+            "WHERE mp.memberId = :memberId " +
             "AND m.track = :track " +
             "AND m.conditionType = :conditionType")
     Optional<MissionProgress> findByMemberAndMissionTypeWithMission(
-            @Param("member") Member member,
+            @Param("memberId") Long memberId,
             @Param("track") MissionTrack track,
             @Param("conditionType") MissionConditionType conditionType
     );
 
     @Query("SELECT mp FROM MissionProgress mp JOIN FETCH mp.mission " +
-            "WHERE mp.member = :member AND mp.status = :status")
+            "WHERE mp.memberId = :memberId AND mp.status = :status")
     List<MissionProgress> findByMemberAndStatusWithMission(
-            @Param("member") Member member,
+            @Param("memberId") Long memberId,
             @Param("status") MissionStatus status
     );
 
@@ -60,13 +59,13 @@ public interface MissionProgressRepository extends JpaRepository<MissionProgress
     // 이렇게 하면 7일, 15일 짜리가 아니라 100,000일 짜리 '트래커' 미션이 선택됨
     @Query("SELECT mp FROM MissionProgress mp " +
             "JOIN FETCH mp.mission m " +
-            "WHERE mp.member = :member " +
+            "WHERE mp.memberId = :memberId " +
             "AND m.track = :track " +
             "AND m.conditionType = :conditionType " +
             "ORDER BY m.goalValue DESC " + // 목표치가 가장 높은 순 정렬
             "LIMIT 1")                     // 1개만 가져오기
     Optional<MissionProgress> findTopByMemberAndConditionOrderByGoalDesc(
-            @Param("member") Member member,
+            @Param("memberId") Long memberId,
             @Param("track") MissionTrack track,
             @Param("conditionType") MissionConditionType conditionType
     );
@@ -74,11 +73,11 @@ public interface MissionProgressRepository extends JpaRepository<MissionProgress
     // [신규 추가] 다건 조회용 (연속 출석 초기화 등) -> List 반환!
     // 메서드 이름에 'All'을 붙여서 구분합니다.
     @Query("SELECT mp FROM MissionProgress mp JOIN FETCH mp.mission m " +
-            "WHERE mp.member = :member " +
+            "WHERE mp.memberId = :memberId " +
             "AND m.track = :track " +
             "AND m.conditionType = :conditionType")
     List<MissionProgress> findAllByMemberAndMissionTypeWithMission(
-            @Param("member") Member member,
+            @Param("memberId") Long memberId,
             @Param("track") MissionTrack track,
             @Param("conditionType") MissionConditionType conditionType
     );
@@ -97,8 +96,8 @@ public interface MissionProgressRepository extends JpaRepository<MissionProgress
             "WHERE mp.mission.track = :streakTrack " +
             "AND mp.mission.conditionType = :streakCondition " +
             "AND mp.currentValue > 0 " +
-            "AND mp.member.memberId IN (" +
-            "SELECT dmp.member.memberId " +
+            "AND mp.memberId IN (" +
+            "SELECT dmp.memberId " +
             "FROM MissionProgress dmp " +
             "WHERE dmp.mission.track = :dailyTrack " +
             "AND dmp.mission.conditionType = :dailyCondition " +

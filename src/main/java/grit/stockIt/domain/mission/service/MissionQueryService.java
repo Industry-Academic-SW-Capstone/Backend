@@ -42,12 +42,12 @@ public class MissionQueryService {
         // 1. 연속 출석 일수 (업적 중 LOGIN_STREAK 타입의 현재 진행도 조회)
 // 7일, 15일, 30일 업적 미션들과 충돌하지 않음
         int streak = missionProgressRepository
-                .findTopByMemberAndConditionOrderByGoalDesc(member, MissionTrack.ACHIEVEMENT, MissionConditionType.LOGIN_STREAK)
+                .findTopByMemberAndConditionOrderByGoalDesc(member.getMemberId(), MissionTrack.ACHIEVEMENT, MissionConditionType.LOGIN_STREAK)
                 .map(MissionProgress::getCurrentValue)
                 .orElse(0); // 트래커 미션이 아직 생성 안 됐으면 0일
 
         // 2. 남은 일일 미션 개수 (DAILY 트랙 중, 완료되지 않은 것의 개수)
-        List<MissionProgress> dailyMissions = missionProgressRepository.findAllByMemberAndMission_Track(member, MissionTrack.DAILY);
+        List<MissionProgress> dailyMissions = missionProgressRepository.findAllByMemberIdAndMission_Track(member.getMemberId(), MissionTrack.DAILY);
         int remaining = (int) dailyMissions.stream()
                 .filter(mp -> !mp.isCompleted())
                 .count();
@@ -61,7 +61,7 @@ public class MissionQueryService {
     // 트랙별 미션 리스트 조회 (Enum 변환을 통한 안정성 확보)
     public List<MissionListResponse> getMissionsByTrack(String email, String trackName) {
         Member member = getMemberByEmail(email);
-        List<MissionProgress> allProgress = missionProgressRepository.findByMemberWithMissionAndReward(member);
+        List<MissionProgress> allProgress = missionProgressRepository.findByMemberWithMissionAndReward(member.getMemberId());
 
         // 1. "ALL"인 경우 전체 반환 (대소문자 무시: all, ALL 등)
         if (trackName == null || "ALL".equalsIgnoreCase(trackName)) {
@@ -90,7 +90,7 @@ public class MissionQueryService {
     // 보유 칭호 목록 조회
     public List<MemberTitleResponse> getMyTitles(String email) {
         Member member = getMemberByEmail(email);
-        return memberTitleRepository.findAllByMember(member).stream()
+        return memberTitleRepository.findAllByMemberId(member.getMemberId()).stream()
                 .map(MemberTitleResponse::new)
                 .collect(Collectors.toList());
     }
@@ -99,11 +99,11 @@ public class MissionQueryService {
         Member member = getMemberByEmail(email);
 
         // 1. 활동 점수
-        int activityScore = missionProgressRepository.findByMemberAndMissionTypeWithMission(member, MissionTrack.ACHIEVEMENT, MissionConditionType.ACTIVITY_SCORE)
+        int activityScore = missionProgressRepository.findByMemberAndMissionTypeWithMission(member.getMemberId(), MissionTrack.ACHIEVEMENT, MissionConditionType.ACTIVITY_SCORE)
                 .map(MissionProgress::getCurrentValue).orElse(0);
 
         // 2. 실력 점수
-        int totalProfit = missionProgressRepository.findByMemberAndMissionTypeWithMission(member, MissionTrack.ACHIEVEMENT, MissionConditionType.SKILL_SCORE)
+        int totalProfit = missionProgressRepository.findByMemberAndMissionTypeWithMission(member.getMemberId(), MissionTrack.ACHIEVEMENT, MissionConditionType.SKILL_SCORE)
                 .map(MissionProgress::getCurrentValue).orElse(0);
 
         int skillScore = missionProgressCalculator.calculateScoreFromProfit(totalProfit);
@@ -224,7 +224,7 @@ public class MissionQueryService {
 
     public List<MissionProgress> getMissionProgressList(String email) {
         Member member = getMemberByEmail(email);
-        return missionProgressRepository.findByMemberWithMissionAndReward(member);
+        return missionProgressRepository.findByMemberWithMissionAndReward(member.getMemberId());
     }
 
     // getMemberByEmail은 B-6 방침과 동일하게 private 복제 (과추상화 금지)

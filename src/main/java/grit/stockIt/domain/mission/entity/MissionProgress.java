@@ -1,6 +1,5 @@
 package grit.stockIt.domain.mission.entity;
 
-import grit.stockIt.domain.member.entity.Member;
 import grit.stockIt.domain.mission.enums.MissionStatus;
 import grit.stockIt.global.common.BaseEntity;
 import jakarta.persistence.*;
@@ -28,9 +27,9 @@ public class MissionProgress extends BaseEntity { // 생성 시간(createdAt) = 
     @Column(name = "mission_progress_id")
     private Long id;
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "member_id", nullable = false)
-    private Member member;
+    // 회원은 증권사가 가진다. 부가는 번호로만 가리킨다.
+    @Column(name = "member_id", nullable = false)
+    private Long memberId;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "mission_id", nullable = false)
@@ -50,8 +49,8 @@ public class MissionProgress extends BaseEntity { // 생성 시간(createdAt) = 
     private MissionStatus status;
 
     @Builder
-    public MissionProgress(Member member, Mission mission, int currentValue, MissionStatus status) {
-        this.member = member;
+    public MissionProgress(Long memberId, Mission mission, int currentValue, MissionStatus status) {
+        this.memberId = memberId;
         this.mission = mission;
         this.currentValue = currentValue;
         this.status = status;
@@ -59,15 +58,6 @@ public class MissionProgress extends BaseEntity { // 생성 시간(createdAt) = 
     public void setCurrentValue(int value) {
         this.currentValue = value;
     }
-    // --- 연관관계 편의 메서드 ---
-
-    /**
-     * Member 엔티티에서 호출하여 양방향 관계를 설정합니다. (Member의 addMissionProgress)
-     */
-    public void setMember(Member member) {
-        this.member = member;
-    }
-
     // --- 핵심 비즈니스 로직 메서드 (Service에서 호출) ---
 
     /**

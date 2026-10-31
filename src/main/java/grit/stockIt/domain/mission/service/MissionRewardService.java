@@ -1,7 +1,6 @@
 package grit.stockIt.domain.mission.service;
 
 import grit.stockIt.domain.account.repository.AccountRepository;
-import grit.stockIt.domain.member.entity.Member;
 import grit.stockIt.domain.mission.entity.Mission;
 import grit.stockIt.domain.mission.entity.MissionProgress;
 import grit.stockIt.domain.mission.entity.Reward;
@@ -53,34 +52,34 @@ public class MissionRewardService {
         }
 
         progress.complete();
-        log.info("미션 완료: MemberId={}, MissionId={}", progress.getMember().getMemberId(), progress.getMission().getId());
+        log.info("미션 완료: MemberId={}, MissionId={}", progress.getMemberId(), progress.getMission().getId());
 
         Mission mission = progress.getMission();
         Reward reward = mission.getReward();
 
         // 보상 지급
-        distributeReward(progress.getMember(), reward);
+        distributeReward(progress.getMemberId(), reward);
 
         // 출석 미션은 알림 발송 제외
         if (mission.getConditionType() != MissionConditionType.LOGIN_COUNT) {
             // 미션 완료 알림 이벤트 발행
-            publishMissionCompletedEvent(progress.getMember(), mission, reward);
+            publishMissionCompletedEvent(progress.getMemberId(), mission, reward);
         }
 
         activateNextMission(progress);
         handleMissionChain(progress);
-        checkSeedCopierAchievement(progress.getMember());
+        checkSeedCopierAchievement(progress.getMemberId());
 
         // [추가] 3. 활동 점수(Activity Score) 반영
-        updateActivityScore(progress.getMember());
+        updateActivityScore(progress.getMemberId());
     }
 
     // 레전드 미션(903) 달성 체크
-    public void checkLegendTier(Member member, int totalScore) {
+    public void checkLegendTier(Long memberId, int totalScore) {
         if (totalScore >= MissionTierPolicy.LEGEND_THRESHOLD_SCORE) { // Legend 기준 점수
             missionRepository.findAllByTrackAndConditionType(MissionTrack.ACHIEVEMENT, MissionConditionType.REACH_LEGEND)
                     .stream().findFirst().ifPresent(legendMission -> {
-                        missionProgressRepository.findByMemberAndMission(member, legendMission)
+                        missionProgressRepository.findByMemberIdAndMission(memberId, legendMission)
                                 .ifPresent(progress -> {
                                     if (!progress.isCompleted()) {
                                         progress.setCurrentValue(1);
@@ -92,11 +91,11 @@ public class MissionRewardService {
     }
 
     // applyForBankruptcy(B-6 잔류) 등 완료 판정 없이 보상만 지급하는 경로가 있어 public
-    public void distributeReward(Member member, Reward reward) {
+    public void distributeReward(Long memberId, Reward reward) {
         if (reward == null) return;
 
         if (reward.getMoneyAmount() > 0) {
-            accountRepository.findByMemberAndIsDefaultTrue(member)
+            accountRepository.findByMember_MemberIdAndIsDefaultTrue(memberId)
                     .ifPresentOrElse(
                             acc -> {
                                 // 미션 트랜잭션은 계좌를 먼저 읽어 둔다. 잠그며 다시 읽지 않으면 그 사이 커밋된 정산을 덮어쓴다
@@ -104,14 +103,14 @@ public class MissionRewardService {
                                 acc.increaseCash(BigDecimal.valueOf(reward.getMoneyAmount()));
                                 log.info("보상 지급: {}원", reward.getMoneyAmount());
                             },
-                            () -> log.error("보상 지급 실패: 기본 계좌 없음 MemberId={}", member.getMemberId())
+                            () -> log.error("보상 지급 실패: 기본 계좌 없음 MemberId={}", memberId)
                     );
         }
 
         if (reward.getTitleToGrant() != null) {
-            if (!memberTitleRepository.existsByMemberAndTitle(member, reward.getTitleToGrant())) {
-                member.addMemberTitle(MemberTitle.builder()
-                        .member(member)
+            if (!memberTitleRepository.existsByMemberIdAndTitle(memberId, reward.getTitleToGrant())) {
+                memberTitleRepository.save(MemberTitle.builder()
+                        .memberId(memberId)
                         .title(reward.getTitleToGrant())
                         .build());
                 log.info("칭호 지급: {}", reward.getTitleToGrant().getName());
@@ -122,7 +121,7 @@ public class MissionRewardService {
     /**
      * 미션 완료 알림 이벤트 발행
      */
-    private void publishMissionCompletedEvent(Member member, Mission mission, Reward reward) {
+    private void publishMissionCompletedEvent(Long memberId, Mission mission, Reward reward) {
         Long rewardId = reward != null ? reward.getId() : null;
         Long moneyAmount = reward != null ? reward.getMoneyAmount() : 0L;
         String titleName = (reward != null && reward.getTitleToGrant() != null)
@@ -130,7 +129,7 @@ public class MissionRewardService {
                 : null;
 
         MissionCompletedEvent event = new MissionCompletedEvent(
-                member.getMemberId(),
+                memberId,
                 mission.getId(),
                 mission.getName(),
                 mission.getTrack(),
@@ -141,12 +140,12 @@ public class MissionRewardService {
 
         eventPublisher.publishEvent(event);
         log.debug("미션 완료 이벤트 발행: memberId={}, missionId={}, missionName={}",
-                member.getMemberId(), mission.getId(), mission.getName());
+                memberId, mission.getId(), mission.getName());
     }
 
     private void activateNextMission(MissionProgress completedProgress) {
         Mission completedMission = completedProgress.getMission();
-        Member member = completedProgress.getMember();
+        Long memberId = completedProgress.getMemberId();
 
         if (completedMission.getTrack() == MissionTrack.DAILY || completedMission.getTrack() == MissionTrack.ACHIEVEMENT) {
             return;
@@ -156,25 +155,24 @@ public class MissionRewardService {
 
         if (nextMission != null) {
             log.info("다음 미션 활성화: MissionId={}", nextMission.getId());
-            missionProgressRepository.findByMemberAndMission(member, nextMission)
+            missionProgressRepository.findByMemberIdAndMission(memberId, nextMission)
                     .orElseGet(() -> {
                         MissionProgress newProgress = MissionProgress.builder()
-                                .member(member)
+                                .memberId(memberId)
                                 .mission(nextMission)
                                 .status(MissionStatus.INACTIVE)
                                 .build();
-                        member.addMissionProgress(newProgress);
-                        return newProgress;
+                        return missionProgressRepository.save(newProgress);
                     }).activate();
         } else if (completedMission.getType() == MissionType.ADVANCED) {
             log.info("트랙 최종 완료: Track={}", completedMission.getTrack());
-            resetMissionTrack(member, completedMission.getTrack());
+            resetMissionTrack(memberId, completedMission.getTrack());
         }
     }
 
-    private void resetMissionTrack(Member member, MissionTrack track) {
-        log.info("트랙 초기화 시작: MemberId={}, Track={}", member.getMemberId(), track);
-        List<MissionProgress> progressList = missionProgressRepository.findAllByMemberAndMission_Track(member, track);
+    private void resetMissionTrack(Long memberId, MissionTrack track) {
+        log.info("트랙 초기화 시작: MemberId={}, Track={}", memberId, track);
+        List<MissionProgress> progressList = missionProgressRepository.findAllByMemberIdAndMission_Track(memberId, track);
 
         for (MissionProgress progress : progressList) {
             progress.reset();
@@ -194,9 +192,9 @@ public class MissionRewardService {
      * - 미션 1개 완료 시 +10점 (예시)
      * - 최대 점수(GoalValue)를 넘을 수 없음
      */
-    private void updateActivityScore(Member member) {
+    private void updateActivityScore(Long memberId) {
         // 활동 점수 트래커 조회 (ID 998 or Type=ACTIVITY_SCORE)
-        missionProgressRepository.findByMemberAndMissionTypeWithMission(member, MissionTrack.ACHIEVEMENT, MissionConditionType.ACTIVITY_SCORE)
+        missionProgressRepository.findByMemberAndMissionTypeWithMission(memberId, MissionTrack.ACHIEVEMENT, MissionConditionType.ACTIVITY_SCORE)
                 .ifPresent(tracker -> {
                     int maxScore = tracker.getMission().getGoalValue(); // 예: 1000점
                     int currentScore = tracker.getCurrentValue();
@@ -205,7 +203,7 @@ public class MissionRewardService {
                         int pointsToAdd = MISSION_COMPLETION_ACTIVITY_POINTS; // 미션 당 점수 (기획에 따라 조정)
                         int newScore = Math.min(currentScore + pointsToAdd, maxScore);
                         tracker.setCurrentValue(newScore);
-                        log.info("활동 점수 획득: Member={}, Current={}, Max={}", member.getName(), newScore, maxScore);
+                        log.info("활동 점수 획득: Member={}, Current={}, Max={}", memberId, newScore, maxScore);
                     }
                 });
     }
@@ -213,11 +211,11 @@ public class MissionRewardService {
     /**
      * [신규] 시드 복사기 (누적 미션 30회) 체크
      */
-    private void checkSeedCopierAchievement(Member member) {
+    private void checkSeedCopierAchievement(Long memberId) {
         // 완료된 미션 총 개수 조회
-        long completedCount = missionProgressRepository.countByMemberAndStatus(member, MissionStatus.COMPLETED);
+        long completedCount = missionProgressRepository.countByMemberIdAndStatus(memberId, MissionStatus.COMPLETED);
 
-        missionProgressRepository.findByMemberAndMissionTypeWithMission(member, MissionTrack.ACHIEVEMENT, MissionConditionType.TOTAL_MISSION_COUNT)
+        missionProgressRepository.findByMemberAndMissionTypeWithMission(memberId, MissionTrack.ACHIEVEMENT, MissionConditionType.TOTAL_MISSION_COUNT)
                 .ifPresent(progress -> {
                     if (!progress.isCompleted()) {
                         // 현재 완료 횟수를 진행도에 반영
@@ -226,7 +224,7 @@ public class MissionRewardService {
                             // 재귀 호출 방지를 위해 직접 complete 호출 (혹은 checkMissionCompletion 호출)
                             // 여기서는 간단히 내부 로직 실행
                             progress.complete();
-                            distributeReward(member, progress.getMission().getReward());
+                            distributeReward(memberId, progress.getMission().getReward());
                             log.info("'시드 복사기' 업적 달성! 총 완료 미션: {}개", completedCount);
                         }
                     }
@@ -234,18 +232,18 @@ public class MissionRewardService {
     }
 
     private void handleMissionChain(MissionProgress completedProgress) {
-        Member member = completedProgress.getMember();
+        Long memberId = completedProgress.getMemberId();
         Mission mission = completedProgress.getMission();
 
         // 일일 출석 완료 시 -> 연속 출석 업적 갱신
         if (mission.getTrack() == MissionTrack.DAILY &&
                 mission.getConditionType() == MissionConditionType.LOGIN_COUNT) {
             log.info("연쇄 업적 갱신 시도: 일일 출석 -> 연속 출석");
-            updateSpecificAchievement(member, MissionConditionType.LOGIN_STREAK, 1);
+            updateSpecificAchievement(memberId, MissionConditionType.LOGIN_STREAK, 1);
         }
     }
 
-    private void updateSpecificAchievement(Member member, MissionConditionType conditionType, int valueToIncrease) {
+    private void updateSpecificAchievement(Long memberId, MissionConditionType conditionType, int valueToIncrease) {
         // 1. Optional -> List로 변경하여 해당 타입의 모든 업적 조회 (예: 3일, 7일, 30일 연속 등)
         List<Mission> achievements = missionRepository
                 .findAllByTrackAndConditionType(MissionTrack.ACHIEVEMENT, conditionType);
@@ -255,15 +253,14 @@ public class MissionRewardService {
         // 2. 조회된 모든 업적에 대해 진행도 업데이트 반복
         for (Mission achievement : achievements) {
             MissionProgress achievementProgress = missionProgressRepository
-                    .findByMemberAndMission(member, achievement)
+                    .findByMemberIdAndMission(memberId, achievement)
                     .orElseGet(() -> {
                         MissionProgress newProgress = MissionProgress.builder()
-                                .member(member)
+                                .memberId(memberId)
                                 .mission(achievement)
                                 .status(MissionStatus.IN_PROGRESS)
                                 .build();
-                        member.addMissionProgress(newProgress);
-                        return newProgress;
+                        return missionProgressRepository.save(newProgress);
                     });
 
             // 이미 완료된 업적은 패스

@@ -149,7 +149,7 @@ class MemberControllerCharacterizationTest extends IntegrationTestSupport {
 
     private void grantTitle(Member member, Title title) {
         memberTitleRepository.save(MemberTitle.builder()
-                .member(member)
+                .memberId(member.getMemberId())
                 .title(title)
                 .build());
     }

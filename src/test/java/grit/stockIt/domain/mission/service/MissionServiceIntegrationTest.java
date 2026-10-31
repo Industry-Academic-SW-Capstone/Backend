@@ -135,7 +135,7 @@ class MissionServiceIntegrationTest extends IntegrationTestSupport {
     private MissionProgress progress(long missionId) {
         Member member = memberRepository.findById(memberId).orElseThrow();
         Mission mission = missionRepository.findById(missionId).orElseThrow();
-        return missionProgressRepository.findByMemberAndMission(member, mission).orElseThrow();
+        return missionProgressRepository.findByMemberIdAndMission(member.getMemberId(), mission).orElseThrow();
     }
 
     private void mutateProgress(long missionId, Consumer<MissionProgress> mutator) {
@@ -169,7 +169,7 @@ class MissionServiceIntegrationTest extends IntegrationTestSupport {
     private List<String> titleNames() {
         return txTemplate.execute(status -> {
             Member member = memberRepository.findById(memberId).orElseThrow();
-            return memberTitleRepository.findAllByMember(member).stream()
+            return memberTitleRepository.findAllByMemberId(member.getMemberId()).stream()
                     .map(mt -> mt.getTitle().getName())
                     .collect(Collectors.toList());
         });
@@ -193,7 +193,7 @@ class MissionServiceIntegrationTest extends IntegrationTestSupport {
     void initializeMissionsForNewMember_트랙첫미션_활성화_및_활동점수_1200() {
         // data.sql 기준 미션 29개(일일 4 + 업적 13 + 중급 6 + 고급 6) 전부 진행도 생성
         Member member = memberRepository.findById(memberId).orElseThrow();
-        assertThat(missionProgressRepository.findByMemberWithMissionAndReward(member)).hasSize(29);
+        assertThat(missionProgressRepository.findByMemberWithMissionAndReward(member.getMemberId())).hasSize(29);
 
         // 트랙별 첫 미션(201/301/401)만 IN_PROGRESS
         for (long id : new long[] {201L, 301L, 401L}) {

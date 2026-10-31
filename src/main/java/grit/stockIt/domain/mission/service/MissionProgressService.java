@@ -13,8 +13,6 @@ import grit.stockIt.domain.mission.repository.MissionProgressRepository;
 import grit.stockIt.domain.mission.repository.MissionRepository;
 import grit.stockIt.domain.order.entity.OrderMethod;
 import grit.stockIt.domain.order.event.TradeCompletionEvent;
-import grit.stockIt.domain.stock.entity.Stock;
-import grit.stockIt.domain.stock.repository.StockRepository;
 import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -39,7 +37,6 @@ public class MissionProgressService {
     private final MissionRepository missionRepository;
     private final MissionProgressRepository missionProgressRepository;
     private final AccountRepository accountRepository;
-    private final StockRepository stockRepository;
     private final MissionConditionEvaluator missionConditionEvaluator;
     private final MissionProgressCalculator missionProgressCalculator;
     private final MissionRewardService missionRewardService;
@@ -77,7 +74,7 @@ public class MissionProgressService {
 
         // 1. 회원의 '진행 중'인 미션 목록 조회
         List<MissionProgress> progressList = missionProgressRepository
-                .findByMemberAndStatusWithMission(member, MissionStatus.IN_PROGRESS);
+                .findByMemberAndStatusWithMission(member.getMemberId(), MissionStatus.IN_PROGRESS);
 
         // 2. 진행 중인 미션 순회
         for (MissionProgress progress : progressList) {
@@ -125,7 +122,7 @@ public class MissionProgressService {
         if (profitInt == 0) return;
 
         // 2. 트래커(ID 999)에 수익금 누적
-        missionProgressRepository.findByMemberAndMissionTypeWithMission(member, MissionTrack.ACHIEVEMENT, MissionConditionType.SKILL_SCORE)
+        missionProgressRepository.findByMemberAndMissionTypeWithMission(member.getMemberId(), MissionTrack.ACHIEVEMENT, MissionConditionType.SKILL_SCORE)
                 .ifPresent(tracker -> {
                     int currentTotalProfit = tracker.getCurrentValue();
                     int newTotalProfit = currentTotalProfit + profitInt;
@@ -137,7 +134,7 @@ public class MissionProgressService {
                             member.getName(), profitInt, newTotalProfit);
 
                     // Legend 달성 체크 (현재 총 수익금 기반으로 점수 환산하여 체크)
-                    missionRewardService.checkLegendTier(member, getActivityScore(member) + missionProgressCalculator.calculateScoreFromProfit(newTotalProfit));
+                    missionRewardService.checkLegendTier(member.getMemberId(), getActivityScore(member) + missionProgressCalculator.calculateScoreFromProfit(newTotalProfit));
                 });
     }
 
@@ -148,7 +145,7 @@ public class MissionProgressService {
      */
     private int getActivityScore(Member member) {
         return missionProgressRepository.findByMemberAndMissionTypeWithMission(
-                        member,
+                        member.getMemberId(),
                         MissionTrack.ACHIEVEMENT,
                         MissionConditionType.ACTIVITY_SCORE
                 )
@@ -173,8 +170,6 @@ public class MissionProgressService {
         handleOneTimeAchievement(member, MissionConditionType.FIRST_PROFIT, 1);
 
         // B. 강형욱 (잡주로 100% 이상 수익)
-        // 종목 정보 조회
-        Stock stock = stockRepository.findById(event.getStockCode()).orElse(null);
 
 /*        // 시가총액 1,000억 미만이고, 수익률이 100% 이상인 경우
         if (stock != null && stock.getMarketCap() < JUNK_STOCK_MARKET_CAP_THRESHOLD) {
@@ -194,7 +189,7 @@ public class MissionProgressService {
      * 1회성 업적 달성 처리 헬퍼 (이미 완료되었으면 무시)
      */
     private void handleOneTimeAchievement(Member member, MissionConditionType type, int value) {
-        missionProgressRepository.findByMemberAndMissionTypeWithMission(member, MissionTrack.ACHIEVEMENT, type)
+        missionProgressRepository.findByMemberAndMissionTypeWithMission(member.getMemberId(), MissionTrack.ACHIEVEMENT, type)
                 .ifPresent(progress -> {
                     if (!progress.isCompleted()) {
                         progress.setCurrentValue(value);
@@ -260,15 +255,14 @@ public class MissionProgressService {
 
             // 3. 미션 진행도 조회 또는 생성
             MissionProgress progress = missionProgressRepository
-                    .findByMemberAndMission(member, rankerMission)
+                    .findByMemberIdAndMission(member.getMemberId(), rankerMission)
                     .orElseGet(() -> {
                         MissionProgress newProgress = MissionProgress.builder()
-                                .member(member)
+                                .memberId(member.getMemberId())
                                 .mission(rankerMission)
                                 .status(MissionStatus.IN_PROGRESS)
                                 .build();
-                        member.addMissionProgress(newProgress);
-                        return newProgress;
+                        return missionProgressRepository.save(newProgress);
                     });
 
             // 4. 이미 완료한 사람은 패스 (칭호 중복 지급 방지)

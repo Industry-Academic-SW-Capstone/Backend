@@ -2,7 +2,6 @@ package grit.stockIt.domain.account.repository;
 
 import grit.stockIt.domain.account.entity.Account;
 import grit.stockIt.domain.account.entity.AccountStock;
-import grit.stockIt.domain.member.entity.Member;
 import grit.stockIt.domain.stock.entity.Stock;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
@@ -26,7 +25,7 @@ public interface AccountStockRepository extends JpaRepository<AccountStock, Long
 
     // --- [추가] 스케줄러에서 홀딩 여부 체크용 ---
     // 회원의 계좌 중 수량이 0보다 큰 주식이 하나라도 있는지 확인
-    boolean existsByAccount_MemberAndQuantityGreaterThan(Member member, int quantity);
+    boolean existsByAccount_Member_MemberIdAndQuantityGreaterThan(Long memberId, int quantity);
     // --- [추가] 특정 계좌의 보유 주식 목록 전체 조회 ---
     List<AccountStock> findAllByAccount(Account account);
 
