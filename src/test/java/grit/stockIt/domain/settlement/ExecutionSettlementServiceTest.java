@@ -1,28 +1,27 @@
 package grit.stockIt.domain.settlement;
 
+import grit.stockIt.contract.ExecutionReport;
 import grit.stockIt.domain.account.entity.Account;
-import grit.stockIt.domain.account.entity.AccountStock;
 import grit.stockIt.domain.account.repository.AccountRepository;
 import grit.stockIt.domain.account.repository.AccountStockRepository;
 import grit.stockIt.domain.contest.entity.Contest;
 import grit.stockIt.domain.contest.repository.ContestRepository;
-import grit.stockIt.domain.execution.entity.Execution;
 import grit.stockIt.domain.execution.repository.ExecutionRepository;
-import grit.stockIt.domain.execution.service.ExecutionService;
 import grit.stockIt.domain.member.entity.AuthProvider;
 import grit.stockIt.domain.member.entity.Member;
 import grit.stockIt.domain.member.repository.MemberRepository;
 import grit.stockIt.domain.order.entity.Order;
 import grit.stockIt.domain.order.entity.OrderHold;
 import grit.stockIt.domain.order.entity.OrderMethod;
+import grit.stockIt.domain.order.entity.OrderStatus;
 import grit.stockIt.domain.order.repository.OrderHoldRepository;
 import grit.stockIt.domain.order.repository.OrderRepository;
 import grit.stockIt.domain.settlement.repository.SettlementRepository;
-import grit.stockIt.domain.settlement.scheduler.UnsettledExecutionScheduler;
 import grit.stockIt.domain.settlement.service.ExecutionSettlementService;
 import grit.stockIt.domain.stock.entity.Stock;
 import grit.stockIt.domain.stock.repository.StockRepository;
 import grit.stockIt.global.support.IntegrationTestSupport;
+import grit.stockIt.global.support.TestExecutionIds;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -31,24 +30,17 @@ import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.TransactionStatus;
 import org.springframework.transaction.support.DefaultTransactionDefinition;
 
-import org.springframework.test.util.ReflectionTestUtils;
 
 import java.math.BigDecimal;
-import java.time.Duration;
 import java.time.LocalDateTime;
-import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-@DisplayName("체결 정산과 미정산 복구 (통합 테스트)")
+@DisplayName("체결 통보로 정산 (통합 테스트)")
 class ExecutionSettlementServiceTest extends IntegrationTestSupport {
 
-    private static final LocalDateTime FUTURE = LocalDateTime.now().plusYears(1);
-
     @Autowired private ExecutionSettlementService executionSettlementService;
-    @Autowired private ExecutionService executionService;
-    @Autowired private UnsettledExecutionScheduler unsettledExecutionScheduler;
     @Autowired private SettlementRepository settlementRepository;
     @Autowired private ExecutionRepository executionRepository;
     @Autowired private OrderRepository orderRepository;
@@ -61,68 +53,61 @@ class ExecutionSettlementServiceTest extends IntegrationTestSupport {
     @Autowired private PlatformTransactionManager transactionManager;
 
     @Test
-    @DisplayName("매수 체결을 정산하면 현금이 빠지고 보유종목이 늘며 홀딩이 풀린다")
+    @DisplayName("매수 체결 통보를 정산하면 체결 내역이 남고, 주문이 체결 완료되며, 현금이 빠지고 보유종목이 늘고 홀딩이 풀린다")
     void settle_buyExecution_appliesCashAndHolding() {
         Fixture fx = buyFixture(10);
+        ExecutionReport report = fill(fx, 10, 10, 0);
 
-        settle(fx.execution().getExecutionId());
+        executionSettlementService.settle(report);
 
         Account account = accountRepository.findById(fx.account().getAccountId()).orElseThrow();
         assertThat(account.getCash()).isEqualByComparingTo(new BigDecimal("999000"));
         assertThat(account.getHoldAmount()).isEqualByComparingTo(BigDecimal.ZERO);
+        assertThat(accountStockRepository.findByAccountAndStock(account, fx.stock()).orElseThrow().getQuantity())
+                .isEqualTo(10);
+        assertThat(settlementRepository.existsByExecutionId(report.executionId())).isTrue();
+        assertThat(executionRepository.findById(report.executionId())).isPresent();
 
-        AccountStock holding = accountStockRepository
-                .findByAccountAndStock(account, fx.stock()).orElseThrow();
-        assertThat(holding.getQuantity()).isEqualTo(10);
-
-        assertThat(settlementRepository.existsByExecutionId(fx.execution().getExecutionId())).isTrue();
+        Order order = orderRepository.findById(fx.order().getOrderId()).orElseThrow();
+        assertThat(order.getFilledQuantity()).isEqualTo(10);
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.FILLED);
     }
 
     @Test
-    @DisplayName("같은 체결을 두 번 정산해도 현금이 한 번만 빠진다")
+    @DisplayName("남은 수량이 있는 체결 통보는 주문을 일부 체결로 두고 남은 홀딩을 풀지 않는다")
+    void settle_partialFill_keepsRemainingHold() {
+        Fixture fx = buyFixture(10);
+
+        executionSettlementService.settle(fill(fx, 4, 4, 6));
+
+        Order order = orderRepository.findById(fx.order().getOrderId()).orElseThrow();
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.PARTIALLY_FILLED);
+        assertThat(order.getFilledQuantity()).isEqualTo(4);
+        assertThat(accountRepository.findById(fx.account().getAccountId()).orElseThrow().getHoldAmount())
+                .isEqualByComparingTo(new BigDecimal("600"));
+    }
+
+    @Test
+    @DisplayName("같은 체결 통보를 두 번 정산해도 현금이 한 번만 빠진다")
     void settle_twice_appliesOnce() {
         Fixture fx = buyFixture(10);
+        ExecutionReport report = fill(fx, 10, 10, 0);
 
-        settle(fx.execution().getExecutionId());
-        settle(fx.execution().getExecutionId());
+        executionSettlementService.settle(report);
+        executionSettlementService.settle(report);
 
         Account account = accountRepository.findById(fx.account().getAccountId()).orElseThrow();
         assertThat(account.getCash()).isEqualByComparingTo(new BigDecimal("999000"));
-        assertThat(settlementRepository.count()).isEqualTo(1);
+        assertThat(settlementRepository.existsByExecutionId(report.executionId())).isTrue();
     }
 
-    @Test
-    @DisplayName("정산된 체결은 미정산 목록에서 빠진다")
-    void unsettledQuery_excludesSettled() {
-        Fixture first = buyFixture(10);
-        Fixture second = buyFixture(10);
-
-        assertThat(executionSettlementService.findUnsettledExecutionIds(FUTURE, 100))
-                .contains(first.execution().getExecutionId(), second.execution().getExecutionId());
-
-        settle(first.execution().getExecutionId());
-
-        assertThat(executionSettlementService.findUnsettledExecutionIds(FUTURE, 100))
-                .doesNotContain(first.execution().getExecutionId())
-                .contains(second.execution().getExecutionId());
+    private record Fixture(Account account, Stock stock, Order order) {
     }
 
-    @Test
-    @DisplayName("복구 배치가 미정산 체결을 마저 정산한다")
-    void recoveryScheduler_settlesLeftovers() {
-        Fixture fx = buyFixture(10);
-        // created_at 은 감사 컬럼이라 UPDATE 로 과거로 못 돌린다(updatable=false).
-        // 대신 유예 시간을 없애 방금 만든 체결도 대상이 되게 한다.
-        ReflectionTestUtils.setField(unsettledExecutionScheduler, "gracePeriod", Duration.ZERO);
-
-        unsettledExecutionScheduler.recoverUnsettledExecutions();
-
-        assertThat(settlementRepository.existsByExecutionId(fx.execution().getExecutionId())).isTrue();
-        Account account = accountRepository.findById(fx.account().getAccountId()).orElseThrow();
-        assertThat(account.getCash()).isEqualByComparingTo(new BigDecimal("999000"));
-    }
-
-    private record Fixture(Account account, Stock stock, Order order, Execution execution) {
+    private static ExecutionReport fill(Fixture fx, int quantity, int cumQuantity, int leavesQuantity) {
+        return ExecutionReport.fill(TestExecutionIds.next(), fx.order().getOrderId(), fx.account().getAccountId(),
+                fx.stock().getCode(), OrderMethod.BUY, new BigDecimal("100"), quantity, cumQuantity, leavesQuantity,
+                System.currentTimeMillis());
     }
 
     private Fixture buyFixture(int quantity) {
@@ -165,18 +150,9 @@ class ExecutionSettlementServiceTest extends IntegrationTestSupport {
         Stock stock = stockRepository.save(Stock.builder()
                 .code("T" + suffix).name("정산종목 " + suffix).marketType("KOSPI").build());
 
-        Order order = Order.createLimitOrder(account, stock, new BigDecimal("100"), quantity, OrderMethod.BUY);
-        order.applyFill(quantity);
-        order = orderRepository.save(order);
+        Order order = orderRepository.save(
+                Order.createLimitOrder(account, stock, new BigDecimal("100"), quantity, OrderMethod.BUY));
         orderHoldRepository.save(OrderHold.create(order, account, new BigDecimal("1000")));
-
-        Execution execution = executionRepository.save(
-                Execution.of(order, new BigDecimal("100"), quantity));
-        return new Fixture(account, stock, order, execution);
-    }
-
-    // 정산 워커가 받을 결과 통보를 저장된 체결로 만든다.
-    private void settle(Long executionId) {
-        executionSettlementService.settle(executionService.findFillReports(List.of(executionId)).get(0));
+        return new Fixture(account, stock, order);
     }
 }

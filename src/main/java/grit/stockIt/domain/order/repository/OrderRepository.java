@@ -2,7 +2,6 @@ package grit.stockIt.domain.order.repository;
 
 import grit.stockIt.domain.order.entity.Order;
 import grit.stockIt.domain.order.entity.OrderStatus;
-import grit.stockIt.domain.order.entity.OrderType;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
@@ -77,18 +76,6 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
             @Param("since") LocalDateTime since,
             @Param("statuses") List<OrderStatus> statuses,
             Pageable pageable
-    );
-
-    // 당일 만료 대상인 미체결 시장가 주문. 처리는 워커가 하므로 명령에 넣을 식별자와 종목만 가져온다.
-    @Query("SELECT new grit.stockIt.domain.order.repository.ExpirableMarketOrder(o.orderId, o.stock.code) " +
-           "FROM Order o " +
-           "WHERE o.orderType = :marketType " +
-           "AND o.status IN :statuses " +
-           "AND (o.quantity - o.filledQuantity) > 0 " +
-           "ORDER BY o.orderId ASC")
-    List<ExpirableMarketOrder> findExpirableMarketOrders(
-            @Param("marketType") OrderType marketType,
-            @Param("statuses") List<OrderStatus> statuses
     );
 
     // 주문 ID 목록으로 이미 체결된 주문 ID 조회

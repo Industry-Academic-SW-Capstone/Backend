@@ -124,6 +124,16 @@ public class Order extends BaseEntity {
         }
     }
 
+    // 거래소가 알린 누적 체결 수량으로 맞춘다. 통보는 주문마다 순서대로 오지만, 늦게 온 앞선 통보나 다시 온 통보가
+    // 되돌리지 않게 큰 쪽을 쓰고 상태도 그 수량으로 정한다.
+    public void applyReportedFill(int cumQuantity) {
+        if (this.status == OrderStatus.CANCELLED) {
+            return;
+        }
+        this.filledQuantity = Math.min(this.quantity, Math.max(this.filledQuantity, cumQuantity));
+        this.status = this.filledQuantity >= this.quantity ? OrderStatus.FILLED : OrderStatus.PARTIALLY_FILLED;
+    }
+
     public int getRemainingQuantity() {
         return this.quantity - this.filledQuantity;
     }

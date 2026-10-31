@@ -1,5 +1,11 @@
 package grit.stockIt.domain.matching.service;
 
+import grit.stockIt.domain.matching.entity.ExchangeFill;
+import grit.stockIt.domain.matching.entity.ExchangeOrder;
+import grit.stockIt.domain.matching.entity.ExchangeOrderStatus;
+import grit.stockIt.domain.matching.repository.ExchangeFillRepository;
+import grit.stockIt.domain.matching.repository.ExchangeOrderRepository;
+import grit.stockIt.global.support.ExchangeBook;
 import grit.stockIt.domain.account.entity.Account;
 import grit.stockIt.domain.account.entity.AccountStock;
 import grit.stockIt.domain.account.repository.AccountRepository;
@@ -15,10 +21,8 @@ import grit.stockIt.domain.member.repository.MemberRepository;
 import grit.stockIt.domain.order.entity.Order;
 import grit.stockIt.domain.order.entity.OrderHold;
 import grit.stockIt.domain.order.entity.OrderMethod;
-import grit.stockIt.domain.order.entity.OrderStatus;
 import grit.stockIt.domain.order.repository.OrderHoldRepository;
 import grit.stockIt.domain.order.repository.OrderRepository;
-import grit.stockIt.domain.execution.repository.ExecutionRepository;
 import grit.stockIt.global.support.IntegrationTestSupport;
 import grit.stockIt.domain.stock.entity.Stock;
 import grit.stockIt.domain.stock.repository.StockRepository;
@@ -79,7 +83,10 @@ class LimitOrderFillCoordinatorConcurrencyTest extends IntegrationTestSupport {
     private AccountStockRepository accountStockRepository;
 
     @Autowired
-    private ExecutionRepository executionRepository;
+    private ExchangeOrderRepository exchangeOrderRepository;
+
+    @Autowired
+    private ExchangeFillRepository exchangeFillRepository;
 
     @Autowired
     private PlatformTransactionManager transactionManager;
@@ -169,6 +176,7 @@ class LimitOrderFillCoordinatorConcurrencyTest extends IntegrationTestSupport {
                 accountStockRepository.save(accountStock);
             }
 
+            ExchangeBook.place(exchangeOrderRepository, order);
             transactionManager.commit(status);
             return order;
         } catch (Exception e) {
@@ -197,9 +205,9 @@ class LimitOrderFillCoordinatorConcurrencyTest extends IntegrationTestSupport {
 
         // Then
         assertThat(filledOrders).isEqualTo(1);
-        Order reloaded = orderRepository.findById(order.getOrderId()).orElseThrow();
+        ExchangeOrder reloaded = exchangeOrderRepository.findById(order.getOrderId()).orElseThrow();
         assertThat(reloaded.getFilledQuantity()).isEqualTo(10);
-        assertThat(reloaded.getStatus()).isEqualTo(OrderStatus.FILLED);
+        assertThat(reloaded.getStatus()).isEqualTo(ExchangeOrderStatus.FILLED);
     }
 
     @Test
@@ -222,7 +230,7 @@ class LimitOrderFillCoordinatorConcurrencyTest extends IntegrationTestSupport {
         assertThat(firstDelivery.filledOrders()).isEqualTo(1);
         assertThat(redelivery.duplicate()).isTrue();
         assertThat(redelivery.filledOrders()).isZero();
-        assertThat(executionRepository.findByOrderIdInWithOrder(List.of(first.getOrderId(), second.getOrderId())))
+        assertThat(fillsOf(first.getOrderId(), second.getOrderId()))
                 .as("틱 하나로 체결은 한 건")
                 .hasSize(1);
     }
@@ -240,7 +248,7 @@ class LimitOrderFillCoordinatorConcurrencyTest extends IntegrationTestSupport {
 
         assertThat(firstDelivery.filledOrders()).isZero();
         assertThat(redelivery.duplicate()).isTrue();
-        assertThat(orderRepository.findById(lateOrder.getOrderId()).orElseThrow().getFilledQuantity()).isZero();
+        assertThat(exchangeOrderRepository.findById(lateOrder.getOrderId()).orElseThrow().getFilledQuantity()).isZero();
     }
 
     @Test
@@ -276,8 +284,13 @@ class LimitOrderFillCoordinatorConcurrencyTest extends IntegrationTestSupport {
 
         assertThat(exceptions).isEmpty();
         assertThat(duplicates.get()).isEqualTo(1);
-        assertThat(executionRepository.findByOrderIdInWithOrder(List.of(first.getOrderId(), second.getOrderId())))
+        assertThat(fillsOf(first.getOrderId(), second.getOrderId()))
                 .hasSize(1);
+    }
+
+    private List<ExchangeFill> fillsOf(Long... orderIds) {
+        List<Long> ids = List.of(orderIds);
+        return exchangeFillRepository.findAll().stream().filter(fill -> ids.contains(fill.getOrderId())).toList();
     }
 
     private CommandPosition position(long offset) {

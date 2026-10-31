@@ -2,7 +2,6 @@ package grit.stockIt.domain.order.service;
 
 import grit.stockIt.domain.account.entity.Account;
 import grit.stockIt.domain.account.repository.AccountRepository;
-import grit.stockIt.domain.matching.queue.OrderCommandPublisher;
 import grit.stockIt.domain.order.dto.LimitOrderCreateRequest;
 import grit.stockIt.domain.order.dto.MarketOrderCreateRequest;
 import grit.stockIt.domain.order.dto.OrderCancelAcceptedResponse;
@@ -16,7 +15,6 @@ import grit.stockIt.domain.order.repository.OrderRepository;
 import grit.stockIt.domain.stock.entity.Stock;
 import grit.stockIt.domain.stock.repository.StockRepository;
 import grit.stockIt.global.exception.BadRequestException;
-import grit.stockIt.global.exception.ServiceUnavailableException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -37,7 +35,7 @@ public class OrderService {
     private final OrderPricingService orderPricingService;
     private final OrderHoldService orderHoldService;
     private final OrderSubscriptionService orderSubscriptionService;
-    private final OrderCommandPublisher orderCommandPublisher;
+    private final OrderCommandOutbox orderCommandOutbox;
 
     // 지정가 주문 생성
     @Transactional
@@ -81,6 +79,9 @@ public class OrderService {
         if (orderMethod == OrderMethod.BUY) {
             orderHoldService.applyBuyHold(savedOrder, account, holdAmount);
         }
+
+        // 같은 트랜잭션에서 거래소로 보낼 주문 명령을 적는다. 주문이 롤백되면 명령도 나가지 않는다.
+        orderCommandOutbox.order(savedOrder);
 
         // 커밋된 뒤에만 시세 구독을 연다. 롤백된 주문 때문에 구독이 열리지 않게 한다.
         orderSubscriptionService.subscribeAfterCommit(savedOrder, stock);
@@ -136,6 +137,9 @@ public class OrderService {
             orderHoldService.applyBuyHold(savedOrder, account, holdAmount);
         }
 
+        // 같은 트랜잭션에서 거래소로 보낼 주문 명령을 적는다. 주문이 롤백되면 명령도 나가지 않는다.
+        orderCommandOutbox.order(savedOrder);
+
         // 커밋된 뒤에만 시세 구독을 연다. 롤백된 주문 때문에 구독이 열리지 않게 한다.
         orderSubscriptionService.subscribeAfterCommit(savedOrder, stock);
 
@@ -143,9 +147,9 @@ public class OrderService {
         return OrderResponse.from(savedOrder);
     }
 
-    // 접수만 한다. 취소는 체결과 같은 종목 줄에서 워커가 하므로, 그사이 체결되면 취소되지 않는다.
-    // 여기서 거르는 상태는 빠른 거절일 뿐이고 최종 판정은 워커가 한다.
-    @Transactional(readOnly = true)
+    // 접수만 한다. 취소는 체결과 같은 종목 줄에서 거래소 워커가 하므로, 그사이 체결되면 취소되지 않는다.
+    // 여기서 거르는 상태는 빠른 거절일 뿐이고 최종 판정은 거래소가 한다. 취소 명령은 주문 명령과 같은 아웃박스로 보낸다.
+    @Transactional
     public OrderCancelAcceptedResponse cancelOrder(Long orderId) {
         Order order = orderRepository.findByIdWithStockAndAccount(orderId)
                 .orElseThrow(() -> new BadRequestException("주문을 찾을 수 없습니다."));
@@ -159,9 +163,7 @@ public class OrderService {
             throw new BadRequestException("이미 체결된 주문은 취소할 수 없습니다.");
         }
 
-        if (!orderCommandPublisher.cancel(order.getStock().getCode(), orderId)) {
-            throw new ServiceUnavailableException("취소 요청을 접수하지 못했습니다. 잠시 후 다시 시도해 주세요.");
-        }
+        orderCommandOutbox.cancel(order.getStock().getCode(), orderId);
         log.info("주문 취소 접수: orderId={}", orderId);
         return new OrderCancelAcceptedResponse(orderId);
     }

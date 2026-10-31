@@ -11,7 +11,8 @@ import org.springframework.stereotype.Component;
 
 import java.time.Duration;
 
-// 정산 워커. 거래소의 결과 통보를 계좌 키 순서대로 받아 계좌에 반영한다 — 체결은 정산, 취소·만료는 홀딩 해제.
+// 정산 워커. 거래소의 결과 통보를 계좌 키 순서대로 받아 계좌에 반영한다 — 체결은 정산, 취소·만료·거부는 홀딩 해제.
+// 접수(ACCEPTED)는 주문이 이미 접수 상태라 할 일이 없다.
 // 같은 통보가 두 번 와도 정산은 execution_id 유니크, 홀딩 해제는 hold_release 의 주문 번호로 한 번만 반영한다.
 @Component
 public class ExecutionReportConsumer {
@@ -41,8 +42,9 @@ public class ExecutionReportConsumer {
         report.validate();
         // switch 식이라 결과 종류가 늘면 여기서 컴파일이 깨진다.
         Runnable handler = switch (report.type()) {
+            case ACCEPTED -> () -> { };
             case FILL -> () -> settle(report);
-            case CANCELED, EXPIRED -> () -> orderHoldReleaseService.release(report);
+            case CANCELED, EXPIRED, REJECTED -> () -> orderHoldReleaseService.release(report);
         };
         handler.run();
     }

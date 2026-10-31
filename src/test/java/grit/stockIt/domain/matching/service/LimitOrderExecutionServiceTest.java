@@ -1,26 +1,18 @@
 package grit.stockIt.domain.matching.service;
 
-import grit.stockIt.domain.account.entity.Account;
-import grit.stockIt.domain.account.entity.AccountStock;
-import grit.stockIt.domain.account.repository.AccountRepository;
-import grit.stockIt.domain.account.repository.AccountStockRepository;
-import grit.stockIt.domain.contest.entity.Contest;
-import grit.stockIt.domain.member.entity.Member;
-import grit.stockIt.domain.execution.entity.Execution;
-import grit.stockIt.domain.execution.service.ExecutionService;
 import grit.stockIt.domain.matching.dto.LimitOrderFillEvent;
 import grit.stockIt.domain.matching.dto.OrderBookEntry;
+import grit.stockIt.domain.matching.entity.ExchangeFill;
+import grit.stockIt.domain.matching.entity.ExchangeOrder;
+import grit.stockIt.domain.matching.entity.ExchangeOrderStatus;
 import grit.stockIt.domain.matching.queue.CommandPosition;
 import grit.stockIt.domain.matching.queue.ExecutionReportOutbox;
 import grit.stockIt.domain.matching.repository.ConsumerWatermarkWriter;
+import grit.stockIt.domain.matching.repository.ExchangeFillRepository;
+import grit.stockIt.domain.matching.repository.ExchangeOrderRepository;
 import grit.stockIt.domain.matching.repository.OrderBookRepository;
-import grit.stockIt.domain.order.entity.Order;
-import grit.stockIt.domain.order.entity.OrderHold;
 import grit.stockIt.domain.order.entity.OrderMethod;
-import grit.stockIt.domain.order.entity.OrderStatus;
-import grit.stockIt.domain.order.repository.OrderHoldRepository;
-import grit.stockIt.domain.order.repository.OrderRepository;
-import grit.stockIt.domain.stock.entity.Stock;
+import grit.stockIt.domain.order.entity.OrderType;
 import grit.stockIt.global.websocket.manager.OrderSubscriptionCoordinator;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -31,733 +23,229 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
-import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
-import java.util.Optional;
+import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicLong;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.*;
-import static org.mockito.Mockito.*;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
 @MockitoSettings(strictness = Strictness.LENIENT)
-@DisplayName("LimitOrderExecutionService 테스트")
+@DisplayName("LimitOrderExecutionService — 거래소 오더북 체결")
 class LimitOrderExecutionServiceTest {
-    
-    @Mock
-    private ExecutionService executionService;
 
-    @Mock
-    private OrderRepository orderRepository;
+    private static final String STOCK = "005930";
+    private static final long ACCOUNT_ID = 1L;
+    private static final CommandPosition POSITION = new CommandPosition("matching.commands", 0, 1L);
+    private static final BigDecimal MARKET_BUY_PRICE = new BigDecimal("999999999");
 
-    @Mock
-    private OrderBookRepository orderBookRepository;
-
-    @Mock
-    private OrderSubscriptionCoordinator orderSubscriptionCoordinator;
-
-    @Mock
-    private OrderHoldRepository orderHoldRepository;
-
-    @Mock
-    private AccountRepository accountRepository;
-
-    @Mock
-    private AccountStockRepository accountStockRepository;
-
-    @Mock
-    private ApplicationEventPublisher eventPublisher;
-
-    @Mock
-    private ConsumerWatermarkWriter consumerWatermarkWriter;
-
-    @Mock
-    private ExecutionReportOutbox executionReportOutbox;
+    @Mock private ExchangeOrderRepository exchangeOrderRepository;
+    @Mock private ExchangeFillRepository exchangeFillRepository;
+    @Mock private OrderBookRepository orderBookRepository;
+    @Mock private OrderSubscriptionCoordinator orderSubscriptionCoordinator;
+    @Mock private ConsumerWatermarkWriter consumerWatermarkWriter;
+    @Mock private ExecutionReportOutbox executionReportOutbox;
 
     @InjectMocks
     private LimitOrderExecutionService limitOrderExecutionService;
 
-    private static final CommandPosition POSITION = new CommandPosition("matching.commands", 0, 1L);
-
-    private Member testMember;
-    private Contest testContest;
-    private Account testAccount;
-    private Stock testStock;
-    private Order testBuyOrder;
-    private Order testSellOrder;
-    private OrderHold testOrderHold;
-    private AccountStock testAccountStock;
+    private final Map<Long, ExchangeOrder> book = new HashMap<>();
+    private final AtomicLong nextFillId = new AtomicLong(100);
 
     @BeforeEach
     void setUp() {
-        // fetchSize 설정
         ReflectionTestUtils.setField(limitOrderExecutionService, "fetchSize", 100);
         when(consumerWatermarkWriter.advance(any())).thenReturn(true);
-        
-        // 테스트 데이터 생성
-        testMember = Member.builder()
-                .memberId(1L)
-                .name("테스트 사용자")
-                .email("test@test.com")
-                .provider(grit.stockIt.domain.member.entity.AuthProvider.LOCAL)
-                .build();
-
-        testContest = Contest.builder()
-                .contestId(1L)
-                .contestName("테스트 대회")
-                .build();
-
-        testAccount = Account.builder()
-                .accountId(1L)
-                .member(testMember)
-                .contest(testContest)
-                .cash(new BigDecimal("10000"))
-                .holdAmount(new BigDecimal("1000")) // 주문 생성 시 홀딩된 금액 (100원 * 10주)
-                .build();
-
-        testStock = Stock.builder()
-                .code("005930")
-                .name("삼성전자")
-                .build();
-
-        testBuyOrder = Order.createLimitOrder(
-                testAccount, testStock, new BigDecimal("100"), 10, OrderMethod.BUY
-        );
-        ReflectionTestUtils.setField(testBuyOrder, "orderId", 1L);
-
-        testSellOrder = Order.createLimitOrder(
-                testAccount, testStock, new BigDecimal("100"), 10, OrderMethod.SELL
-        );
-        ReflectionTestUtils.setField(testSellOrder, "orderId", 2L);
-
-        // OrderHold의 홀딩 금액은 주문 금액과 동일하게 설정 (100원 * 10주 = 1000원)
-        testOrderHold = OrderHold.create(testBuyOrder, testAccount, new BigDecimal("1000"));
-        ReflectionTestUtils.setField(testOrderHold, "orderId", 1L);
-
-        // AccountStock의 홀딩 수량은 주문 수량과 동일하게 설정 (매도 주문 시 사용)
-        testAccountStock = AccountStock.create(testAccount, testStock, 10, new BigDecimal("90"));
-        ReflectionTestUtils.setField(testAccountStock, "accountStockId", 1L);
-        // 매도 주문을 위한 홀딩 수량 설정
-        testAccountStock.increaseHoldQuantity(10);
+        when(exchangeOrderRepository.findAllById(any())).thenAnswer(invocation -> {
+            List<ExchangeOrder> found = new ArrayList<>();
+            for (Long id : invocation.<Iterable<Long>>getArgument(0)) {
+                if (book.containsKey(id)) {
+                    found.add(book.get(id));
+                }
+            }
+            return found;
+        });
+        when(exchangeFillRepository.save(any(ExchangeFill.class))).thenAnswer(invocation -> {
+            ExchangeFill fill = invocation.getArgument(0);
+            ReflectionTestUtils.setField(fill, "fillId", nextFillId.getAndIncrement());
+            return fill;
+        });
     }
 
     @Test
-    @DisplayName("지정가 매수 주문과 매도 체결 이벤트가 정상적으로 매칭되어 체결된다")
-    void distributeEvent_BuyOrderMatchedWithSellEvent_Success() {
-        // Given
-        String stockCode = "005930";
-        LimitOrderFillEvent event = new LimitOrderFillEvent(
-                UUID.randomUUID().toString(),
-                OrderMethod.SELL,
-                new BigDecimal("100"),
-                10,
-                Instant.now().toEpochMilli()
-        );
+    @DisplayName("지정가 매수 주문이 매도 틱에 전량 체결되고, 남은 수량 0 을 통보에 싣는다")
+    void buyOrder_fullyFilledBySellTick() {
+        ExchangeOrder buy = bookOrder(1L, OrderMethod.BUY, OrderType.LIMIT, "100", 10);
+        stubCandidates(OrderMethod.SELL, "100", entry(buy));
 
-        OrderBookEntry orderBookEntry = new OrderBookEntry(
-                1L, stockCode, OrderMethod.BUY, new BigDecimal("100"),
-                10, 10, Instant.now().toEpochMilli(), 1L
-        );
+        List<FilledExecution> executions = fill(tick(OrderMethod.SELL, "100", 10));
 
-        when(orderBookRepository.fetchMatchingEntries(stockCode, OrderMethod.SELL, event.price(), 100))
-                .thenReturn(List.of(orderBookEntry));
-        when(orderRepository.findAllByIdInWithStock(anyList()))
-                .thenReturn(List.of(testBuyOrder));
-        when(accountRepository.findByIdWithLock(1L))
-                .thenReturn(Optional.of(testAccount));
-        when(executionService.record(eq(testBuyOrder), eq(event.price()), eq(10)))
-                .thenReturn(createExecution(testBuyOrder, event.price(), 10));
-        when(orderHoldRepository.findById(1L))
-                .thenReturn(Optional.of(testOrderHold));
+        assertThat(executions).singleElement().satisfies(execution -> {
+            assertThat(execution.executionId()).isEqualTo(100L);
+            assertThat(execution.orderId()).isEqualTo(1L);
+            assertThat(execution.accountId()).isEqualTo(ACCOUNT_ID);
+            assertThat(execution.quantity()).isEqualTo(10);
+            assertThat(execution.cumQuantity()).isEqualTo(10);
+            assertThat(execution.leavesQuantity()).isZero();
+        });
+        assertThat(buy.getFilledQuantity()).isEqualTo(10);
+        assertThat(buy.getStatus()).isEqualTo(ExchangeOrderStatus.FILLED);
+        verify(orderSubscriptionCoordinator, times(1)).unregisterLimitOrder(STOCK);
+    }
 
-        // When
-        List<Long> executionIds = fill(stockCode, event);
+    @Test
+    @DisplayName("지정가 매도 주문이 매수 틱에 체결된다")
+    void sellOrder_filledByBuyTick() {
+        ExchangeOrder sell = bookOrder(2L, OrderMethod.SELL, OrderType.LIMIT, "100", 10);
+        stubCandidates(OrderMethod.BUY, "100", entry(sell));
 
-        // Then
-        assertThat(executionIds).hasSize(1);
-        assertThat(testBuyOrder.getFilledQuantity()).isEqualTo(10);
-        assertThat(testBuyOrder.getStatus()).isEqualTo(OrderStatus.FILLED);
+        List<FilledExecution> executions = fill(tick(OrderMethod.BUY, "100", 10));
 
-        verify(orderSubscriptionCoordinator, times(1)).unregisterLimitOrder(stockCode);
+        assertThat(executions).hasSize(1);
+        assertThat(sell.getStatus()).isEqualTo(ExchangeOrderStatus.FILLED);
+    }
+
+    @Test
+    @DisplayName("부분 체결이면 주문은 오더북에 남고 남은 수량을 통보에 싣는다")
+    void partialFill_keepsOrderOpen() {
+        ExchangeOrder buy = bookOrder(1L, OrderMethod.BUY, OrderType.LIMIT, "100", 10);
+        stubCandidates(OrderMethod.SELL, "100", entry(buy));
+
+        List<FilledExecution> executions = fill(tick(OrderMethod.SELL, "100", 5));
+
+        assertThat(executions).singleElement().satisfies(execution -> {
+            assertThat(execution.cumQuantity()).isEqualTo(5);
+            assertThat(execution.leavesQuantity()).isEqualTo(5);
+        });
+        assertThat(buy.getStatus()).isEqualTo(ExchangeOrderStatus.OPEN);
+        assertThat(buy.getRemainingQuantity()).isEqualTo(5);
+        verify(orderSubscriptionCoordinator, never()).unregisterLimitOrder(STOCK);
+    }
+
+    @Test
+    @DisplayName("매도 틱이면 높은 가격의 매수 주문부터 채운다")
+    void multipleOrders_filledByPricePriority() {
+        ExchangeOrder low = bookOrder(1L, OrderMethod.BUY, OrderType.LIMIT, "99", 10);
+        ExchangeOrder high = bookOrder(2L, OrderMethod.BUY, OrderType.LIMIT, "100", 10);
+        stubCandidates(OrderMethod.SELL, "99", entry(low, -1000), entry(high, 0));
+
+        List<FilledExecution> executions = fill(tick(OrderMethod.SELL, "99", 15));
+
+        assertThat(executions).hasSize(2);
+        assertThat(high.getFilledQuantity()).isEqualTo(10);
+        assertThat(low.getFilledQuantity()).isEqualTo(5);
+    }
+
+    @Test
+    @DisplayName("시장가 매수 주문은 같은 틱에서 지정가보다 먼저 채운다")
+    void marketOrder_hasPriorityOverLimit() {
+        ExchangeOrder limit = bookOrder(1L, OrderMethod.BUY, OrderType.LIMIT, "100", 10);
+        ExchangeOrder market = bookOrder(2L, OrderMethod.BUY, OrderType.MARKET, MARKET_BUY_PRICE.toPlainString(), 10);
+        stubCandidates(OrderMethod.SELL, "100", entry(limit, -1000), entry(market, 0));
+
+        fill(tick(OrderMethod.SELL, "100", 10));
+
+        assertThat(market.getStatus()).isEqualTo(ExchangeOrderStatus.FILLED);
+        assertThat(limit.getFilledQuantity()).isZero();
+    }
+
+    @Test
+    @DisplayName("맞는 주문이 없으면 체결하지 않는다")
+    void noCandidates_returnsEmpty() {
+        stubCandidates(OrderMethod.SELL, "100");
+
+        assertThat(fill(tick(OrderMethod.SELL, "100", 10))).isEmpty();
+        verify(exchangeOrderRepository, never()).findAllById(any());
+    }
+
+    @Test
+    @DisplayName("오더북 조회 뒤 이미 끝난 주문은 건너뛰고 구독을 하나 줄인다")
+    void closedOrder_skipped() {
+        ExchangeOrder buy = bookOrder(1L, OrderMethod.BUY, OrderType.LIMIT, "100", 10);
+        OrderBookEntry stale = entry(buy);
+        buy.cancel();
+        stubCandidates(OrderMethod.SELL, "100", stale);
+
+        assertThat(fill(tick(OrderMethod.SELL, "100", 10))).isEmpty();
+        verify(exchangeFillRepository, never()).save(any());
+        verify(orderSubscriptionCoordinator).unregisterLimitOrder(STOCK);
+    }
+
+    @Test
+    @DisplayName("오더북에 없는 주문은 건너뛴다")
+    void missingOrder_skipped() {
+        ExchangeOrder ghost = ExchangeOrder.accept(9L, ACCOUNT_ID, STOCK, OrderMethod.BUY, OrderType.LIMIT,
+                new BigDecimal("100"), 10);
+        stubCandidates(OrderMethod.SELL, "100", entry(ghost));
+
+        assertThat(fill(tick(OrderMethod.SELL, "100", 10))).isEmpty();
+        verify(exchangeFillRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("수량이 0 인 틱은 오더북을 보지 않는다")
+    void zeroQuantityTick_returnsEmpty() {
+        assertThat(fill(tick(OrderMethod.SELL, "100", 0))).isEmpty();
+        verify(orderBookRepository, never()).fetchMatchingEntries(any(), any(), any(), eq(100));
     }
 
     @Test
     @DisplayName("체결한 건은 같은 호출(트랜잭션) 안에서 아웃박스에 적고, 재전달된 위치는 적지 않는다")
     void fillOnce_appendsReportsToOutbox_onlyWhenApplied() {
-        String stockCode = "005930";
-        LimitOrderFillEvent event = new LimitOrderFillEvent(
-                UUID.randomUUID().toString(), OrderMethod.SELL, new BigDecimal("100"), 10, Instant.now().toEpochMilli());
-        when(orderBookRepository.fetchMatchingEntries(stockCode, OrderMethod.SELL, event.price(), 100))
-                .thenReturn(List.of(new OrderBookEntry(1L, stockCode, OrderMethod.BUY, new BigDecimal("100"),
-                        10, 10, Instant.now().toEpochMilli(), 1L)));
-        when(orderRepository.findAllByIdInWithStock(anyList())).thenReturn(List.of(testBuyOrder));
-        when(executionService.record(eq(testBuyOrder), eq(event.price()), eq(10)))
-                .thenReturn(createExecution(testBuyOrder, event.price(), 10));
+        ExchangeOrder buy = bookOrder(1L, OrderMethod.BUY, OrderType.LIMIT, "100", 10);
+        stubCandidates(OrderMethod.SELL, "100", entry(buy));
+        LimitOrderFillEvent event = tick(OrderMethod.SELL, "100", 10);
 
-        List<FilledExecution> executions = limitOrderExecutionService.fillOnce(stockCode, event, POSITION).orElseThrow();
+        List<FilledExecution> executions = limitOrderExecutionService.fillOnce(STOCK, event, POSITION).orElseThrow();
 
         verify(executionReportOutbox).append(eq(executions), anyLong());
-        assertThat(executions).singleElement().satisfies(execution -> {
-            assertThat(execution.orderId()).isEqualTo(testBuyOrder.getOrderId());
-            assertThat(execution.quantity()).isEqualTo(10);
-            assertThat(execution.price()).isEqualByComparingTo("100");
-        });
 
         when(consumerWatermarkWriter.advance(any())).thenReturn(false);
-        assertThat(limitOrderExecutionService.fillOnce(stockCode, event, POSITION)).isEmpty();
+        assertThat(limitOrderExecutionService.fillOnce(STOCK, event, POSITION)).isEmpty();
         verify(executionReportOutbox, times(1)).append(any(), anyLong());
     }
 
-    @Test
-    @DisplayName("지정가 매도 주문과 매수 체결 이벤트가 정상적으로 매칭되어 체결된다")
-    void distributeEvent_SellOrderMatchedWithBuyEvent_Success() {
-        // Given
-        String stockCode = "005930";
-        LimitOrderFillEvent event = new LimitOrderFillEvent(
-                UUID.randomUUID().toString(),
-                OrderMethod.BUY,
-                new BigDecimal("100"),
-                10,
-                Instant.now().toEpochMilli()
-        );
-
-        OrderBookEntry orderBookEntry = new OrderBookEntry(
-                2L, stockCode, OrderMethod.SELL, new BigDecimal("100"),
-                10, 10, Instant.now().toEpochMilli(), 1L
-        );
-
-        when(orderBookRepository.fetchMatchingEntries(stockCode, OrderMethod.BUY, event.price(), 100))
-                .thenReturn(List.of(orderBookEntry));
-        when(orderRepository.findAllByIdInWithStock(anyList()))
-                .thenReturn(List.of(testSellOrder));
-        when(accountRepository.findByIdWithLock(1L))
-                .thenReturn(Optional.of(testAccount));
-        when(executionService.record(eq(testSellOrder), eq(event.price()), eq(10)))
-                .thenReturn(createExecution(testSellOrder, event.price(), 10));
-        when(accountStockRepository.findByAccountAndStock(testAccount, testStock))
-                .thenReturn(Optional.of(testAccountStock));
-
-        // When
-        List<Long> executionIds = fill(stockCode, event);
-
-        // Then
-        assertThat(executionIds).hasSize(1);
-        assertThat(testSellOrder.getFilledQuantity()).isEqualTo(10);
-        assertThat(testSellOrder.getStatus()).isEqualTo(OrderStatus.FILLED);
-
+    private ExchangeOrder bookOrder(Long orderId, OrderMethod method, OrderType type, String price, int quantity) {
+        ExchangeOrder order = ExchangeOrder.accept(orderId, ACCOUNT_ID, STOCK, method, type, new BigDecimal(price), quantity);
+        book.put(orderId, order);
+        return order;
     }
 
-    @Test
-    @DisplayName("부분 체결이 정상적으로 처리된다")
-    void distributeEvent_PartialFill_Success() {
-        // Given
-        String stockCode = "005930";
-        LimitOrderFillEvent event = new LimitOrderFillEvent(
-                UUID.randomUUID().toString(),
-                OrderMethod.SELL,
-                new BigDecimal("100"),
-                5, // 5주만 체결
-                Instant.now().toEpochMilli()
-        );
-
-        OrderBookEntry orderBookEntry = new OrderBookEntry(
-                1L, stockCode, OrderMethod.BUY, new BigDecimal("100"),
-                10, 10, Instant.now().toEpochMilli(), 1L
-        );
-
-        // 부분 체결을 위한 OrderHold (홀딩 금액은 전체 주문 금액)
-        OrderHold partialOrderHold = OrderHold.create(testBuyOrder, testAccount, new BigDecimal("1000"));
-        ReflectionTestUtils.setField(partialOrderHold, "orderId", 1L);
-        
-        // Account의 holdAmount는 전체 주문 금액 (주문 생성 시 홀딩됨)
-        Account partialAccount = Account.builder()
-                .accountId(1L)
-                .member(testMember)
-                .contest(testContest)
-                .cash(new BigDecimal("10000"))
-                .holdAmount(new BigDecimal("1000")) // 전체 주문 금액
-                .build();
-
-        when(orderBookRepository.fetchMatchingEntries(stockCode, OrderMethod.SELL, event.price(), 100))
-                .thenReturn(List.of(orderBookEntry));
-        when(orderRepository.findAllByIdInWithStock(anyList()))
-                .thenReturn(List.of(testBuyOrder));
-        when(accountRepository.findByIdWithLock(1L))
-                .thenReturn(Optional.of(partialAccount));
-        when(executionService.record(eq(testBuyOrder), eq(event.price()), eq(5)))
-                .thenReturn(createExecution(testBuyOrder, event.price(), 5));
-        when(orderHoldRepository.findById(1L))
-                .thenReturn(Optional.of(partialOrderHold));
-
-        // When
-        List<Long> executionIds = fill(stockCode, event);
-
-        // Then
-        assertThat(executionIds).hasSize(1);
-        assertThat(testBuyOrder.getFilledQuantity()).isEqualTo(5);
-        assertThat(testBuyOrder.getRemainingQuantity()).isEqualTo(5);
-        assertThat(testBuyOrder.getStatus()).isEqualTo(OrderStatus.PARTIALLY_FILLED);
-
+    private void stubCandidates(OrderMethod takerMethod, String price, OrderBookEntry... entries) {
+        when(orderBookRepository.fetchMatchingEntries(STOCK, takerMethod, new BigDecimal(price), 100))
+                .thenReturn(List.of(entries));
     }
 
-    @Test
-    @DisplayName("여러 주문이 우선순위에 따라 순차적으로 체결된다")
-    void distributeEvent_MultipleOrdersSortedByPriority_Success() {
-        // Given
-        String stockCode = "005930";
-        LimitOrderFillEvent event = new LimitOrderFillEvent(
-                UUID.randomUUID().toString(),
-                OrderMethod.SELL,
-                new BigDecimal("100"),
-                15, // 15주 체결
-                Instant.now().toEpochMilli()
-        );
-
-        // 매도 이벤트이므로 가격이 높은 주문이 먼저 체결됨 (100원, 99원 순서)
-        OrderBookEntry entry1 = new OrderBookEntry(
-                1L, stockCode, OrderMethod.BUY, new BigDecimal("99"),
-                10, 10, Instant.now().toEpochMilli() - 1000, 1L // 더 이른 시간
-        );
-        OrderBookEntry entry2 = new OrderBookEntry(
-                2L, stockCode, OrderMethod.BUY, new BigDecimal("100"),
-                10, 10, Instant.now().toEpochMilli(), 1L
-        );
-
-        // 여러 주문을 위한 Account (총 홀딩 금액: 990 + 1000 = 1990원)
-        Account multiOrderAccount = Account.builder()
-                .accountId(1L)
-                .member(testMember)
-                .contest(testContest)
-                .cash(new BigDecimal("10000"))
-                .holdAmount(new BigDecimal("1990")) // 두 주문의 총 홀딩 금액
-                .build();
-
-        Order order1 = Order.createLimitOrder(multiOrderAccount, testStock, new BigDecimal("99"), 10, OrderMethod.BUY);
-        ReflectionTestUtils.setField(order1, "orderId", 1L);
-        Order order2 = Order.createLimitOrder(multiOrderAccount, testStock, new BigDecimal("100"), 10, OrderMethod.BUY);
-        ReflectionTestUtils.setField(order2, "orderId", 2L);
-
-        // 각 주문에 대한 OrderHold 생성
-        OrderHold hold1 = OrderHold.create(order1, multiOrderAccount, new BigDecimal("990")); // 99 * 10
-        ReflectionTestUtils.setField(hold1, "orderId", 1L);
-        OrderHold hold2 = OrderHold.create(order2, multiOrderAccount, new BigDecimal("1000")); // 100 * 10
-        ReflectionTestUtils.setField(hold2, "orderId", 2L);
-
-        when(orderBookRepository.fetchMatchingEntries(stockCode, OrderMethod.SELL, event.price(), 100))
-                .thenReturn(List.of(entry1, entry2));
-        when(orderRepository.findAllByIdInWithStock(anyList()))
-                .thenAnswer(invocation -> {
-                    List<Long> orderIds = invocation.getArgument(0);
-                    List<Order> result = new java.util.ArrayList<>();
-                    for (Long orderId : orderIds) {
-                        if (orderId == 1L) {
-                            result.add(order1);
-                        } else if (orderId == 2L) {
-                            result.add(order2);
-                        }
-                    }
-                    return result;
-                });
-        when(accountRepository.findByIdWithLock(1L))
-                .thenReturn(Optional.of(multiOrderAccount));
-        when(executionService.record(any(Order.class), any(BigDecimal.class), anyInt()))
-                .thenAnswer(invocation -> {
-                    Order order = invocation.getArgument(0);
-                    BigDecimal price = invocation.getArgument(1);
-                    Integer quantity = invocation.getArgument(2);
-                    return createExecution(order, price, quantity);
-                });
-        when(orderHoldRepository.findById(anyLong()))
-                .thenAnswer(invocation -> {
-                    Long orderId = invocation.getArgument(0);
-                    if (orderId == 1L) {
-                        return Optional.of(hold1);
-                    } else if (orderId == 2L) {
-                        return Optional.of(hold2);
-                    }
-                    return Optional.empty();
-                });
-
-        // When
-        List<Long> executionIds = fill(stockCode, event);
-
-        // Then
-        assertThat(executionIds).hasSize(2);
-        // 매도 이벤트이므로 가격이 높은 주문(100원)이 먼저 체결되어야 함
-        assertThat(order2.getFilledQuantity()).isEqualTo(10); // 100원 주문이 먼저 전량 체결
-        assertThat(order1.getFilledQuantity()).isEqualTo(5); // 99원 주문이 5주 체결 (15 - 10 = 5)
+    private static OrderBookEntry entry(ExchangeOrder order) {
+        return entry(order, 0);
     }
 
-    @Test
-    @DisplayName("매칭 가능한 주문이 없으면 빈 리스트를 반환한다")
-    void distributeEvent_NoMatchingOrders_ReturnsEmpty() {
-        // Given
-        String stockCode = "005930";
-        LimitOrderFillEvent event = new LimitOrderFillEvent(
-                UUID.randomUUID().toString(),
-                OrderMethod.SELL,
-                new BigDecimal("100"),
-                10,
-                Instant.now().toEpochMilli()
-        );
-
-        when(orderBookRepository.fetchMatchingEntries(stockCode, OrderMethod.SELL, event.price(), 100))
-                .thenReturn(List.of());
-
-        // When
-        List<Long> executionIds = fill(stockCode, event);
-
-        // Then
-        assertThat(executionIds).isEmpty();
-        verify(orderRepository, never()).findAllByIdInWithStock(any());
+    private static OrderBookEntry entry(ExchangeOrder order, long acceptedOffsetMillis) {
+        return new OrderBookEntry(order.getOrderId(), order.getStockCode(), order.getOrderMethod(), order.getPrice(),
+                order.getRemainingQuantity(), order.getQuantity(), Instant.now().toEpochMilli() + acceptedOffsetMillis,
+                order.getAccountId());
     }
 
-    @Test
-    @DisplayName("이미 취소된 주문은 체결되지 않는다")
-    void distributeEvent_CancelledOrder_Skipped() {
-        // Given
-        String stockCode = "005930";
-        LimitOrderFillEvent event = new LimitOrderFillEvent(
-                UUID.randomUUID().toString(),
-                OrderMethod.SELL,
-                new BigDecimal("100"),
-                10,
-                Instant.now().toEpochMilli()
-        );
-
-        OrderBookEntry orderBookEntry = new OrderBookEntry(
-                1L, stockCode, OrderMethod.BUY, new BigDecimal("100"),
-                10, 10, Instant.now().toEpochMilli(), 1L
-        );
-
-        testBuyOrder.markCancelled();
-
-        when(orderBookRepository.fetchMatchingEntries(stockCode, OrderMethod.SELL, event.price(), 100))
-                .thenReturn(List.of(orderBookEntry));
-        when(orderRepository.findAllByIdInWithStock(anyList()))
-                .thenReturn(List.of(testBuyOrder));
-
-        // When
-        List<Long> executionIds = fill(stockCode, event);
-
-        // Then
-        assertThat(executionIds).isEmpty();
-        verify(executionService, never()).record(any(), any(), anyInt());
+    private static LimitOrderFillEvent tick(OrderMethod method, String price, int quantity) {
+        return new LimitOrderFillEvent(UUID.randomUUID().toString(), method, new BigDecimal(price), quantity,
+                Instant.now().toEpochMilli());
     }
 
-    @Test
-    @DisplayName("DB에 주문이 없으면 Redis에서 제거하고 스킵한다")
-    void distributeEvent_OrderNotFoundInDB_RemovesFromRedis() {
-        // Given
-        String stockCode = "005930";
-        LimitOrderFillEvent event = new LimitOrderFillEvent(
-                UUID.randomUUID().toString(),
-                OrderMethod.SELL,
-                new BigDecimal("100"),
-                10,
-                Instant.now().toEpochMilli()
-        );
-
-        OrderBookEntry orderBookEntry = new OrderBookEntry(
-                1L, stockCode, OrderMethod.BUY, new BigDecimal("100"),
-                10, 10, Instant.now().toEpochMilli(), 1L
-        );
-
-        when(orderBookRepository.fetchMatchingEntries(stockCode, OrderMethod.SELL, event.price(), 100))
-                .thenReturn(List.of(orderBookEntry));
-        when(orderRepository.findAllByIdInWithStock(anyList()))
-                .thenReturn(List.of()); // DB에 주문 없음
-
-        // When
-        List<Long> executionIds = fill(stockCode, event);
-
-        // Then
-        assertThat(executionIds).isEmpty();
-        verify(orderSubscriptionCoordinator, times(1)).unregisterLimitOrder(stockCode);
-    }
-
-    @Test
-    @DisplayName("체결 이벤트 수량이 0 이하면 빈 리스트를 반환한다")
-    void distributeEvent_ZeroQuantity_ReturnsEmpty() {
-        // Given
-        String stockCode = "005930";
-        LimitOrderFillEvent event = new LimitOrderFillEvent(
-                UUID.randomUUID().toString(),
-                OrderMethod.SELL,
-                new BigDecimal("100"),
-                0, // 수량 0
-                Instant.now().toEpochMilli()
-        );
-
-        // When
-        List<Long> executionIds = fill(stockCode, event);
-
-        // Then
-        assertThat(executionIds).isEmpty();
-        verify(orderBookRepository, never()).fetchMatchingEntries(any(), any(), any(), anyInt());
-    }
-
-    @Test
-    @DisplayName("시장가 매수 주문과 매도 체결 이벤트가 정상적으로 매칭되어 체결된다")
-    void distributeEvent_MarketBuyOrderMatchedWithSellEvent_Success() {
-        // Given
-        String stockCode = "005930";
-        LimitOrderFillEvent event = new LimitOrderFillEvent(
-                UUID.randomUUID().toString(),
-                OrderMethod.SELL,
-                new BigDecimal("100"),
-                10,
-                Instant.now().toEpochMilli()
-        );
-
-        // 시장가 매수 주문 (999999999 가격)
-        Order marketBuyOrder = Order.createMarketOrder(
-                testAccount, testStock, 10, OrderMethod.BUY
-        );
-        ReflectionTestUtils.setField(marketBuyOrder, "orderId", 1L);
-
-        OrderBookEntry orderBookEntry = new OrderBookEntry(
-                1L, stockCode, OrderMethod.BUY, new BigDecimal("999999999"), // 시장가 매수 Sentinel Price
-                10, 10, Instant.now().toEpochMilli(), 1L
-        );
-
-        OrderHold marketOrderHold = OrderHold.create(marketBuyOrder, testAccount, new BigDecimal("1000"));
-        ReflectionTestUtils.setField(marketOrderHold, "orderId", 1L);
-
-        when(orderBookRepository.fetchMatchingEntries(stockCode, OrderMethod.SELL, event.price(), 100))
-                .thenReturn(List.of(orderBookEntry));
-        when(orderRepository.findAllByIdInWithStock(anyList()))
-                .thenReturn(List.of(marketBuyOrder));
-        when(accountRepository.findByIdWithLock(1L))
-                .thenReturn(Optional.of(testAccount));
-        when(executionService.record(eq(marketBuyOrder), eq(event.price()), eq(10)))
-                .thenReturn(createExecution(marketBuyOrder, event.price(), 10));
-        when(orderHoldRepository.findById(1L))
-                .thenReturn(Optional.of(marketOrderHold));
-
-        // When
-        List<Long> executionIds = fill(stockCode, event);
-
-        // Then
-        assertThat(executionIds).hasSize(1);
-        assertThat(marketBuyOrder.getFilledQuantity()).isEqualTo(10);
-        assertThat(marketBuyOrder.getStatus()).isEqualTo(OrderStatus.FILLED);
-
-        verify(orderSubscriptionCoordinator, times(1)).unregisterLimitOrder(stockCode);
-    }
-
-    @Test
-    @DisplayName("시장가 매도 주문과 매수 체결 이벤트가 정상적으로 매칭되어 체결된다")
-    void distributeEvent_MarketSellOrderMatchedWithBuyEvent_Success() {
-        // Given
-        String stockCode = "005930";
-        LimitOrderFillEvent event = new LimitOrderFillEvent(
-                UUID.randomUUID().toString(),
-                OrderMethod.BUY,
-                new BigDecimal("100"),
-                10,
-                Instant.now().toEpochMilli()
-        );
-
-        // 시장가 매도 주문 (0.01 가격)
-        Order marketSellOrder = Order.createMarketOrder(
-                testAccount, testStock, 10, OrderMethod.SELL
-        );
-        ReflectionTestUtils.setField(marketSellOrder, "orderId", 2L);
-
-        OrderBookEntry orderBookEntry = new OrderBookEntry(
-                2L, stockCode, OrderMethod.SELL, new BigDecimal("0.01"), // 시장가 매도 Sentinel Price
-                10, 10, Instant.now().toEpochMilli(), 1L
-        );
-
-        when(orderBookRepository.fetchMatchingEntries(stockCode, OrderMethod.BUY, event.price(), 100))
-                .thenReturn(List.of(orderBookEntry));
-        when(orderRepository.findAllByIdInWithStock(anyList()))
-                .thenReturn(List.of(marketSellOrder));
-        when(accountRepository.findByIdWithLock(1L))
-                .thenReturn(Optional.of(testAccount));
-        when(executionService.record(eq(marketSellOrder), eq(event.price()), eq(10)))
-                .thenReturn(createExecution(marketSellOrder, event.price(), 10));
-        when(accountStockRepository.findByAccountAndStock(testAccount, testStock))
-                .thenReturn(Optional.of(testAccountStock));
-
-        // When
-        List<Long> executionIds = fill(stockCode, event);
-
-        // Then
-        assertThat(executionIds).hasSize(1);
-        assertThat(marketSellOrder.getFilledQuantity()).isEqualTo(10);
-        assertThat(marketSellOrder.getStatus()).isEqualTo(OrderStatus.FILLED);
-
-    }
-
-    @Test
-    @DisplayName("시장가 주문이 지정가 주문보다 우선순위가 높아 먼저 체결된다")
-    void distributeEvent_MarketOrderHasHigherPriorityThanLimitOrder_Success() {
-        // Given
-        String stockCode = "005930";
-        LimitOrderFillEvent event = new LimitOrderFillEvent(
-                UUID.randomUUID().toString(),
-                OrderMethod.SELL,
-                new BigDecimal("100"),
-                15, // 15주 체결
-                Instant.now().toEpochMilli()
-        );
-
-        // 시장가 매수 주문 (999999999 - 최고 우선순위)
-        Order marketBuyOrder = Order.createMarketOrder(
-                testAccount, testStock, 10, OrderMethod.BUY
-        );
-        ReflectionTestUtils.setField(marketBuyOrder, "orderId", 1L);
-
-        // 지정가 매수 주문 (100원)
-        Order limitBuyOrder = Order.createLimitOrder(
-                testAccount, testStock, new BigDecimal("100"), 10, OrderMethod.BUY
-        );
-        ReflectionTestUtils.setField(limitBuyOrder, "orderId", 2L);
-
-        // 시장가가 먼저, 지정가가 나중에
-        OrderBookEntry marketEntry = new OrderBookEntry(
-                1L, stockCode, OrderMethod.BUY, new BigDecimal("999999999"),
-                10, 10, Instant.now().toEpochMilli(), 1L
-        );
-        OrderBookEntry limitEntry = new OrderBookEntry(
-                2L, stockCode, OrderMethod.BUY, new BigDecimal("100"),
-                10, 10, Instant.now().toEpochMilli(), 2L
-        );
-
-        Account multiOrderAccount = Account.builder()
-                .accountId(1L)
-                .member(testMember)
-                .contest(testContest)
-                .cash(new BigDecimal("20000"))
-                .holdAmount(new BigDecimal("2000")) // 시장가 1000 + 지정가 1000
-                .build();
-
-        OrderHold marketHold = OrderHold.create(marketBuyOrder, multiOrderAccount, new BigDecimal("1000"));
-        ReflectionTestUtils.setField(marketHold, "orderId", 1L);
-        OrderHold limitHold = OrderHold.create(limitBuyOrder, multiOrderAccount, new BigDecimal("1000"));
-        ReflectionTestUtils.setField(limitHold, "orderId", 2L);
-
-        when(orderBookRepository.fetchMatchingEntries(stockCode, OrderMethod.SELL, event.price(), 100))
-                .thenReturn(List.of(marketEntry, limitEntry));
-        when(orderRepository.findAllByIdInWithStock(anyList()))
-                .thenAnswer(invocation -> {
-                    List<Long> orderIds = invocation.getArgument(0);
-                    List<Order> result = new java.util.ArrayList<>();
-                    for (Long orderId : orderIds) {
-                        if (orderId == 1L) {
-                            result.add(marketBuyOrder);
-                        } else if (orderId == 2L) {
-                            result.add(limitBuyOrder);
-                        }
-                    }
-                    return result;
-                });
-        when(accountRepository.findByIdWithLock(1L))
-                .thenReturn(Optional.of(multiOrderAccount));
-        when(executionService.record(any(Order.class), any(BigDecimal.class), anyInt()))
-                .thenAnswer(invocation -> {
-                    Order order = invocation.getArgument(0);
-                    BigDecimal price = invocation.getArgument(1);
-                    Integer quantity = invocation.getArgument(2);
-                    return createExecution(order, price, quantity);
-                });
-        when(orderHoldRepository.findById(anyLong()))
-                .thenAnswer(invocation -> {
-                    Long orderId = invocation.getArgument(0);
-                    if (orderId == 1L) {
-                        return Optional.of(marketHold);
-                    } else if (orderId == 2L) {
-                        return Optional.of(limitHold);
-                    }
-                    return Optional.empty();
-                });
-
-        // When
-        List<Long> executionIds = fill(stockCode, event);
-
-        // Then
-        assertThat(executionIds).hasSize(2);
-        // 시장가 주문이 먼저 전량 체결
-        assertThat(marketBuyOrder.getFilledQuantity()).isEqualTo(10);
-        // 지정가 주문이 5주 체결 (15 - 10 = 5)
-        assertThat(limitBuyOrder.getFilledQuantity()).isEqualTo(5);
-    }
-
-    @Test
-    @DisplayName("시장가 주문 부분 체결이 정상적으로 처리된다")
-    void distributeEvent_MarketOrderPartialFill_Success() {
-        // Given
-        String stockCode = "005930";
-        LimitOrderFillEvent event = new LimitOrderFillEvent(
-                UUID.randomUUID().toString(),
-                OrderMethod.SELL,
-                new BigDecimal("100"),
-                5, // 5주만 체결
-                Instant.now().toEpochMilli()
-        );
-
-        Order marketBuyOrder = Order.createMarketOrder(
-                testAccount, testStock, 10, OrderMethod.BUY
-        );
-        ReflectionTestUtils.setField(marketBuyOrder, "orderId", 1L);
-
-        OrderBookEntry orderBookEntry = new OrderBookEntry(
-                1L, stockCode, OrderMethod.BUY, new BigDecimal("999999999"),
-                10, 10, Instant.now().toEpochMilli(), 1L
-        );
-
-        OrderHold partialOrderHold = OrderHold.create(marketBuyOrder, testAccount, new BigDecimal("1000"));
-        ReflectionTestUtils.setField(partialOrderHold, "orderId", 1L);
-
-        Account partialAccount = Account.builder()
-                .accountId(1L)
-                .member(testMember)
-                .contest(testContest)
-                .cash(new BigDecimal("10000"))
-                .holdAmount(new BigDecimal("1000"))
-                .build();
-
-        when(orderBookRepository.fetchMatchingEntries(stockCode, OrderMethod.SELL, event.price(), 100))
-                .thenReturn(List.of(orderBookEntry));
-        when(orderRepository.findAllByIdInWithStock(anyList()))
-                .thenReturn(List.of(marketBuyOrder));
-        when(accountRepository.findByIdWithLock(1L))
-                .thenReturn(Optional.of(partialAccount));
-        when(executionService.record(eq(marketBuyOrder), eq(event.price()), eq(5)))
-                .thenReturn(createExecution(marketBuyOrder, event.price(), 5));
-        when(orderHoldRepository.findById(1L))
-                .thenReturn(Optional.of(partialOrderHold));
-
-        // When
-        List<Long> executionIds = fill(stockCode, event);
-
-        // Then
-        assertThat(executionIds).hasSize(1);
-        assertThat(marketBuyOrder.getFilledQuantity()).isEqualTo(5);
-        assertThat(marketBuyOrder.getRemainingQuantity()).isEqualTo(5);
-        assertThat(marketBuyOrder.getStatus()).isEqualTo(OrderStatus.PARTIALLY_FILLED);
-
-    }
-
-    // Helper 메서드
-    private Execution createExecution(Order order, BigDecimal price, int quantity) {
-        Execution execution = Execution.of(order, price, quantity);
-        // executionId는 Long 타입이므로 Long으로 설정
-        long executionId = Math.abs(UUID.randomUUID().getMostSignificantBits());
-        ReflectionTestUtils.setField(execution, "executionId", executionId);
-        return execution;
-    }
-
-    private List<Long> fill(String stockCode, LimitOrderFillEvent event) {
-        return limitOrderExecutionService.fillOnce(stockCode, event, POSITION).orElseThrow().stream()
-                .map(FilledExecution::executionId)
-                .toList();
+    private List<FilledExecution> fill(LimitOrderFillEvent event) {
+        return limitOrderExecutionService.fillOnce(STOCK, event, POSITION).orElseThrow();
     }
 }

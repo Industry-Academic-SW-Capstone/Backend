@@ -8,6 +8,12 @@ import grit.stockIt.domain.contest.entity.Contest;
 import grit.stockIt.domain.contest.repository.ContestRepository;
 import grit.stockIt.domain.matching.dto.LimitOrderFillEvent;
 import grit.stockIt.domain.matching.queue.CommandPosition;
+import grit.stockIt.domain.matching.queue.MatchingCommand;
+import grit.stockIt.domain.matching.queue.MatchingCommandType;
+import grit.stockIt.domain.matching.repository.ExchangeOrderRepository;
+import grit.stockIt.domain.matching.service.OrderAcceptService;
+import grit.stockIt.domain.matching.service.OrderCancelService;
+import grit.stockIt.domain.matching.service.QueuedCancelOutcome;
 import grit.stockIt.domain.matching.service.FilledExecution;
 import grit.stockIt.domain.matching.service.LimitOrderFillCoordinator;
 import grit.stockIt.domain.member.entity.AuthProvider;
@@ -25,6 +31,8 @@ import grit.stockIt.domain.stock.entity.Stock;
 import grit.stockIt.domain.stock.repository.StockRepository;
 import grit.stockIt.domain.stock.service.StockDetailService;
 import grit.stockIt.global.support.IntegrationTestSupport;
+import grit.stockIt.global.support.ExchangeBook;
+import grit.stockIt.global.support.OutboxCommands;
 import grit.stockIt.global.support.OutboxReports;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -81,6 +89,8 @@ class AccountLedgerConcurrencyTest extends IntegrationTestSupport {
 
     @Autowired private OrderService orderService;
     @Autowired private OrderCancelService orderCancelService;
+    @Autowired private OrderAcceptService orderAcceptService;
+    @Autowired private ExchangeOrderRepository exchangeOrderRepository;
     @Autowired private OrderHoldReleaseService orderHoldReleaseService;
     @Autowired private ExecutionSettlementService executionSettlementService;
     @Autowired private LimitOrderFillCoordinator limitOrderFillCoordinator;
@@ -178,6 +188,7 @@ class AccountLedgerConcurrencyTest extends IntegrationTestSupport {
         submit(pool, ready, start, errors, () -> {
             try {
                 for (int i = 0; i < WORKER_STEPS; i++) {
+                    acceptNewOrders(fixture.stockCode());
                     if (random.nextInt(10) < 3) {
                         cancelSomeActiveOrder(fixture, random);
                     } else {
@@ -232,8 +243,17 @@ class AccountLedgerConcurrencyTest extends IntegrationTestSupport {
     private void apply(ExecutionReport report) {
         if (report.type() == ExecutionReportType.FILL) {
             executionSettlementService.settle(report);
-        } else {
+        } else if (report.endsOrder()) {
             orderHoldReleaseService.release(report);
+        }
+    }
+
+    // 주문 접수 스레드가 아웃박스에 적은 주문 명령을 거래소가 받아 오더북에 올린다 — 운영에서는 같은 종목 워커가 차례로 한다.
+    private void acceptNewOrders(String stockCode) {
+        for (MatchingCommand command : OutboxCommands.take(jdbcTemplate, stockCode)) {
+            if (command.type() == MatchingCommandType.ORDER) {
+                orderAcceptService.acceptOnce(command, nextPosition());
+            }
         }
     }
 
@@ -362,6 +382,7 @@ class AccountLedgerConcurrencyTest extends IntegrationTestSupport {
             Order order = orderRepository.save(Order.createLimitOrder(account, stock, PRICE, ORDER_QUANTITY, OrderMethod.BUY));
             account.increaseHoldAmount(holdAmount);
             orderHoldRepository.save(OrderHold.create(order, account, holdAmount));
+            ExchangeBook.place(exchangeOrderRepository, order);
             orderIds.add(order.getOrderId());
         }
         return new Fixture(stock.getCode(), account.getAccountId(), email, orderIds);

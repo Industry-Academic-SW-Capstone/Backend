@@ -12,7 +12,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-// 거래소가 알린 취소·만료로 주문에 묶어 둔 현금·주식을 푼다. 계좌를 고치는 일이라 증권사가 한다.
+// 거래소가 알린 취소·만료·거부로 주문을 끝내고 묶어 둔 현금·주식을 푼다. 계좌를 고치는 일이라 증권사가 한다.
+// 거부도 사용자에게는 취소로 보인다 — 상태 값을 늘리면 프론트가 함께 바뀌어야 한다.
 // 통보는 계좌 키로 도착 순서대로 처리되므로, 같은 주문의 앞선 체결 통보는 이미 정산된 뒤다.
 @Slf4j
 @Service
@@ -39,6 +40,7 @@ public class OrderHoldReleaseService {
         Order order = orderRepository.findById(report.orderId())
                 .orElseThrow(() -> new IllegalStateException("주문을 찾을 수 없습니다. orderId=" + report.orderId()));
 
+        order.markCancelled();
         if (report.orderMethod() == OrderMethod.BUY) {
             orderHoldService.releaseBuyHold(order);
         } else {

@@ -4,6 +4,7 @@ import grit.stockIt.domain.account.entity.Account;
 import grit.stockIt.domain.account.repository.AccountRepository;
 import grit.stockIt.domain.contest.entity.Contest;
 import grit.stockIt.domain.contest.repository.ContestRepository;
+import grit.stockIt.domain.matching.queue.MatchingCommandType;
 import grit.stockIt.domain.matching.repository.OrderBookRepository;
 import grit.stockIt.domain.member.entity.AuthProvider;
 import grit.stockIt.domain.member.entity.Member;
@@ -18,6 +19,7 @@ import grit.stockIt.domain.stock.repository.StockRepository;
 import grit.stockIt.domain.stock.service.StockDetailService;
 import grit.stockIt.global.exception.BadRequestException;
 import grit.stockIt.global.support.IntegrationTestSupport;
+import grit.stockIt.global.support.OutboxCommands;
 import grit.stockIt.global.websocket.manager.OrderSubscriptionCoordinator;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -53,6 +55,9 @@ import static org.mockito.Mockito.verify;
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 @DisplayName("OrderService 오더북 반영 불변식 특성화 테스트")
 class OrderBookInvariantCharacterizationTest extends IntegrationTestSupport {
+
+    @Autowired
+    private org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
 
     @Autowired
     private OrderService orderService;
@@ -152,7 +157,7 @@ class OrderBookInvariantCharacterizationTest extends IntegrationTestSupport {
 
     // ===== 27a: 정상 커밋 → 오더북 반영 =====
     @Test
-    @DisplayName("27a. 지정가 주문이 커밋되면 오더북에서 조회된다")
+    @DisplayName("27a. 지정가 주문이 커밋되면 거래소로 보낼 주문 명령도 함께 커밋된다")
     void afterCommit_normalCommit_addsOrderToOrderBook() {
         // given: 매수 주문에 필요한 충분한 현금을 가진 계좌
         Account account = createAccount(new BigDecimal("1000000"));
@@ -163,13 +168,13 @@ class OrderBookInvariantCharacterizationTest extends IntegrationTestSupport {
         // when
         var response = orderService.createLimitOrder(request);
 
-        // then: 주문 행이 곧 오더북이므로, 커밋되었다는 것이 곧 오더북에 올랐다는 뜻이다
-        assertThat(orderBookRepository.exists(response.orderId(), stock.getCode(), OrderMethod.BUY)).isTrue();
+        // then: 주문과 주문 명령이 같은 트랜잭션이라, 커밋된 주문은 반드시 거래소 오더북으로 간다
+        assertThat(orderCommandWritten(response.orderId(), stock.getCode())).isTrue();
     }
 
     // ===== 27b: 강제(예외 기반) 롤백 → 오더북 미반영 =====
     @Test
-    @DisplayName("27b. 현금 부족으로 롤백되면 주문이 저장되지 않아 오더북에도 없다")
+    @DisplayName("27b. 현금 부족으로 롤백되면 주문도 주문 명령도 남지 않는다")
     void afterCommit_exceptionBasedRollback_neverAddsOrderToOrderBook() {
         // given: 홀딩 가능 금액보다 부족한 현금 계좌 (BadRequestException 유발용, @Transactional 롤백 테스트 아님)
         Account account = createAccount(new BigDecimal("1"));
@@ -187,11 +192,12 @@ class OrderBookInvariantCharacterizationTest extends IntegrationTestSupport {
                 List.of(grit.stockIt.domain.order.entity.OrderStatus.PENDING)
         );
         assertThat(orders).isEmpty();
+        assertThat(OutboxCommands.take(jdbcTemplate, stock.getCode())).isEmpty();
     }
 
     // ===== 27c: 구독 등록 실패 → 주문·오더북에는 영향 없음 =====
     @Test
-    @DisplayName("27c. 커밋 후 시세 구독 등록이 실패해도 주문은 커밋되고 오더북에 남는다")
+    @DisplayName("27c. 커밋 후 시세 구독 등록이 실패해도 주문과 주문 명령은 커밋된다")
     void afterCommit_subscriptionRegistrationFails_orderStillInOrderBook() {
         // given
         Account account = createAccount(new BigDecimal("1000000"));
@@ -209,9 +215,8 @@ class OrderBookInvariantCharacterizationTest extends IntegrationTestSupport {
         Order saved = orderRepository.findById(response.orderId()).orElseThrow();
         assertThat(saved.getOrderId()).isEqualTo(response.orderId());
 
-        // 오더북 반영은 주문 저장과 같은 행위라, 구독이라는 부수 기능의 실패와 무관하다.
-        // 별도 저장소에 오더북을 두던 구조에서는 여기서 오더북만 누락돼 유령 주문이 생겼다.
-        assertThat(orderBookRepository.exists(response.orderId(), stock.getCode(), OrderMethod.BUY)).isTrue();
+        // 주문 명령은 주문 저장과 같은 트랜잭션이라, 구독이라는 부수 기능의 실패와 무관하다.
+        assertThat(orderCommandWritten(response.orderId(), stock.getCode())).isTrue();
     }
 
     // ===== 28: 시장가 KIS 실패 롤백 후 선구독 잔존 (버그 의심 a) =====
@@ -245,5 +250,10 @@ class OrderBookInvariantCharacterizationTest extends IntegrationTestSupport {
         Account reloaded = accountRepository.findById(account.getAccountId()).orElseThrow();
         assertThat(reloaded.getHoldAmount()).isEqualByComparingTo(BigDecimal.ZERO);
 
+    }
+
+    private boolean orderCommandWritten(Long orderId, String stockCode) {
+        return OutboxCommands.take(jdbcTemplate, stockCode).stream()
+                .anyMatch(command -> command.type() == MatchingCommandType.ORDER && orderId.equals(command.orderId()));
     }
 }

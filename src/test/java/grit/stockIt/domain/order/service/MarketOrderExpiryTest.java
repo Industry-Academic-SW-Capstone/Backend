@@ -4,7 +4,14 @@ import grit.stockIt.domain.account.entity.Account;
 import grit.stockIt.domain.account.entity.AccountStock;
 import grit.stockIt.domain.account.repository.AccountRepository;
 import grit.stockIt.domain.account.repository.AccountStockRepository;
+import grit.stockIt.contract.ExecutionReport;
 import grit.stockIt.domain.matching.queue.CommandPosition;
+import grit.stockIt.domain.matching.queue.MatchingCommand;
+import grit.stockIt.domain.matching.queue.MatchingCommandType;
+import grit.stockIt.domain.matching.scheduler.MarketOrderExpiryScheduler;
+import grit.stockIt.domain.matching.service.OrderAcceptService;
+import grit.stockIt.domain.matching.service.OrderCancelService;
+import grit.stockIt.domain.matching.service.QueuedCancelOutcome;
 import grit.stockIt.domain.matching.queue.OrderCommandPublisher;
 import grit.stockIt.domain.contest.entity.Contest;
 import grit.stockIt.domain.contest.repository.ContestRepository;
@@ -20,12 +27,12 @@ import grit.stockIt.domain.order.entity.OrderMethod;
 import grit.stockIt.domain.order.entity.OrderStatus;
 import grit.stockIt.domain.order.repository.OrderHoldRepository;
 import grit.stockIt.domain.order.repository.OrderRepository;
-import grit.stockIt.domain.order.scheduler.MarketOrderExpiryScheduler;
 import grit.stockIt.domain.stock.dto.StockDetailResponse;
 import grit.stockIt.domain.stock.entity.Stock;
 import grit.stockIt.domain.stock.repository.StockRepository;
 import grit.stockIt.domain.stock.service.StockDetailService;
 import grit.stockIt.global.support.IntegrationTestSupport;
+import grit.stockIt.global.support.OutboxCommands;
 import grit.stockIt.global.support.OutboxReports;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -52,7 +59,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
-@DisplayName("시장가 미체결 주문 당일 만료 — 스케줄러는 명령을 넣고 워커가 만료한다 (통합 테스트)")
+@DisplayName("시장가 미체결 주문 당일 만료 — 거래소 스케줄러는 명령을 넣고 워커가 만료하고, 증권사가 통보로 홀딩을 푼다 (통합 테스트)")
 class MarketOrderExpiryTest extends IntegrationTestSupport {
 
     private static final BigDecimal UPPER_LIMIT_PRICE = new BigDecimal("91000");
@@ -62,6 +69,9 @@ class MarketOrderExpiryTest extends IntegrationTestSupport {
 
     @Autowired
     private OrderCancelService orderCancelService;
+
+    @Autowired
+    private OrderAcceptService orderAcceptService;
 
     @Autowired
     private OrderHoldReleaseService orderHoldReleaseService;
@@ -123,8 +133,8 @@ class MarketOrderExpiryTest extends IntegrationTestSupport {
     void expire_marketBuyOrder_releasesCashHold() {
         Fixture fx = createFixture(new BigDecimal("1000000"));
         authenticateAs(memberEmail);
-        OrderResponse created = orderService.createMarketOrder(new MarketOrderCreateRequest(
-                fx.account().getAccountId(), fx.stock().getCode(), 3, OrderMethod.BUY));
+        OrderResponse created = place(fx, orderService.createMarketOrder(new MarketOrderCreateRequest(
+                fx.account().getAccountId(), fx.stock().getCode(), 3, OrderMethod.BUY)));
 
         Account beforeExpiry = accountRepository.findById(fx.account().getAccountId()).orElseThrow();
         assertThat(beforeExpiry.getHoldAmount()).isEqualByComparingTo(UPPER_LIMIT_PRICE.multiply(BigDecimal.valueOf(3)));
@@ -147,8 +157,8 @@ class MarketOrderExpiryTest extends IntegrationTestSupport {
         Fixture fx = createFixture(new BigDecimal("1000000"));
         accountStockRepository.save(AccountStock.create(fx.account(), fx.stock(), 10, new BigDecimal("50000")));
         authenticateAs(memberEmail);
-        OrderResponse created = orderService.createMarketOrder(new MarketOrderCreateRequest(
-                fx.account().getAccountId(), fx.stock().getCode(), 4, OrderMethod.SELL));
+        OrderResponse created = place(fx, orderService.createMarketOrder(new MarketOrderCreateRequest(
+                fx.account().getAccountId(), fx.stock().getCode(), 4, OrderMethod.SELL)));
 
         assertThat(holdingOf(fx).getHoldQuantity()).isEqualTo(4);
 
@@ -166,10 +176,10 @@ class MarketOrderExpiryTest extends IntegrationTestSupport {
     void scheduler_enqueuesMarketOrdersOnly() {
         Fixture fx = createFixture(new BigDecimal("1000000"));
         authenticateAs(memberEmail);
-        OrderResponse limitOrder = orderService.createLimitOrder(new LimitOrderCreateRequest(
-                fx.account().getAccountId(), fx.stock().getCode(), new BigDecimal("10000"), 2, OrderMethod.BUY));
-        OrderResponse marketOrder = orderService.createMarketOrder(new MarketOrderCreateRequest(
-                fx.account().getAccountId(), fx.stock().getCode(), 1, OrderMethod.BUY));
+        OrderResponse limitOrder = place(fx, orderService.createLimitOrder(new LimitOrderCreateRequest(
+                fx.account().getAccountId(), fx.stock().getCode(), new BigDecimal("10000"), 2, OrderMethod.BUY)));
+        OrderResponse marketOrder = place(fx, orderService.createMarketOrder(new MarketOrderCreateRequest(
+                fx.account().getAccountId(), fx.stock().getCode(), 1, OrderMethod.BUY)));
 
         marketOrderExpiryScheduler.expireMarketOrders();
 
@@ -185,10 +195,10 @@ class MarketOrderExpiryTest extends IntegrationTestSupport {
     void expired_notTargetedAgain_andIdempotent() {
         Fixture fx = createFixture(new BigDecimal("1000000"));
         authenticateAs(memberEmail);
-        OrderResponse first = orderService.createMarketOrder(new MarketOrderCreateRequest(
-                fx.account().getAccountId(), fx.stock().getCode(), 2, OrderMethod.BUY));
-        OrderResponse second = orderService.createMarketOrder(new MarketOrderCreateRequest(
-                fx.account().getAccountId(), fx.stock().getCode(), 1, OrderMethod.BUY));
+        OrderResponse first = place(fx, orderService.createMarketOrder(new MarketOrderCreateRequest(
+                fx.account().getAccountId(), fx.stock().getCode(), 2, OrderMethod.BUY)));
+        OrderResponse second = place(fx, orderService.createMarketOrder(new MarketOrderCreateRequest(
+                fx.account().getAccountId(), fx.stock().getCode(), 1, OrderMethod.BUY)));
 
         expireByWorker(fx, first.orderId());
         expireByWorker(fx, second.orderId());
@@ -206,8 +216,20 @@ class MarketOrderExpiryTest extends IntegrationTestSupport {
     private QueuedCancelOutcome expireByWorker(Fixture fx, Long orderId) {
         QueuedCancelOutcome outcome = orderCancelService.expireOnce(
                 fx.stock().getCode(), orderId, new CommandPosition(topic, 0, nextOffset++));
-        OutboxReports.take(jdbcTemplate, fx.account().getAccountId()).forEach(orderHoldReleaseService::release);
+        OutboxReports.take(jdbcTemplate, fx.account().getAccountId()).stream()
+                .filter(ExecutionReport::endsOrder)
+                .forEach(orderHoldReleaseService::release);
         return outcome;
+    }
+
+    // 증권사가 아웃박스에 적은 주문 명령을 거래소가 받아 오더북에 올린다 — 운영에서는 릴레이와 체결 워커가 한다.
+    private OrderResponse place(Fixture fx, OrderResponse created) {
+        for (MatchingCommand command : OutboxCommands.take(jdbcTemplate, fx.stock().getCode())) {
+            if (command.type() == MatchingCommandType.ORDER) {
+                orderAcceptService.acceptOnce(command, new CommandPosition(topic, 0, nextOffset++));
+            }
+        }
+        return created;
     }
 
     private AccountStock holdingOf(Fixture fx) {

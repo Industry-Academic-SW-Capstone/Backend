@@ -1,12 +1,10 @@
 package grit.stockIt.domain.settlement;
 
+import grit.stockIt.contract.ExecutionReport;
 import grit.stockIt.domain.account.entity.Account;
 import grit.stockIt.domain.account.repository.AccountRepository;
 import grit.stockIt.domain.contest.entity.Contest;
 import grit.stockIt.domain.contest.repository.ContestRepository;
-import grit.stockIt.domain.execution.entity.Execution;
-import grit.stockIt.domain.execution.repository.ExecutionRepository;
-import grit.stockIt.domain.execution.service.ExecutionService;
 import grit.stockIt.domain.member.entity.AuthProvider;
 import grit.stockIt.domain.member.entity.Member;
 import grit.stockIt.domain.member.repository.MemberRepository;
@@ -22,6 +20,7 @@ import grit.stockIt.domain.settlement.service.ExecutionSettlementService;
 import grit.stockIt.domain.stock.entity.Stock;
 import grit.stockIt.domain.stock.repository.StockRepository;
 import grit.stockIt.global.support.IntegrationTestSupport;
+import grit.stockIt.global.support.TestExecutionIds;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -39,16 +38,14 @@ import java.util.function.Supplier;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-// 체결(tx1)이 커밋된 뒤 정산(tx2)이 돌기까지 종목 락이 풀려 있어, 그 사이 취소·만료가
-// 홀딩을 푼다. 정산이 그때 뺄 것을 잃으면 복구 배치가 같은 자리에서 영원히 실패한다.
-@DisplayName("홀딩 해제와 정산의 경합 (통합 테스트)")
+// 주문을 끝내는 통보(취소·만료)와 체결 통보가 만나는 경우. 통보는 계좌 키로 순서대로 오므로 보통은 앞선 체결이 먼저 정산되지만,
+// 체결 정산이 재시도를 다 써 DLT 로 갔다가 나중에 처리되면 순서가 뒤바뀐다. 그때도 정산이 실패하지 않고 장부가 맞아야 한다.
+@DisplayName("홀딩 해제와 정산의 순서 (통합 테스트)")
 class SettlementAfterHoldReleaseTest extends IntegrationTestSupport {
 
     @Autowired private ExecutionSettlementService executionSettlementService;
-    @Autowired private ExecutionService executionService;
     @Autowired private OrderHoldService orderHoldService;
     @Autowired private SettlementRepository settlementRepository;
-    @Autowired private ExecutionRepository executionRepository;
     @Autowired private OrderRepository orderRepository;
     @Autowired private OrderHoldRepository orderHoldRepository;
     @Autowired private AccountRepository accountRepository;
@@ -58,18 +55,19 @@ class SettlementAfterHoldReleaseTest extends IntegrationTestSupport {
     @Autowired private PlatformTransactionManager transactionManager;
 
     @Test
-    @DisplayName("부분체결 주문의 홀딩을 풀어도 미정산 체결분은 남는다")
-    void releaseBuyHold_keepsUnsettledFillAmount() {
+    @DisplayName("앞선 체결을 정산한 뒤 주문을 끝내면 남은 홀딩이 모두 풀린다")
+    void releaseBuyHold_afterSettledFill_releasesRest() {
         Fixture fx = fixture(10, 4);
+        executionSettlementService.settle(fx.reports().get(0));
 
         releaseHold(fx.orderId());
 
         OrderHold hold = orderHoldRepository.findById(fx.orderId()).orElseThrow();
-        assertThat(hold.getHoldAmount()).isEqualByComparingTo(new BigDecimal("400"));
-        assertThat(hold.getStatus()).isEqualTo(OrderHoldStatus.ACTIVE);
-
+        assertThat(hold.getHoldAmount()).isEqualByComparingTo(BigDecimal.ZERO);
+        assertThat(hold.getStatus()).isEqualTo(OrderHoldStatus.RELEASED);
         Account account = accountRepository.findById(fx.accountId()).orElseThrow();
-        assertThat(account.getHoldAmount()).isEqualByComparingTo(new BigDecimal("400"));
+        assertThat(account.getHoldAmount()).isEqualByComparingTo(BigDecimal.ZERO);
+        assertThat(account.getCash()).isEqualByComparingTo(new BigDecimal("999600"));
     }
 
     @Test
@@ -87,33 +85,31 @@ class SettlementAfterHoldReleaseTest extends IntegrationTestSupport {
     }
 
     @Test
-    @DisplayName("홀딩 해제가 먼저 끼어들어도 정산이 성공하고 현금이 정확히 빠진다")
+    @DisplayName("홀딩 해제 뒤에 늦게 온 체결도 정산이 성공하고 현금이 정확히 빠진다")
     void settle_afterHoldRelease_succeeds() {
         Fixture fx = fixture(10, 4);
         releaseHold(fx.orderId());
 
-        settle(fx.executionIds().get(0));
+        executionSettlementService.settle(fx.reports().get(0));
 
-        assertThat(settlementRepository.existsByExecutionId(fx.executionIds().get(0))).isTrue();
+        assertThat(settlementRepository.existsByExecutionId(fx.reports().get(0).executionId())).isTrue();
         Account account = accountRepository.findById(fx.accountId()).orElseThrow();
         assertThat(account.getCash()).isEqualByComparingTo(new BigDecimal("999600"));
         assertThat(account.getHoldAmount()).isEqualByComparingTo(BigDecimal.ZERO);
     }
 
     @Test
-    @DisplayName("먼저 난 체결이 미정산인 채로 주문이 다 차도, 그 체결은 나중에 정산된다")
+    @DisplayName("마지막 체결이 먼저 정산돼 주문이 끝나도, 늦게 온 앞선 체결이 정산되고 장부가 맞는다")
     void settle_lateFirstFill_afterOrderFullyFilled() {
         Fixture fx = fixture(10, 4, 6);
 
-        settle(fx.executionIds().get(1));
-
-        // 주문이 다 찼지만 첫 체결이 미정산이라, 그 몫은 홀딩에 남아 있어야 한다.
+        executionSettlementService.settle(fx.reports().get(1));
         assertThat(orderHoldRepository.findById(fx.orderId()).orElseThrow().getHoldAmount())
-                .isEqualByComparingTo(new BigDecimal("400"));
+                .as("남은 수량 0 통보라 남은 홀딩을 모두 푼다").isEqualByComparingTo(BigDecimal.ZERO);
 
-        settle(fx.executionIds().get(0));
+        executionSettlementService.settle(fx.reports().get(0));
 
-        assertThat(settlementRepository.existsByExecutionId(fx.executionIds().get(0))).isTrue();
+        assertThat(settlementRepository.existsByExecutionId(fx.reports().get(0).executionId())).isTrue();
         Account account = accountRepository.findById(fx.accountId()).orElseThrow();
         assertThat(account.getCash()).isEqualByComparingTo(new BigDecimal("999000"));
         assertThat(account.getHoldAmount()).isEqualByComparingTo(BigDecimal.ZERO);
@@ -126,7 +122,7 @@ class SettlementAfterHoldReleaseTest extends IntegrationTestSupport {
         // 계좌에 묶인 돈이 남지 않는다.
         Fixture fx = fixture(10, new BigDecimal("1200"), 10);
 
-        settle(fx.executionIds().get(0));
+        executionSettlementService.settle(fx.reports().get(0));
 
         OrderHold hold = orderHoldRepository.findById(fx.orderId()).orElseThrow();
         assertThat(hold.getHoldAmount()).isEqualByComparingTo(BigDecimal.ZERO);
@@ -144,10 +140,10 @@ class SettlementAfterHoldReleaseTest extends IntegrationTestSupport {
         });
     }
 
-    private record Fixture(Long accountId, Long orderId, List<Long> executionIds) {
+    private record Fixture(Long accountId, Long orderId, List<ExecutionReport> reports) {
     }
 
-    // 주문 100원 × quantity, 현금 100만원. fills 는 체결 수량을 순서대로 낸다.
+    // 주문 100원 × quantity, 현금 100만원. fills 는 거래소가 낸 체결 통보를 순서대로 만든다(아직 정산 전).
     private Fixture fixture(int quantity, int... fills) {
         return fixture(quantity, new BigDecimal("1000"), fills);
     }
@@ -181,15 +177,16 @@ class SettlementAfterHoldReleaseTest extends IntegrationTestSupport {
                     Order.createLimitOrder(account, stock, new BigDecimal("100"), quantity, OrderMethod.BUY));
             orderHoldRepository.save(OrderHold.create(order, account, holdAmount));
 
-            List<Long> executionIds = new ArrayList<>();
+            List<ExecutionReport> reports = new ArrayList<>();
+            int cum = 0;
             for (int fill : fills) {
-                order.applyFill(fill);
-                executionIds.add(executionRepository.save(
-                        Execution.of(order, new BigDecimal("100"), fill)).getExecutionId());
+                cum += fill;
+                reports.add(ExecutionReport.fill(TestExecutionIds.next(), order.getOrderId(), account.getAccountId(),
+                        stock.getCode(), OrderMethod.BUY, new BigDecimal("100"), fill, cum, quantity - cum,
+                        System.currentTimeMillis()));
             }
-            orderRepository.save(order);
 
-            return new Fixture(account.getAccountId(), order.getOrderId(), executionIds);
+            return new Fixture(account.getAccountId(), order.getOrderId(), reports);
         });
     }
 
@@ -207,8 +204,4 @@ class SettlementAfterHoldReleaseTest extends IntegrationTestSupport {
         }
     }
 
-    // 정산 워커가 받을 결과 통보를 저장된 체결로 만든다.
-    private void settle(Long executionId) {
-        executionSettlementService.settle(executionService.findFillReports(List.of(executionId)).get(0));
-    }
 }

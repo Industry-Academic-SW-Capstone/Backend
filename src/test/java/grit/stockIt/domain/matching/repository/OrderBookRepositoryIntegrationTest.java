@@ -5,6 +5,7 @@ import grit.stockIt.domain.account.repository.AccountRepository;
 import grit.stockIt.domain.contest.entity.Contest;
 import grit.stockIt.domain.contest.repository.ContestRepository;
 import grit.stockIt.domain.matching.dto.OrderBookEntry;
+import grit.stockIt.domain.matching.entity.ExchangeOrder;
 import grit.stockIt.domain.member.entity.AuthProvider;
 import grit.stockIt.domain.member.entity.Member;
 import grit.stockIt.domain.member.repository.MemberRepository;
@@ -13,6 +14,7 @@ import grit.stockIt.domain.order.entity.OrderMethod;
 import grit.stockIt.domain.order.repository.OrderRepository;
 import grit.stockIt.domain.stock.entity.Stock;
 import grit.stockIt.domain.stock.repository.StockRepository;
+import grit.stockIt.global.support.ExchangeBook;
 import grit.stockIt.global.support.IntegrationTestSupport;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -31,6 +33,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 // 플래너가 같은 기준으로 한 번 더 정렬한다.
 @DisplayName("OrderBookRepository.fetchMatchingEntries 통합 테스트")
 class OrderBookRepositoryIntegrationTest extends IntegrationTestSupport {
+
+    @Autowired
+    private ExchangeOrderRepository exchangeOrderRepository;
 
     @Autowired
     private OrderBookRepository orderBookRepository;
@@ -89,7 +94,9 @@ class OrderBookRepositoryIntegrationTest extends IntegrationTestSupport {
 
     // 주문을 저장하면 그것으로 오더북 등록이 끝난다. 별도 색인이 없다.
     private Order saveOrder(OrderMethod method, BigDecimal price, int quantity) {
-        return orderRepository.save(Order.createLimitOrder(testAccount, testStock, price, quantity, method));
+        Order order = orderRepository.save(Order.createLimitOrder(testAccount, testStock, price, quantity, method));
+        ExchangeBook.place(exchangeOrderRepository, order);
+        return order;
     }
 
     @Test
@@ -155,8 +162,9 @@ class OrderBookRepositoryIntegrationTest extends IntegrationTestSupport {
     @DisplayName("잔여 수량이 없는 주문은 별도 삭제 없이 오더북에서 빠진다")
     void fetchMatchingEntries_excludesFullyFilledOrders() {
         Order filled = saveOrder(OrderMethod.SELL, new BigDecimal("100"), 10);
-        filled.applyFill(10);
-        orderRepository.save(filled);
+        ExchangeOrder filledOnBook = exchangeOrderRepository.findById(filled.getOrderId()).orElseThrow();
+        filledOnBook.applyFill(10);
+        exchangeOrderRepository.save(filledOnBook);
         saveOrder(OrderMethod.SELL, new BigDecimal("101"), 10);
 
         List<OrderBookEntry> entries = orderBookRepository.fetchMatchingEntries(
@@ -164,6 +172,5 @@ class OrderBookRepositoryIntegrationTest extends IntegrationTestSupport {
 
         assertThat(entries).extracting(entry -> entry.price().intValueExact())
                 .containsExactly(101);
-        assertThat(orderBookRepository.exists(filled.getOrderId(), stockCode, OrderMethod.SELL)).isFalse();
     }
 }

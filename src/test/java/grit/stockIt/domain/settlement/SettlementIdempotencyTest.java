@@ -17,6 +17,7 @@ import grit.stockIt.domain.settlement.repository.SettlementRepository;
 import grit.stockIt.domain.stock.entity.Stock;
 import grit.stockIt.domain.stock.repository.StockRepository;
 import grit.stockIt.global.support.IntegrationTestSupport;
+import grit.stockIt.global.support.TestExecutionIds;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -108,7 +109,7 @@ class SettlementIdempotencyTest extends IntegrationTestSupport {
                 .build());
         Order order = orderRepository.save(
                 Order.createLimitOrder(account, stock, new BigDecimal("100"), 10, OrderMethod.BUY));
-        return executionRepository.save(Execution.of(order, new BigDecimal("100"), 10));
+        return executionRepository.save(Execution.of(TestExecutionIds.next(), order, new BigDecimal("100"), 10));
     }
 
     private Settlement settlementOf(Execution execution) {

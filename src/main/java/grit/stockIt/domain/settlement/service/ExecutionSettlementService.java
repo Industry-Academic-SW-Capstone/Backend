@@ -5,6 +5,8 @@ import grit.stockIt.domain.account.entity.Account;
 import grit.stockIt.domain.account.entity.AccountStock;
 import grit.stockIt.domain.account.repository.AccountRepository;
 import grit.stockIt.domain.account.repository.AccountStockRepository;
+import grit.stockIt.domain.execution.entity.Execution;
+import grit.stockIt.domain.execution.repository.ExecutionRepository;
 import grit.stockIt.domain.notification.event.ExecutionFilledEvent;
 import grit.stockIt.domain.order.entity.Order;
 import grit.stockIt.domain.order.entity.OrderHold;
@@ -22,36 +24,23 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
-import java.time.LocalDateTime;
-import java.util.List;
 
 // 체결 하나를 계좌에 반영한다. 체결 트랜잭션이 커밋된 뒤 정산 워커가 돌므로 종목의 체결 줄 밖이고,
 // 여기서 쓰는 왕복은 종목당 상한에 영향을 주지 않는다. 체결 내용은 결과 통보에서 읽고 거래소 테이블은 읽지 않는다.
 //
-// 정산 워커와 복구 배치 두 곳에서 같은 메서드로 들어온다.
+// 체결 내역(execution)도 여기서 함께 적는다 — 체결 내역과 정산은 같은 트랜잭션이라 "체결은 있는데 정산이 없는" 상태가 없다.
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class ExecutionSettlementService {
 
+    private final ExecutionRepository executionRepository;
     private final SettlementRepository settlementRepository;
     private final AccountRepository accountRepository;
     private final AccountStockRepository accountStockRepository;
     private final OrderRepository orderRepository;
     private final OrderHoldRepository orderHoldRepository;
     private final ApplicationEventPublisher eventPublisher;
-
-    // 체결 하나가 한 트랜잭션이다. 한 건이 실패해도 나머지 정산이 막히지 않고,
-    // 실패한 건만 복구 배치가 다시 집는다.
-    @Transactional(readOnly = true)
-    public List<Long> findUnsettledExecutionIds(LocalDateTime cutoff, int limit) {
-        return settlementRepository.findUnsettledExecutionIds(cutoff, limit);
-    }
-
-    @Transactional(readOnly = true)
-    public long countUnsettled(LocalDateTime cutoff) {
-        return settlementRepository.countUnsettled(cutoff);
-    }
 
     @Transactional
     public void settle(ExecutionReport report) {
@@ -63,14 +52,16 @@ public class ExecutionSettlementService {
             return;
         }
 
+        // 계좌를 먼저 잠그고 주문을 읽는다. 주문을 먼저 읽으면 같은 주문의 다른 체결 정산이 그 사이 커밋한 체결 수량을
+        // 보지 못한 채 덮어쓴다. 같은 계좌의 정산·홀딩 해제는 이 잠금으로 한 줄로 선다.
+        Account account = accountRepository.findByIdWithLock(report.accountId())
+                .orElseThrow(() -> new IllegalStateException(
+                        "계좌를 찾을 수 없습니다. accountId=" + report.accountId()));
         Order order = orderRepository.findById(report.orderId()).orElse(null);
         if (order == null) {
             log.warn("정산할 체결의 주문을 찾을 수 없습니다. executionId={} orderId={}", executionId, report.orderId());
             return;
         }
-        Account account = accountRepository.findByIdWithLock(report.accountId())
-                .orElseThrow(() -> new IllegalStateException(
-                        "계좌를 찾을 수 없습니다. accountId=" + report.accountId()));
 
         AccountStock holding = accountStockRepository
                 .findByAccountAndStock(account, order.getStock())
@@ -84,6 +75,10 @@ public class ExecutionSettlementService {
         int quantity = report.quantity();
         BigDecimal fillAmount = report.price().multiply(BigDecimal.valueOf(quantity));
 
+        // settlement 가 execution 을 외래키로 가리키므로 먼저 내보낸다(settlement 는 IDENTITY 라 저장 즉시 INSERT 된다).
+        executionRepository.saveAndFlush(Execution.of(executionId, order, report.price(), quantity));
+        order.applyReportedFill(report.cumQuantity());
+
         // 유니크 제약이 실제 방어선이다. 이미 정산된 체결이면 여기서 예외가 나고 트랜잭션이 통째로
         // 되돌아가므로, 현금이 두 번 빠지는 일이 구조적으로 없다.
         settlementRepository.save(Settlement.of(
@@ -95,8 +90,9 @@ public class ExecutionSettlementService {
         publishExecutionFilledEvent(report, order, account);
         applyToAccount(order, report.price(), quantity, account, holding);
 
-        // 체결이 이미 커밋됐으므로 주문의 잔여 수량이 곧 진실이다.
-        if (order.getRemainingQuantity() <= 0) {
+        // 거래소가 이 체결 뒤 남은 수량을 알려 준다. 0 이면 이 주문의 마지막 체결이고, 통보는 순서대로 오므로
+        // 앞선 체결은 모두 정산된 뒤다.
+        if (report.leavesQuantity() == 0) {
             releaseRemainingHold(order, account);
             publishTradeCompletionEvent(order, report.price(), account, currentAvgPrice);
         }
@@ -154,14 +150,11 @@ public class ExecutionSettlementService {
         holding.increaseQuantity(fillQuantity, price);
     }
 
-    // 이 주문에 아직 정산되지 않은 다른 체결이 있으면 그 몫은 남긴다. 통째로 풀면 뒤늦게
-    // 정산될 체결이 뺄 것을 잃는다.
+    // 마지막 체결까지 정산했으므로 남은 홀딩(지정가보다 싸게 체결된 차액 등)을 모두 푼다.
     private void releaseRemainingHold(Order order, Account account) {
         orderHoldRepository.findById(order.getOrderId())
                 .ifPresent(hold -> {
-                    BigDecimal pending = settlementRepository.sumUnsettledFillAmount(order.getOrderId());
-                    BigDecimal releasable = hold.getHoldAmount().subtract(pending).max(BigDecimal.ZERO)
-                            .min(account.getHoldAmount());
+                    BigDecimal releasable = hold.getHoldAmount().min(account.getHoldAmount());
                     if (releasable.signum() > 0) {
                         account.decreaseHoldAmount(releasable);
                         hold.decreaseHoldAmount(releasable);

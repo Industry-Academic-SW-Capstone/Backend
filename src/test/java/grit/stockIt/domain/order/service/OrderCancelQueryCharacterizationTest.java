@@ -8,8 +8,12 @@ import grit.stockIt.domain.account.repository.AccountRepository;
 import grit.stockIt.domain.account.repository.AccountStockRepository;
 import grit.stockIt.domain.contest.entity.Contest;
 import grit.stockIt.domain.contest.repository.ContestRepository;
+import grit.stockIt.domain.matching.entity.ExchangeOrder;
 import grit.stockIt.domain.matching.queue.CommandPosition;
-import grit.stockIt.domain.matching.queue.OrderCommandPublisher;
+import grit.stockIt.domain.matching.queue.MatchingCommandType;
+import grit.stockIt.domain.matching.repository.ExchangeOrderRepository;
+import grit.stockIt.domain.matching.service.OrderCancelService;
+import grit.stockIt.domain.matching.service.QueuedCancelOutcome;
 import grit.stockIt.domain.matching.repository.OrderBookRepository;
 import grit.stockIt.domain.member.entity.AuthProvider;
 import grit.stockIt.domain.member.entity.Member;
@@ -28,8 +32,9 @@ import grit.stockIt.domain.stock.entity.Stock;
 import grit.stockIt.domain.stock.repository.StockRepository;
 import grit.stockIt.global.exception.BadRequestException;
 import grit.stockIt.global.exception.ForbiddenException;
-import grit.stockIt.global.exception.ServiceUnavailableException;
 import grit.stockIt.global.support.IntegrationTestSupport;
+import grit.stockIt.global.support.ExchangeBook;
+import grit.stockIt.global.support.OutboxCommands;
 import grit.stockIt.global.support.OutboxReports;
 import grit.stockIt.global.websocket.manager.OrderSubscriptionCoordinator;
 import org.junit.jupiter.api.AfterEach;
@@ -41,7 +46,6 @@ import org.springframework.boot.test.mock.mockito.SpyBean;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.test.annotation.DirtiesContext;
-import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
@@ -56,12 +60,9 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.ArgumentMatchers.anyLong;
-import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
 
 // OrderService Phase A 특성화: cancelOrder(접수) / 워커 취소(OrderCancelService) / getOrder / getPendingOrders / 인증 미보유 경로.
 // 현재 관찰 가능한 동작(버그 의심 b, f 포함)을 그대로 동결한다. 프로덕션 코드는 수정하지 않는다.
@@ -80,10 +81,11 @@ class OrderCancelQueryCharacterizationTest extends IntegrationTestSupport {
     private OrderCancelService orderCancelService;
 
     @Autowired
+    private ExchangeOrderRepository exchangeOrderRepository;
+
+    @Autowired
     private OrderHoldReleaseService orderHoldReleaseService;
 
-    @MockitoBean
-    private OrderCommandPublisher orderCommandPublisher;
 
     @Autowired
     private OrderRepository orderRepository;
@@ -130,7 +132,6 @@ class OrderCancelQueryCharacterizationTest extends IntegrationTestSupport {
         org.mockito.Mockito.reset(orderBookRepository, orderSubscriptionCoordinator);
         String uniqueId = UUID.randomUUID().toString().substring(0, 8);
         topic = "matching.commands-" + uniqueId;
-        when(orderCommandPublisher.cancel(anyString(), anyLong())).thenReturn(true);
 
         member = memberRepository.save(Member.builder()
                 .name("특성화 사용자 " + uniqueId)
@@ -174,12 +175,26 @@ class OrderCancelQueryCharacterizationTest extends IntegrationTestSupport {
                 new UsernamePasswordAuthenticationToken(email, null, List.of()));
     }
 
+    // 증권사 주문을 저장하고 거래소 오더북에도 올린다 — 운영에서는 ORDER 명령을 받은 거래소가 올린다.
     private Order saveLimitOrder(Account acc, Stock stk, OrderMethod method, BigDecimal price, int quantity) {
-        return orderRepository.save(Order.createLimitOrder(acc, stk, price, quantity, method));
+        Order order = orderRepository.save(Order.createLimitOrder(acc, stk, price, quantity, method));
+        ExchangeBook.place(exchangeOrderRepository, order);
+        return order;
     }
 
     private Order saveMarketOrder(Account acc, Stock stk, OrderMethod method, int quantity) {
-        return orderRepository.save(Order.createMarketOrder(acc, stk, quantity, method));
+        Order order = orderRepository.save(Order.createMarketOrder(acc, stk, quantity, method));
+        ExchangeBook.place(exchangeOrderRepository, order);
+        return order;
+    }
+
+    // 거래소 오더북과 증권사 주문 양쪽에 체결을 반영한다 — 운영에서는 거래소가 체결하고 통보로 증권사가 맞춘다.
+    private void fillOnBoth(Order order, int quantity) {
+        ExchangeOrder onBook = exchangeOrderRepository.findById(order.getOrderId()).orElseThrow();
+        onBook.applyFill(quantity);
+        exchangeOrderRepository.save(onBook);
+        order.applyFill(quantity);
+        orderRepository.save(order);
     }
 
     // BUY 홀딩 구성: Account.holdAmount 증가 + OrderHold 저장 (createLimitOrder 성공 경로 재현)
@@ -219,7 +234,9 @@ class OrderCancelQueryCharacterizationTest extends IntegrationTestSupport {
     }
 
     private void deliverReports() {
-        OutboxReports.take(jdbcTemplate, account.getAccountId()).forEach(orderHoldReleaseService::release);
+        OutboxReports.take(jdbcTemplate, account.getAccountId()).stream()
+                .filter(ExecutionReport::endsOrder)
+                .forEach(orderHoldReleaseService::release);
     }
 
     private long nextOffset;
@@ -279,8 +296,7 @@ class OrderCancelQueryCharacterizationTest extends IntegrationTestSupport {
         Order order = saveLimitOrder(account, stock, OrderMethod.SELL, price, 10);
         grantSellHold(account, stock, 10, price);
 
-        order.applyFill(4);
-        orderRepository.save(order);
+        fillOnBoth(order, 4);
         assertThat(order.getStatus()).isEqualTo(OrderStatus.PARTIALLY_FILLED);
 
         assertThat(cancelByWorker(order)).isEqualTo(QueuedCancelOutcome.CANCELLED);
@@ -306,6 +322,7 @@ class OrderCancelQueryCharacterizationTest extends IntegrationTestSupport {
         // 데이터 이상 상태(잔여수량 0인데 상태는 PENDING) 재현: applyFill은 FILLED로 전이시키므로
         // remaining<=0 취소경로(현재 status 체크에서 걸러지지 않는 경우)를 직접 구성한다.
         jdbcTemplate.update("UPDATE trade_order SET filled_quantity = quantity WHERE order_id = ?", order.getOrderId());
+        jdbcTemplate.update("UPDATE exchange_order SET filled_quantity = quantity WHERE order_id = ?", order.getOrderId());
 
         assertThat(cancelByWorker(order)).isEqualTo(QueuedCancelOutcome.CANCELLED);
 
@@ -340,8 +357,7 @@ class OrderCancelQueryCharacterizationTest extends IntegrationTestSupport {
     @DisplayName("이미 체결된 주문을 취소하면 BadRequestException이 발생한다")
     void cancelOrder_alreadyFilled_throwsBadRequest() {
         Order order = saveLimitOrder(account, stock, OrderMethod.SELL, new BigDecimal("10000"), 3);
-        order.applyFill(3);
-        orderRepository.save(order);
+        fillOnBoth(order, 3);
         assertThat(order.getStatus()).isEqualTo(OrderStatus.FILLED);
 
         assertThatThrownBy(() -> orderService.cancelOrder(order.getOrderId()))
@@ -361,25 +377,18 @@ class OrderCancelQueryCharacterizationTest extends IntegrationTestSupport {
     }
 
     @Test
-    @DisplayName("취소 접수는 주문을 바꾸지 않고, 그 종목 줄에 취소 명령을 넣는다")
+    @DisplayName("취소 접수는 주문을 바꾸지 않고, 그 종목 키로 취소 명령을 아웃박스에 적는다")
     void cancelOrder_pending_enqueuesWithoutChangingOrder() {
         Order order = saveLimitOrder(account, stock, OrderMethod.SELL, new BigDecimal("10000"), 3);
 
         OrderCancelAcceptedResponse response = orderService.cancelOrder(order.getOrderId());
 
         assertThat(response.orderId()).isEqualTo(order.getOrderId());
-        verify(orderCommandPublisher).cancel(stock.getCode(), order.getOrderId());
+        assertThat(OutboxCommands.take(jdbcTemplate, stock.getCode())).singleElement().satisfies(command -> {
+            assertThat(command.type()).isEqualTo(MatchingCommandType.CANCEL);
+            assertThat(command.orderId()).isEqualTo(order.getOrderId());
+        });
         assertThat(orderRepository.findById(order.getOrderId()).orElseThrow().getStatus()).isEqualTo(OrderStatus.PENDING);
-    }
-
-    @Test
-    @DisplayName("취소 명령을 큐에 넣지 못하면 ServiceUnavailableException이 발생한다")
-    void cancelOrder_notEnqueued_throwsServiceUnavailable() {
-        Order order = saveLimitOrder(account, stock, OrderMethod.SELL, new BigDecimal("10000"), 3);
-        when(orderCommandPublisher.cancel(anyString(), anyLong())).thenReturn(false);
-
-        assertThatThrownBy(() -> orderService.cancelOrder(order.getOrderId()))
-                .isInstanceOf(ServiceUnavailableException.class);
     }
 
     @Test
@@ -390,7 +399,7 @@ class OrderCancelQueryCharacterizationTest extends IntegrationTestSupport {
 
         assertThatThrownBy(() -> orderService.cancelOrder(order.getOrderId()))
                 .isInstanceOf(ForbiddenException.class);
-        verify(orderCommandPublisher, never()).cancel(anyString(), anyLong());
+        assertThat(OutboxCommands.take(jdbcTemplate, stock.getCode())).isEmpty();
     }
 
     @Test
@@ -398,8 +407,7 @@ class OrderCancelQueryCharacterizationTest extends IntegrationTestSupport {
     void cancelByWorker_filledMeanwhile_notCancellable() {
         Order order = saveLimitOrder(account, stock, OrderMethod.SELL, new BigDecimal("10000"), 3);
         orderService.cancelOrder(order.getOrderId());
-        order.applyFill(3);
-        orderRepository.save(order);
+        fillOnBoth(order, 3);
 
         assertThat(cancelByWorker(order)).isEqualTo(QueuedCancelOutcome.NOT_CANCELLABLE);
         assertThat(orderRepository.findById(order.getOrderId()).orElseThrow().getStatus()).isEqualTo(OrderStatus.FILLED);

@@ -25,13 +25,13 @@ public class OrderBookRepository {
     private static final ZoneId KST = ZoneId.of("Asia/Seoul");
 
     // 오더북에 올라와 있는(=미체결 잔량이 있는) 주문 상태.
-    private static final String ACTIVE_STATUS_PREDICATE = "o.status IN ('PENDING', 'PARTIALLY_FILLED')";
+    private static final String ACTIVE_STATUS_PREDICATE = "o.status = 'OPEN'";
 
     private static final String BASE_COLUMNS = """
             SELECT o.order_id, o.stock_code, o.order_method, o.price,
                    (o.quantity - o.filled_quantity) AS remaining_quantity,
-                   o.quantity, o.created_at, o.account_id
-            FROM trade_order o
+                   o.quantity, o.accepted_at, o.account_id
+            FROM exchange_order o
             """;
 
     private final EntityManager entityManager;
@@ -55,7 +55,7 @@ public class OrderBookRepository {
                   AND %s
                   AND o.quantity > o.filled_quantity
                   AND %s
-                ORDER BY o.price %s, o.created_at ASC, o.order_id ASC
+                ORDER BY o.price %s, o.accepted_at ASC, o.order_id ASC
                 LIMIT :maxOrders
                 """.formatted(ACTIVE_STATUS_PREDICATE, priceCondition, priceOrder);
 
@@ -74,28 +74,6 @@ public class OrderBookRepository {
             }
         }
         return entries;
-    }
-
-    // 주문이 오더북에 남아 있는지(=미체결 잔량이 있는지) 확인한다.
-    @Transactional(readOnly = true)
-    public boolean exists(Long orderId, String stockCode, OrderMethod orderMethod) {
-        String sql = """
-                SELECT COUNT(*)
-                FROM trade_order o
-                WHERE o.order_id = :orderId
-                  AND o.stock_code = :stockCode
-                  AND o.order_method = :orderMethod
-                  AND %s
-                  AND o.quantity > o.filled_quantity
-                """.formatted(ACTIVE_STATUS_PREDICATE);
-
-        Object count = entityManager.createNativeQuery(sql)
-                .setParameter("orderId", orderId)
-                .setParameter("stockCode", stockCode)
-                .setParameter("orderMethod", orderMethod.name())
-                .getSingleResult();
-
-        return count instanceof Number number && number.longValue() > 0;
     }
 
     private OrderBookEntry mapToEntry(Object[] row) {

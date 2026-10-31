@@ -5,6 +5,7 @@ import grit.stockIt.domain.account.repository.AccountRepository;
 import grit.stockIt.domain.contest.entity.Contest;
 import grit.stockIt.domain.contest.repository.ContestRepository;
 import grit.stockIt.domain.matching.dto.LimitOrderFillEvent;
+import grit.stockIt.domain.matching.repository.ExchangeOrderRepository;
 import grit.stockIt.domain.matching.service.FillCommandPublisher;
 import grit.stockIt.domain.matching.service.FillDispatchResult;
 import grit.stockIt.domain.member.entity.AuthProvider;
@@ -17,6 +18,7 @@ import grit.stockIt.domain.order.repository.OrderHoldRepository;
 import grit.stockIt.domain.order.repository.OrderRepository;
 import grit.stockIt.domain.stock.entity.Stock;
 import grit.stockIt.domain.stock.repository.StockRepository;
+import grit.stockIt.global.support.ExchangeBook;
 import grit.stockIt.global.support.KafkaIntegrationTestSupport;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.apache.kafka.clients.admin.AdminClient;
@@ -89,6 +91,8 @@ class SingleStockCommandConcurrencyIntegrationTest extends KafkaIntegrationTestS
 
     @Autowired private FillCommandPublisher fillCommandPublisher;
     @Autowired private OrderCommandPublisher orderCommandPublisher;
+    @Autowired private MatchingCommandSender matchingCommandSender;
+    @Autowired private ExchangeOrderRepository exchangeOrderRepository;
     @Autowired private KafkaListenerEndpointRegistry listenerRegistry;
     @Autowired private MeterRegistry meterRegistry;
     @Autowired private JdbcTemplate jdbcTemplate;
@@ -207,7 +211,7 @@ class SingleStockCommandConcurrencyIntegrationTest extends KafkaIntegrationTestS
             }
             for (List<Long> slice : slices(cancels, CANCEL_THREADS)) {
                 submit(pool, ready, start, errors, () -> slice.forEach(orderId -> {
-                    if (!orderCommandPublisher.cancel(stockCode, orderId)) {
+                    if (!sendCancel(stockCode, orderId)) {
                         failedSends.incrementAndGet();
                     }
                 }));
@@ -226,7 +230,7 @@ class SingleStockCommandConcurrencyIntegrationTest extends KafkaIntegrationTestS
                     for (int next = frontier; next <= frontier + 1 && next < priority.size(); next++) {
                         Long orderId = priority.get(next);
                         if (endRequested.add(orderId)) {
-                            if (orderCommandPublisher.cancel(stockCode, orderId)) {
+                            if (sendCancel(stockCode, orderId)) {
                                 frontierCancels.incrementAndGet();
                             } else {
                                 failedSends.incrementAndGet();
@@ -258,14 +262,14 @@ class SingleStockCommandConcurrencyIntegrationTest extends KafkaIntegrationTestS
         int sent = 0;
         while (sent < HOT_CANCEL_LIMIT && watermarkOf(partition) < published.lastFillOffset().get()) {
             List<Long> hot = jdbcTemplate.queryForList("""
-                    SELECT order_id FROM trade_order
-                    WHERE stock_code = ? AND status IN ('PARTIALLY_FILLED', 'PENDING')
-                    ORDER BY (status = 'PARTIALLY_FILLED') DESC, price DESC, created_at, order_id
+                    SELECT order_id FROM exchange_order
+                    WHERE stock_code = ? AND status = 'OPEN'
+                    ORDER BY (filled_quantity > 0) DESC, price DESC, accepted_at, order_id
                     LIMIT ?
                     """, Long.class, fixture.stockCode(), HOT_CANCEL_BATCH);
             for (Long orderId : hot) {
                 if (published.endRequested().add(orderId)) {
-                    assertThat(orderCommandPublisher.cancel(fixture.stockCode(), orderId)).isTrue();
+                    assertThat(sendCancel(fixture.stockCode(), orderId)).isTrue();
                     sent++;
                 }
             }
@@ -356,7 +360,7 @@ class SingleStockCommandConcurrencyIntegrationTest extends KafkaIntegrationTestS
 
     private long unreleasedCancels(String stockCode) {
         return jdbcTemplate.queryForObject("""
-                SELECT count(*) FROM trade_order o
+                SELECT count(*) FROM exchange_order o
                 WHERE o.stock_code = ? AND o.status = 'CANCELLED'
                   AND NOT EXISTS (SELECT 1 FROM hold_release r WHERE r.order_id = o.order_id)
                 """, Long.class, stockCode);
@@ -371,9 +375,9 @@ class SingleStockCommandConcurrencyIntegrationTest extends KafkaIntegrationTestS
 
     private long unsettledExecutions(String stockCode) {
         return jdbcTemplate.queryForObject("""
-                SELECT count(*) FROM execution e
-                WHERE e.stock_code = ?
-                  AND NOT EXISTS (SELECT 1 FROM settlement s WHERE s.execution_id = e.execution_id)
+                SELECT count(*) FROM exchange_fill f
+                WHERE f.stock_code = ?
+                  AND NOT EXISTS (SELECT 1 FROM settlement s WHERE s.execution_id = f.fill_id)
                 """, Long.class, stockCode);
     }
 
@@ -573,7 +577,13 @@ class SingleStockCommandConcurrencyIntegrationTest extends KafkaIntegrationTestS
         Order saved = orderRepository.save(order);
         account.increaseHoldAmount(holdAmount);
         orderHoldRepository.save(OrderHold.create(saved, account, holdAmount));
+        ExchangeBook.place(exchangeOrderRepository, saved);
         return saved.getOrderId();
+    }
+
+    // 주문은 이미 오더북에 있으므로 취소를 바로 넣는다. 운영에서는 증권사 아웃박스를 지나 주문 뒤에 선다.
+    private boolean sendCancel(String stockCode, Long orderId) {
+        return matchingCommandSender.send(MatchingCommand.cancel(stockCode, orderId, System.currentTimeMillis())).isPresent();
     }
 
     private static <T> List<List<T>> slices(List<T> items, int count) {

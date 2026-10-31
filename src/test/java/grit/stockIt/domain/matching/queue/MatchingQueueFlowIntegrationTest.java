@@ -23,14 +23,18 @@ import grit.stockIt.domain.order.entity.OrderMethod;
 import grit.stockIt.domain.order.entity.OrderStatus;
 import grit.stockIt.domain.order.repository.OrderHoldRepository;
 import grit.stockIt.domain.order.repository.OrderRepository;
+import grit.stockIt.domain.order.service.OrderCommandOutbox;
+import grit.stockIt.domain.matching.repository.ExchangeOrderRepository;
 import grit.stockIt.domain.settlement.repository.SettlementRepository;
 import grit.stockIt.domain.stock.entity.Stock;
 import grit.stockIt.domain.stock.repository.StockRepository;
+import grit.stockIt.global.support.ExchangeBook;
 import grit.stockIt.global.support.KafkaIntegrationTestSupport;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.transaction.support.TransactionTemplate;
 
@@ -50,6 +54,9 @@ class MatchingQueueFlowIntegrationTest extends KafkaIntegrationTestSupport {
 
     @Autowired private FillCommandPublisher fillCommandPublisher;
     @Autowired private OrderCommandPublisher orderCommandPublisher;
+    @Autowired private OrderCommandOutbox orderCommandOutbox;
+    @Autowired private ExchangeOrderRepository exchangeOrderRepository;
+    @Autowired private JdbcTemplate jdbcTemplate;
     @Autowired private ConsumerWatermarkRepository consumerWatermarkRepository;
     @Autowired private KafkaTemplate<String, ExecutionReport> reportTemplate;
     @Autowired private SettlementRepository settlementRepository;
@@ -90,17 +97,19 @@ class MatchingQueueFlowIntegrationTest extends KafkaIntegrationTestSupport {
     void cancelThenFill_sameStock_cancelledNotFilled() {
         BuyOrder buy = transactionTemplate.execute(status -> createBuyOrder());
 
-        assertThat(orderCommandPublisher.cancel(buy.stockCode(), buy.orderId())).isTrue();
+        // 취소는 증권사 아웃박스로 나간다. 릴레이가 보낼 때까지 기다려 체결보다 먼저 줄에 서게 한다.
+        transactionTemplate.executeWithoutResult(status -> orderCommandOutbox.cancel(buy.stockCode(), buy.orderId()));
+        await().atMost(WAIT).until(() -> pendingOutbox(buy.stockCode()) == 0);
         FillDispatchResult.Queued fill = (FillDispatchResult.Queued) fillCommandPublisher.publish(buy.stockCode(),
                 new LimitOrderFillEvent(UUID.randomUUID().toString(), OrderMethod.SELL, PRICE, 1, System.currentTimeMillis()));
 
         await().atMost(WAIT).until(() -> lastOffsetOf(fill.partition()) >= fill.offset());
 
-        assertThat(orderRepository.findById(buy.orderId()).orElseThrow().getStatus()).isEqualTo(OrderStatus.CANCELLED);
-        assertThat(executionOf(buy.orderId())).isNull();
-        // 홀딩은 취소 통보를 받은 증권사가 푼다 — 워커보다 조금 늦다.
+        // 주문 상태와 홀딩은 취소 통보를 받은 증권사가 바꾼다 — 워커보다 조금 늦다.
         await().atMost(WAIT).until(() ->
-                accountRepository.findById(buy.accountId()).orElseThrow().getHoldAmount().signum() == 0);
+                orderRepository.findById(buy.orderId()).orElseThrow().getStatus() == OrderStatus.CANCELLED
+                        && accountRepository.findById(buy.accountId()).orElseThrow().getHoldAmount().signum() == 0);
+        assertThat(executionOf(buy.orderId())).isNull();
     }
 
     @Test
@@ -120,7 +129,7 @@ class MatchingQueueFlowIntegrationTest extends KafkaIntegrationTestSupport {
     @DisplayName("처리할 수 없는 결과 통보는 재시도하지 않고 DLT 로 보낸다")
     void invalidReport_toDlt() throws Exception {
         long marker = System.nanoTime();
-        ExecutionReport invalid = ExecutionReport.fill(null, 1L, 1L, "005930", OrderMethod.BUY, BigDecimal.ONE, 1, marker);
+        ExecutionReport invalid = ExecutionReport.fill(null, 1L, 1L, "005930", OrderMethod.BUY, BigDecimal.ONE, 1, 1, 0, marker);
         reportTemplate.send(ExchangeTopics.REPORTS, "1", invalid).get();
 
         assertThat(findDeadLetter(ExchangeTopics.REPORTS, value -> value.contains(String.valueOf(marker)))).isTrue();
@@ -138,6 +147,10 @@ class MatchingQueueFlowIntegrationTest extends KafkaIntegrationTestSupport {
                 .mapToLong(ConsumerWatermark::getLastOffset)
                 .findFirst()
                 .orElse(-1L);
+    }
+
+    private long pendingOutbox(String stockCode) {
+        return jdbcTemplate.queryForObject("SELECT count(*) FROM outbox_message WHERE message_key = ?", Long.class, stockCode);
     }
 
     private record BuyOrder(Long orderId, Long accountId, String stockCode) {
@@ -170,6 +183,7 @@ class MatchingQueueFlowIntegrationTest extends KafkaIntegrationTestSupport {
 
         Order order = orderRepository.save(Order.createLimitOrder(account, stock, PRICE, 1, OrderMethod.BUY));
         orderHoldRepository.save(OrderHold.create(order, account, PRICE));
+        ExchangeBook.place(exchangeOrderRepository, order);
         return new BuyOrder(order.getOrderId(), account.getAccountId(), stock.getCode());
     }
 }

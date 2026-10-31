@@ -1,33 +1,8 @@
 # 서비스 경계 위반 목록 — ServiceBoundaryTest 가 읽는다. 위반을 고치면 해당 줄을 지운다. 비면 Gradle 모듈로 나눈다.
 # 형식: <서비스> <클래스> -> <서비스> <클래스>  (grit.stockIt. 생략)
 
-# 거래소 → 증권사: trade_order·execution 공유 (5단계) — 18건
-EXCHANGE domain.execution.entity.Execution -> BROKER domain.account.entity.Account
-EXCHANGE domain.execution.entity.Execution -> BROKER domain.order.entity.Order
-EXCHANGE domain.execution.entity.Execution -> BROKER domain.stock.entity.Stock
-EXCHANGE domain.execution.repository.ExecutionRepository -> BROKER domain.account.entity.Account
-EXCHANGE domain.execution.repository.ExecutionRepository -> BROKER domain.order.entity.Order
-EXCHANGE domain.execution.repository.ExecutionRepository -> BROKER domain.stock.entity.Stock
-EXCHANGE domain.execution.service.ExecutionService -> BROKER domain.account.entity.Account
-EXCHANGE domain.execution.service.ExecutionService -> BROKER domain.order.entity.Order
-EXCHANGE domain.execution.service.ExecutionService -> BROKER domain.stock.entity.Stock
-EXCHANGE domain.matching.service.LimitOrderExecutionService -> BROKER domain.account.entity.Account
-EXCHANGE domain.matching.service.LimitOrderExecutionService -> BROKER domain.order.entity.Order
-EXCHANGE domain.matching.service.LimitOrderExecutionService -> BROKER domain.order.entity.OrderStatus
-EXCHANGE domain.matching.service.LimitOrderExecutionService -> BROKER domain.order.repository.OrderRepository
-EXCHANGE domain.matching.service.LimitOrderExecutionService -> BROKER domain.stock.entity.Stock
-EXCHANGE domain.order.service.OrderCancelService -> BROKER domain.account.entity.Account
-EXCHANGE domain.order.service.OrderCancelService -> BROKER domain.order.entity.Order
-EXCHANGE domain.order.service.OrderCancelService -> BROKER domain.order.entity.OrderStatus
-EXCHANGE domain.order.service.OrderCancelService -> BROKER domain.order.repository.OrderRepository
-
 # 거래소 → 시세: 체결 트랜잭션 안의 구독 해제 (7단계) — 1건
 EXCHANGE domain.matching.service.LimitOrderExecutionService -> MARKET global.websocket.manager.OrderSubscriptionCoordinator
-
-# 증권사 → 거래소: 자산 조회와 복구 배치가 execution 을 읽음 (4·5단계) — 3건
-BROKER domain.account.service.AssetService -> EXCHANGE domain.execution.entity.Execution
-BROKER domain.account.service.AssetService -> EXCHANGE domain.execution.repository.ExecutionRepository
-BROKER domain.settlement.scheduler.UnsettledExecutionScheduler -> EXCHANGE domain.execution.service.ExecutionService
 
 # 증권사 → 시세: 주문 구독 등록, 시세 캐시 읽기 (7단계) — 3건
 BROKER domain.order.service.OrderSubscriptionService -> MARKET global.websocket.manager.OrderSubscriptionCoordinator

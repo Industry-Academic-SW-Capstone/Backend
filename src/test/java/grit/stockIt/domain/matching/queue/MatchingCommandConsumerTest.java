@@ -4,9 +4,11 @@ import grit.stockIt.domain.matching.dto.LimitOrderFillEvent;
 import grit.stockIt.domain.matching.service.FilledExecution;
 import grit.stockIt.domain.matching.service.LimitOrderFillCoordinator;
 import grit.stockIt.domain.matching.service.LimitOrderFillCoordinator.QueuedFillOutcome;
+import grit.stockIt.domain.matching.service.OrderAcceptService;
+import grit.stockIt.domain.matching.service.OrderCancelService;
+import grit.stockIt.domain.matching.service.QueuedCancelOutcome;
 import grit.stockIt.domain.order.entity.OrderMethod;
-import grit.stockIt.domain.order.service.OrderCancelService;
-import grit.stockIt.domain.order.service.QueuedCancelOutcome;
+import grit.stockIt.domain.order.entity.OrderType;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.junit.jupiter.api.DisplayName;
@@ -31,15 +33,16 @@ class MatchingCommandConsumerTest {
 
     private final LimitOrderFillCoordinator coordinator = mock(LimitOrderFillCoordinator.class);
     private final SimpleMeterRegistry registry = new SimpleMeterRegistry();
+    private final OrderAcceptService orderAcceptService = mock(OrderAcceptService.class);
     private final OrderCancelService orderCancelService = mock(OrderCancelService.class);
     private final MatchingCommandConsumer consumer = new MatchingCommandConsumer(
-            coordinator, orderCancelService, new MatchingQueueMetrics(registry));
+            coordinator, orderAcceptService, orderCancelService, new MatchingQueueMetrics(registry));
 
     @Test
     @DisplayName("체결하면 처리 지표를 남긴다 — 결과 통보는 체결 트랜잭션이 아웃박스에 적는다")
     void filled_recordsMetrics() {
         when(coordinator.processQueuedFill(eq("005930"), any(), eq(POSITION))).thenReturn(new QueuedFillOutcome(false,
-                List.of(new FilledExecution(501L, 11L, 77L, "005930", OrderMethod.BUY, new BigDecimal("70000"), 1))));
+                List.of(new FilledExecution(501L, 11L, 77L, "005930", OrderMethod.BUY, new BigDecimal("70000"), 1, 1, 0))));
 
         consumer.consume(record(fillCommand(1)));
 
@@ -76,6 +79,18 @@ class MatchingCommandConsumerTest {
         verify(orderCancelService).cancelOnce("005930", 9L, POSITION);
         verify(coordinator, never()).processQueuedFill(any(), any(), any());
         assertThat(registry.get("matching.fill.e2e").timer().count()).isZero();
+    }
+
+    @Test
+    @DisplayName("주문 명령은 그 위치와 함께 오더북 접수로 넘긴다")
+    void order_delegatesToAcceptService() {
+        MatchingCommand order = MatchingCommand.order("005930", 9L, 77L, OrderMethod.BUY, OrderType.LIMIT,
+                new BigDecimal("70000"), 3, System.currentTimeMillis());
+
+        consumer.consume(record(order));
+
+        verify(orderAcceptService).acceptOnce(order, POSITION);
+        verify(coordinator, never()).processQueuedFill(any(), any(), any());
     }
 
     @Test

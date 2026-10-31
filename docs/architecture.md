@@ -6,6 +6,7 @@ stockIt의 패키지 구조, 도메인 책임, 이벤트 흐름, 캐싱 전략�
 ## 패키지 구조 (`grit.stockIt`)
 
 ```
+contract/   서비스 사이 메시지 계약 (거래소 통보 ExecutionReport, 토픽 이름) — 필드는 추가만 한다
 domain/     비즈니스 모듈 (controller / service / repository / dto / entity)
 global/     횡단 인프라 (config, jwt, exception, websocket, auth, common, util)
 job/        배치 작업 (KIS 마스터 파일 다운로드/파싱)
@@ -15,10 +16,10 @@ job/        배치 작업 (KIS 마스터 파일 다운로드/파싱)
 
 | 모듈 | 책임 |
 |------|------|
-| `matching` | 매칭 엔진 — Kafka 명령 큐와 종목 파티션 워커 (핵심 트레이딩 로직) → [matching-engine.md](matching-engine.md) |
-| `order` | 주문 접수·검증·홀딩(현금/주식), 취소 접수, 워커의 취소·만료 처리, 시장가 당일 만료 스케줄러 |
-| `execution` | 체결 기록 및 추적 |
-| `settlement` | 정산 큐·워커·복구 배치 (체결을 계좌에 반영) |
+| `matching` | 거래소 — 오더북(`exchange_order`)·체결 원장, Kafka 명령 큐와 종목 파티션 워커, 취소·만료, 시장가 당일 만료 스케줄러 → [matching-engine.md](matching-engine.md) |
+| `order` | 주문 접수·검증·홀딩(현금/주식), 주문·취소 명령(아웃박스), 취소·만료·거부 통보로 홀딩 해제 |
+| `execution` | 증권사의 체결 내역(거래소 통보로 기록) |
+| `settlement` | 정산 워커 (거래소 통보로 체결 내역·주문·계좌 반영) |
 | `account` | 자산·포트폴리오·현금 관리 |
 | `stock` | 종목 데이터, KIS API 연동, 차트, `stock/analysis`(AI 분석) |
 | `contest` | 모의투자 대회 |
@@ -32,6 +33,7 @@ job/        배치 작업 (KIS 마스터 파일 다운로드/파싱)
 ### 공통 인프라 (`global/`)
 
 - `config/` — Security, WebSocket(STOMP), Redis, JPA, Cache, Flyway, Swagger, 외부 API properties
+- `outbox/` — 아웃박스(업무 트랜잭션에 메시지를 함께 적고 릴레이가 Kafka 로 보냄)
 - `jwt/` — JWT 필터 및 토큰 서비스
 - `exception/` — `GlobalExceptionHandler` + 커스텀 예외(`BadRequestException`, `ForbiddenException`, `UntradeableStockException`)
 - `websocket/` — KIS WebSocket 클라이언트, STOMP 브로커, 구독 관리

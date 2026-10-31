@@ -11,7 +11,7 @@ stockIt은 Spring Boot로 구축된 한국 주식 거래 시뮬레이션 플랫�
 이 파일은 항상 로드되는 오리엔테이션 문서입니다. 깊은 내용은 필요할 때만 해당 `docs/` 파일을 읽으세요:
 
 - `docs/architecture.md` — 패키지/도메인 구조, 이벤트 흐름, 캐싱
-- `docs/matching-engine.md` — 매칭 엔진 내부 구조 (Kafka 명령 큐와 종목 파티션 단일 작성자, 워터마크 재전달 거르기, 취소·만료, 정산 큐·복구 배치, 실패 처리)
+- `docs/matching-engine.md` — 매칭 엔진 내부 구조 (거래소 오더북과 Kafka 명령·통보, 종목 파티션 단일 작성자, 워터마크, 아웃박스, 취소·만료, 정산, 실패 처리)
 - `docs/websocket.md` — 실시간 스트리밍 설계 (STOMP 설정, 구독 참조 카운팅, KIS WebSocket 클라이언트, 브로드캐스트 흐름)
 - `docs/deployment.md` — CI/CD 파이프라인, Docker Hub, SSH + `docker-compose.prod.yml`, 시크릿, 모니터링
 - `docs/development.md` — 로컬 설정, 프로파일, 테스트, 마이그레이션

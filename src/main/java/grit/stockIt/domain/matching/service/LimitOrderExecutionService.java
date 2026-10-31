@@ -1,16 +1,15 @@
 package grit.stockIt.domain.matching.service;
 
-import grit.stockIt.domain.execution.entity.Execution;
-import grit.stockIt.domain.execution.service.ExecutionService;
 import grit.stockIt.domain.matching.dto.LimitOrderFillEvent;
 import grit.stockIt.domain.matching.dto.OrderBookEntry;
+import grit.stockIt.domain.matching.entity.ExchangeFill;
+import grit.stockIt.domain.matching.entity.ExchangeOrder;
 import grit.stockIt.domain.matching.queue.CommandPosition;
 import grit.stockIt.domain.matching.queue.ExecutionReportOutbox;
 import grit.stockIt.domain.matching.repository.ConsumerWatermarkWriter;
+import grit.stockIt.domain.matching.repository.ExchangeFillRepository;
+import grit.stockIt.domain.matching.repository.ExchangeOrderRepository;
 import grit.stockIt.domain.matching.repository.OrderBookRepository;
-import grit.stockIt.domain.order.entity.Order;
-import grit.stockIt.domain.order.entity.OrderStatus;
-import grit.stockIt.domain.order.repository.OrderRepository;
 import grit.stockIt.global.websocket.manager.OrderSubscriptionCoordinator;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -30,10 +29,8 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class LimitOrderExecutionService {
 
-    private static final List<OrderStatus> ELIGIBLE_STATUSES = List.of(OrderStatus.PENDING, OrderStatus.PARTIALLY_FILLED);
-
-    private final ExecutionService executionService;
-    private final OrderRepository orderRepository;
+    private final ExchangeOrderRepository exchangeOrderRepository;
+    private final ExchangeFillRepository exchangeFillRepository;
     private final OrderBookRepository orderBookRepository;
     private final OrderSubscriptionCoordinator orderSubscriptionCoordinator;
     private final ConsumerWatermarkWriter consumerWatermarkWriter;
@@ -93,24 +90,16 @@ public class LimitOrderExecutionService {
         remainingQuantity = plan.unallocatedQuantity();
 
         List<Long> filledOrderIds = new ArrayList<>(fillCommands.keySet());
-        List<Order> orders = orderRepository.findAllByIdInWithStock(filledOrderIds);
-        Map<Long, Order> orderMap = orders.stream()
-                .collect(Collectors.toMap(Order::getOrderId, order -> order));
+        Map<Long, ExchangeOrder> orderMap = exchangeOrderRepository.findAllById(filledOrderIds).stream()
+                .collect(Collectors.toMap(ExchangeOrder::getOrderId, order -> order));
 
         List<FilledExecution> executions = new ArrayList<>();
-        List<Order> updatedOrders = new ArrayList<>();
 
         for (Long orderId : filledOrderIds) {
-            Order order = orderMap.get(orderId);
+            ExchangeOrder order = orderMap.get(orderId);
             FillCommand command = fillCommands.get(orderId);
-            if (order == null || command == null) {
-                log.warn("DB에서 주문을 찾을 수 없어 건너뜁니다. orderId={}", orderId);
-                if (command != null) {
-                    orderSubscriptionCoordinator.unregisterLimitOrder(stockCode);
-                }
-                continue;
-            }
-            if (!isActive(order)) {
+            if (order == null || !order.isOpen()) {
+                log.warn("오더북에 없는 주문이라 건너뜁니다. orderId={}", orderId);
                 orderSubscriptionCoordinator.unregisterLimitOrder(stockCode);
                 continue;
             }
@@ -122,26 +111,14 @@ public class LimitOrderExecutionService {
                 continue;
             }
 
-            try {
-                order.applyFill(desiredFillQuantity);
-                Execution execution = executionService.record(order, event.price(), desiredFillQuantity);
-
-                if (order.getRemainingQuantity() <= 0) {
-                    unsubscribeOnFill(order);
-                }
-
-                updatedOrders.add(order);
-                executions.add(new FilledExecution(execution.getExecutionId(), order.getOrderId(),
-                        order.getAccount().getAccountId(), order.getStock().getCode(), order.getOrderMethod(),
-                        event.price(), desiredFillQuantity));
-            } catch (IllegalArgumentException ex) {
-                log.error("주문 체결 처리 중 오류 발생. orderId={} fillQuantity={}", orderId, desiredFillQuantity, ex);
-                orderSubscriptionCoordinator.unregisterLimitOrder(order.getStock().getCode());
+            order.applyFill(desiredFillQuantity);
+            ExchangeFill fill = exchangeFillRepository.save(ExchangeFill.of(order, event.price(), desiredFillQuantity));
+            if (!order.isOpen()) {
+                orderSubscriptionCoordinator.unregisterLimitOrder(stockCode);
             }
-        }
-
-        if (!updatedOrders.isEmpty()) {
-            orderRepository.saveAll(updatedOrders);
+            executions.add(new FilledExecution(fill.getFillId(), order.getOrderId(), order.getAccountId(),
+                    stockCode, order.getOrderMethod(), event.price(), desiredFillQuantity,
+                    order.getFilledQuantity(), order.getRemainingQuantity()));
         }
 
         if (remainingQuantity > 0) {
@@ -150,14 +127,6 @@ public class LimitOrderExecutionService {
         }
 
         return executions;
-    }
-
-    private boolean isActive(Order order) {
-        return ELIGIBLE_STATUSES.contains(order.getStatus());
-    }
-
-    private void unsubscribeOnFill(Order order) {
-        orderSubscriptionCoordinator.unregisterLimitOrder(order.getStock().getCode());
     }
 
     private record FillCommand(OrderBookEntry entry, int fillQuantity) {

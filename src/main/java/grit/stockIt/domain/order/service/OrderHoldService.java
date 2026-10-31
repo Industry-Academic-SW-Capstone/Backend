@@ -6,7 +6,6 @@ import grit.stockIt.domain.account.repository.AccountStockRepository;
 import grit.stockIt.domain.order.entity.Order;
 import grit.stockIt.domain.order.entity.OrderHold;
 import grit.stockIt.domain.order.repository.OrderHoldRepository;
-import grit.stockIt.domain.settlement.repository.SettlementRepository;
 import grit.stockIt.global.exception.BadRequestException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -22,8 +21,6 @@ public class OrderHoldService {
 
     private final OrderHoldRepository orderHoldRepository;
     private final AccountStockRepository accountStockRepository;
-    // 매수 홀딩 잔액을 줄이는 주체가 정산이라, 얼마를 풀 수 있는지 알려면 정산 진행도를 봐야 한다.
-    private final SettlementRepository settlementRepository;
 
     public void ensureSufficientCash(Account account, BigDecimal holdAmount) {
         if (account.getAvailableCash().compareTo(holdAmount) < 0) {
@@ -38,12 +35,11 @@ public class OrderHoldService {
         orderHoldRepository.save(orderHold);
     }
 
-    // 체결됐지만 정산이 아직인 몫은 남긴다. 매도 홀딩이 잔여 수량 기준으로 풀리는 것과 같은
-    // 규약이다 — 전액을 풀면 뒤늦게 도착한 정산이 뺄 것을 잃고 영구 미정산으로 남는다.
+    // 남은 홀딩을 모두 푼다. 거래소 통보는 주문마다 순서대로 오므로, 주문을 끝내는 통보가 왔을 때
+    // 그 주문의 체결은 이미 모두 정산돼 홀딩에서 빠져 있다.
     public void releaseBuyHold(Order order) {
         orderHoldRepository.findById(order.getOrderId()).ifPresent(hold -> {
-            BigDecimal pending = settlementRepository.sumUnsettledFillAmount(order.getOrderId());
-            BigDecimal releasable = hold.getHoldAmount().subtract(pending).max(BigDecimal.ZERO);
+            BigDecimal releasable = hold.getHoldAmount();
             if (releasable.signum() <= 0) {
                 return;
             }

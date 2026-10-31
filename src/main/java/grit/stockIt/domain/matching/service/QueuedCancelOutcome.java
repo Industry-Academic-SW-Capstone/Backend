@@ -1,4 +1,4 @@
-package grit.stockIt.domain.order.service;
+package grit.stockIt.domain.matching.service;
 
 public enum QueuedCancelOutcome {
     // 취소하고 홀딩을 풀었다.

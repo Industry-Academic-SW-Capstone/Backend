@@ -2,6 +2,7 @@ package grit.stockIt.global.support;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import grit.stockIt.contract.ExchangeTopics;
 import grit.stockIt.contract.ExecutionReport;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.kafka.support.JacksonUtils;
@@ -20,7 +21,8 @@ public final class OutboxReports {
 
     public static List<ExecutionReport> take(JdbcTemplate jdbcTemplate, Long accountId) {
         List<Map<String, Object>> rows = jdbcTemplate.queryForList(
-                "SELECT id, payload FROM outbox_message WHERE message_key = ? ORDER BY id", String.valueOf(accountId));
+                "SELECT id, payload FROM outbox_message WHERE topic = ? AND message_key = ? ORDER BY id",
+                ExchangeTopics.REPORTS, String.valueOf(accountId));
         rows.forEach(row -> jdbcTemplate.update("DELETE FROM outbox_message WHERE id = ?", row.get("id")));
         return rows.stream().map(row -> read((String) row.get("payload"))).toList();
     }

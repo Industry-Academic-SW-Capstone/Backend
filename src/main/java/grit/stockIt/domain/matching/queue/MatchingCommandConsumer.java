@@ -2,15 +2,16 @@ package grit.stockIt.domain.matching.queue;
 
 import grit.stockIt.domain.matching.service.LimitOrderFillCoordinator;
 import grit.stockIt.domain.matching.service.LimitOrderFillCoordinator.QueuedFillOutcome;
-import grit.stockIt.domain.order.service.OrderCancelService;
-import grit.stockIt.domain.order.service.QueuedCancelOutcome;
+import grit.stockIt.domain.matching.service.OrderAcceptService;
+import grit.stockIt.domain.matching.service.OrderCancelService;
+import grit.stockIt.domain.matching.service.QueuedCancelOutcome;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.stereotype.Component;
 
-// 체결 워커. 파티션 하나를 스레드 하나가 맡아 그 안의 명령(체결, 취소, 만료)을 도착 순서대로 처리한다.
+// 체결 워커. 파티션 하나를 스레드 하나가 맡아 그 안의 명령(주문, 체결, 취소, 만료)을 도착 순서대로 처리한다.
 // 체결 결과 통보는 체결 트랜잭션이 아웃박스에 적고, 아웃박스 릴레이가 exchange.reports 로 보낸다.
 @Slf4j
 @Component
@@ -18,6 +19,7 @@ import org.springframework.stereotype.Component;
 public class MatchingCommandConsumer {
 
     private final LimitOrderFillCoordinator limitOrderFillCoordinator;
+    private final OrderAcceptService orderAcceptService;
     private final OrderCancelService orderCancelService;
     private final MatchingQueueMetrics metrics;
 
@@ -36,6 +38,7 @@ public class MatchingCommandConsumer {
 
         // switch 식이라 명령 종류가 늘면 여기서 컴파일이 깨진다. 문(statement)이면 빠뜨린 종류가 조용히 넘어가 유실된다.
         Runnable handler = switch (command.type()) {
+            case ORDER -> () -> orderAcceptService.acceptOnce(command, position);
             case FILL -> () -> fill(command, position);
             case CANCEL -> () -> cancel(command, position);
             case EXPIRE -> () -> expire(command, position);

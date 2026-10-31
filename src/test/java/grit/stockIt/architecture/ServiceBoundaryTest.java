@@ -50,16 +50,12 @@ class ServiceBoundaryTest {
         CLASS_OVERRIDES.put("domain.matching.service.FillDispatchResult", Service.MARKET);
         CLASS_OVERRIDES.put("domain.matching.repository.RedisMarketDataRepository", Service.MARKET);
 
-        CLASS_OVERRIDES.put("domain.matching.queue.OrderCommandPublisher", Service.BROKER);
 
-        CLASS_OVERRIDES.put("domain.order.service.OrderCancelService", Service.EXCHANGE);
-        CLASS_OVERRIDES.put("domain.order.service.QueuedCancelOutcome", Service.EXCHANGE);
 
         PACKAGES.put("contract.", Service.CONTRACT);
         PACKAGES.put("global.websocket.", Service.MARKET);
         PACKAGES.put("domain.matching.", Service.EXCHANGE);
-        PACKAGES.put("domain.execution.", Service.EXCHANGE);
-        for (String broker : new String[] {"order", "settlement", "account", "member", "auth", "contest",
+        for (String broker : new String[] {"order", "settlement", "execution", "account", "member", "auth", "contest",
                 "ranking", "stock", "llm", "industry"}) {
             PACKAGES.put("domain." + broker + ".", Service.BROKER);
         }
