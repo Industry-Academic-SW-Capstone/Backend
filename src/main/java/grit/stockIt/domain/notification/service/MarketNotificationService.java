@@ -2,8 +2,8 @@ package grit.stockIt.domain.notification.service;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import grit.stockIt.domain.member.entity.Member;
-import grit.stockIt.domain.member.repository.MemberRepository;
+import grit.stockIt.domain.notification.entity.NotificationSetting;
+import grit.stockIt.domain.notification.repository.NotificationSettingRepository;
 import grit.stockIt.domain.notification.entity.Notification;
 import grit.stockIt.domain.notification.enums.NotificationType;
 import grit.stockIt.domain.notification.repository.NotificationRepository;
@@ -22,17 +22,17 @@ import java.util.Map;
 public class MarketNotificationService {
 
     private final FcmService fcmService;
-    private final MemberRepository memberRepository;
+    private final NotificationSettingRepository notificationSettingRepository;
     private final NotificationRepository notificationRepository;
     private final ObjectMapper objectMapper;
 
     public MarketNotificationService(
             @Autowired(required = false) FcmService fcmService,
-            MemberRepository memberRepository,
+            NotificationSettingRepository notificationSettingRepository,
             NotificationRepository notificationRepository,
             ObjectMapper objectMapper) {
         this.fcmService = fcmService;
-        this.memberRepository = memberRepository;
+        this.notificationSettingRepository = notificationSettingRepository;
         this.notificationRepository = notificationRepository;
         this.objectMapper = objectMapper;
     }
@@ -72,19 +72,17 @@ public class MarketNotificationService {
     // 모든 사용자에게 알림 전송 (DB 저장 + FCM 푸시)
     private void sendNotificationToAllMembers(String title, String message, String iconType, NotificationType notificationType) {
         try {
-            // 모든 사용자 조회
-            List<Member> allMembers = memberRepository.findAll();
-            log.info("전체 사용자 수: {}", allMembers.size());
+            // 푸시를 받을 수 있는 회원(FCM 토큰이 있는 알림 설정)만 대상이다.
+            List<NotificationSetting> settings = notificationSettingRepository.findAllByFcmTokenIsNotNull();
+            log.info("FCM 토큰이 있는 사용자 수: {}", settings.size());
 
             int successCount = 0;
             int failCount = 0;
-            int skippedCount = 0;
 
-            for (Member member : allMembers) {
+            for (NotificationSetting setting : settings) {
                 try {
-                    // FCM 토큰이 있는 사용자만 처리
-                    if (!member.hasFcmToken()) {
-                        skippedCount++;
+                    // 빈 문자열 토큰은 보낼 곳이 없다.
+                    if (!setting.hasFcmToken()) {
                         continue;
                     }
 
@@ -94,10 +92,10 @@ public class MarketNotificationService {
                     long nowMillis = System.currentTimeMillis();
 
                     // DB에 알림 저장
-                    saveNotificationToDatabase(member, title, message, iconType, notificationType, nowMillis);
+                    saveNotificationToDatabase(setting, title, message, iconType, notificationType, nowMillis);
 
                     // FCM 푸시 알림 전송
-                    boolean fcmSuccess = sendFcmPushNotification(member, title, message, notificationType, nowMillis);
+                    boolean fcmSuccess = sendFcmPushNotification(setting, title, message, notificationType, nowMillis);
 
                     if (fcmSuccess) {
                         successCount++;
@@ -105,13 +103,12 @@ public class MarketNotificationService {
                         failCount++;
                     }
                 } catch (Exception e) {
-                    log.error("사용자 알림 전송 실패: memberId={}", member.getMemberId(), e);
+                    log.error("사용자 알림 전송 실패: memberId={}", setting.getMemberId(), e);
                     failCount++;
                 }
             }
 
-            log.info("알림 전송 결과 - 성공: {}, 실패: {}, 건너뜀(FCM 토큰 없음): {}", 
-                    successCount, failCount, skippedCount);
+            log.info("알림 전송 결과 - 성공: {}, 실패: {}", successCount, failCount);
         } catch (Exception e) {
             log.error("알림 전송 중 오류 발생", e);
             throw e;
@@ -119,7 +116,7 @@ public class MarketNotificationService {
     }
 
     // Notification 엔티티를 DB에 저장
-    private void saveNotificationToDatabase(Member member, String title, String message,
+    private void saveNotificationToDatabase(NotificationSetting setting, String title, String message,
                                            String iconType, NotificationType notificationType,
                                            long nowMillis) {
         // 상세 데이터 (JSON)
@@ -127,7 +124,7 @@ public class MarketNotificationService {
 
         // Notification 엔티티 생성
         Notification notification = Notification.builder()
-                .memberId(member.getMemberId())
+                .memberId(setting.getMemberId())
                 .type(notificationType)
                 .title(title)
                 .message(message)
@@ -140,7 +137,7 @@ public class MarketNotificationService {
         notificationRepository.save(notification);
         
         log.debug("알림 저장 완료: notificationId={}, memberId={}, type={}", 
-                notification.getNotificationId(), member.getMemberId(), notificationType);
+                notification.getNotificationId(), setting.getMemberId(), notificationType);
     }
 
     // 상세 데이터를 JSON으로 변환
@@ -157,15 +154,15 @@ public class MarketNotificationService {
     }
 
     // FCM 푸시 알림 전송
-    private boolean sendFcmPushNotification(Member member, String title, String message,
+    private boolean sendFcmPushNotification(NotificationSetting setting, String title, String message,
                                           NotificationType notificationType, long nowMillis) {
         if (fcmService == null) {
             log.debug("FcmService를 사용할 수 없습니다. 알림을 전송하지 않습니다.");
             return false;
         }
         
-        if (!member.hasFcmToken()) {
-            log.debug("FCM 토큰이 등록되지 않은 사용자: memberId={}", member.getMemberId());
+        if (!setting.hasFcmToken()) {
+            log.debug("FCM 토큰이 등록되지 않은 사용자: memberId={}", setting.getMemberId());
             return false;
         }
 
@@ -174,12 +171,12 @@ public class MarketNotificationService {
                 title, message, notificationType, nowMillis);
 
         boolean success = fcmService.sendExecutionNotification(
-                member.getFcmToken(),
+                setting.getFcmToken(),
                 data
         );
 
         if (!success) {
-            log.warn("FCM 알림 전송 실패: memberId={}, type={}", member.getMemberId(), notificationType);
+            log.warn("FCM 알림 전송 실패: memberId={}, type={}", setting.getMemberId(), notificationType);
         }
 
         return success;

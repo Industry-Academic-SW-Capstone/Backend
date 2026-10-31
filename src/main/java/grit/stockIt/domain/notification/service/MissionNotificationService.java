@@ -2,9 +2,8 @@ package grit.stockIt.domain.notification.service;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import grit.stockIt.domain.member.entity.Member;
-import grit.stockIt.domain.member.repository.MemberRepository;
 import grit.stockIt.domain.notification.entity.Notification;
+import grit.stockIt.domain.notification.entity.NotificationSetting;
 import grit.stockIt.domain.notification.enums.NotificationType;
 import grit.stockIt.domain.notification.event.MissionCompletedEvent;
 import grit.stockIt.domain.notification.repository.NotificationRepository;
@@ -23,17 +22,17 @@ import java.util.Map;
 public class MissionNotificationService {
 
     private final FcmService fcmService;
-    private final MemberRepository memberRepository;
+    private final NotificationSettingService notificationSettingService;
     private final NotificationRepository notificationRepository;
     private final ObjectMapper objectMapper;
 
     public MissionNotificationService(
             @Autowired(required = false) FcmService fcmService,
-            MemberRepository memberRepository,
+            NotificationSettingService notificationSettingService,
             NotificationRepository notificationRepository,
             ObjectMapper objectMapper) {
         this.fcmService = fcmService;
-        this.memberRepository = memberRepository;
+        this.notificationSettingService = notificationSettingService;
         this.notificationRepository = notificationRepository;
         this.objectMapper = objectMapper;
     }
@@ -47,11 +46,10 @@ public class MissionNotificationService {
                 event.missionId(), event.memberId(), event.missionName());
 
         try {
-            // Member 조회
-            Member member = memberRepository.findById(event.memberId())
-                    .orElseThrow(() -> new IllegalStateException("Member를 찾을 수 없습니다: memberId=" + event.memberId()));
+            // 푸시 수신 설정. 행이 없으면 토큰 없음·체결 알림 켬으로 본다.
+            NotificationSetting setting = notificationSettingService.settingOf(event.memberId());
             
-            processMissionNotification(member, event);
+            processMissionNotification(setting, event);
         } catch (Exception e) {
             log.error("미션 알림 처리 실패: missionId={}, memberId={}", event.missionId(), event.memberId(), e);
             throw e;  // 예외 재던지기: 트랜잭션 롤백 발동
@@ -61,23 +59,23 @@ public class MissionNotificationService {
     // 미션 알림 처리 (DB 저장 + FCM 푸시)
     // 문구는 여기서 한 번만 계산해 두 경로가 같은 값을 쓴다.
     // 각 경로가 따로 계산하면 한쪽만 수정됐을 때 DB 내역과 푸시 문구가 갈린다.
-    private void processMissionNotification(Member member, MissionCompletedEvent event) {
+    private void processMissionNotification(NotificationSetting setting, MissionCompletedEvent event) {
         String title = MissionNotificationMessageFactory.title(event.missionName());
         String body = MissionNotificationMessageFactory.body(event.moneyAmount(), event.titleName());
 
-        saveNotificationToDatabase(member, event, title, body);
-        sendFcmPushNotification(member, event, title, body);
+        saveNotificationToDatabase(setting, event, title, body);
+        sendFcmPushNotification(setting, event, title, body);
     }
 
     // Notification 엔티티를 DB에 저장
-    private void saveNotificationToDatabase(Member member, MissionCompletedEvent event,
+    private void saveNotificationToDatabase(NotificationSetting setting, MissionCompletedEvent event,
                                             String title, String message) {
         // 상세 데이터 (JSON)
         String detailData = createDetailData(event);
 
         // Notification 엔티티 생성
         Notification notification = Notification.builder()
-                .memberId(member.getMemberId())
+                .memberId(setting.getMemberId())
                 .type(NotificationType.MISSION_COMPLETED)
                 .title(title)
                 .message(message)
@@ -90,7 +88,7 @@ public class MissionNotificationService {
         notificationRepository.save(notification);
         
         log.info("미션 알림 저장 완료: notificationId={}, memberId={}, missionId={}", 
-                notification.getNotificationId(), member.getMemberId(), event.missionId());
+                notification.getNotificationId(), setting.getMemberId(), event.missionId());
     }
 
     // 상세 데이터를 JSON으로 변환
@@ -106,15 +104,15 @@ public class MissionNotificationService {
     }
 
     // FCM 푸시 알림 전송
-    private void sendFcmPushNotification(Member member, MissionCompletedEvent event,
+    private void sendFcmPushNotification(NotificationSetting setting, MissionCompletedEvent event,
                                          String title, String body) {
         if (fcmService == null) {
             log.debug("FcmService를 사용할 수 없습니다. 알림을 전송하지 않습니다.");
             return;
         }
         
-        if (!member.hasFcmToken()) {
-            log.debug("FCM 토큰이 등록되지 않은 사용자: memberId={}", member.getMemberId());
+        if (!setting.hasFcmToken()) {
+            log.debug("FCM 토큰이 등록되지 않은 사용자: memberId={}", setting.getMemberId());
             return;
         }
 
@@ -123,12 +121,12 @@ public class MissionNotificationService {
                 event, title, body, System.currentTimeMillis());
 
         boolean success = fcmService.sendExecutionNotification( // FCM 푸시 알림 전송 (Data-Only)
-                member.getFcmToken(),
+                setting.getFcmToken(),
                 data
         );
 
         if (!success) {
-            log.warn("FCM 알림 전송 실패: memberId={}, missionId={}", member.getMemberId(), event.missionId());
+            log.warn("FCM 알림 전송 실패: memberId={}, missionId={}", setting.getMemberId(), event.missionId());
         }
     }
 }

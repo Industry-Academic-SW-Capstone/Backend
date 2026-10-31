@@ -1,8 +1,8 @@
 package grit.stockIt.domain.notification.controller;
 
-import grit.stockIt.domain.member.entity.Member;
-import grit.stockIt.domain.member.repository.MemberRepository;
+import grit.stockIt.domain.notification.entity.NotificationSetting;
 import grit.stockIt.domain.notification.service.AdminNotificationService;
+import grit.stockIt.domain.notification.service.NotificationSettingService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -24,7 +24,7 @@ import java.util.Map;
 public class AdminNotificationController {
 
     private final AdminNotificationService adminNotificationService;
-    private final MemberRepository memberRepository;
+    private final NotificationSettingService notificationSettingService;
 
     @Operation(
             summary = "전체 사용자에게 알림 전송 (관리자 전용)",
@@ -36,25 +36,23 @@ public class AdminNotificationController {
         
         log.info("=== 관리자 전체 알림 전송 요청: title={}, body={} ===", request.title(), request.body());
         
-        // 모든 회원 조회
-        List<Member> allMembers = memberRepository.findAll();
-        log.info("전체 회원 수: {}", allMembers.size());
-        
-        // FCM 토큰이 있는 회원 수 확인
-        long membersWithTokenCount = allMembers.stream()
-                .filter(Member::hasFcmToken)
-                .count();
+        // 알림 내역은 모든 회원에게 남기고, 푸시는 토큰이 있는 회원에게만 보낸다.
+        List<NotificationSetting> recipients =
+                notificationSettingService.recipientsOf(notificationSettingService.allMemberIds());
+        log.info("전체 회원 수: {}", recipients.size());
+
+        long membersWithTokenCount = recipients.stream().filter(NotificationSetting::hasFcmToken).count();
         
         log.info("FCM 토큰이 등록된 회원 수: {}", membersWithTokenCount);
         
         // 비동기로 알림 전송 및 DB 저장 (모든 회원에게 DB 저장, FCM 토큰 있는 회원에게만 푸시 전송)
-        adminNotificationService.sendBroadcastNotification(allMembers, request.title(), request.body());
+        adminNotificationService.sendBroadcastNotification(recipients, request.title(), request.body());
         
         // 즉시 응답 반환
         Map<String, Object> response = new HashMap<>();
         response.put("success", true);
         response.put("message", "알림 전송이 시작되었습니다.");
-        response.put("total_members", allMembers.size());
+        response.put("total_members", recipients.size());
         response.put("members_with_token", membersWithTokenCount);
         response.put("title", request.title());
         response.put("body", request.body());

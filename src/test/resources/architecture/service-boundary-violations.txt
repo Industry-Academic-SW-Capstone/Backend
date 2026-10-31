@@ -16,7 +16,7 @@ MARKET domain.matching.queue.KafkaFillCommandPublisher -> EXCHANGE domain.matchi
 MARKET global.websocket.client.KisWebSocketClient -> BROKER domain.stock.dto.StockOrderBookResponse
 MARKET global.websocket.client.KisWebSocketClient -> BROKER domain.stock.dto.StockPriceUpdateResponse
 
-# 부가 → 증권사: 회원·계좌·보유 종목·주문 조회 (6단계) — 38건
+# 부가 → 증권사: 회원·계좌·보유 종목·주문 조회 (6단계) — 27건
 EXTRA domain.mission.service.MissionBatchService -> BROKER domain.account.repository.AccountStockRepository
 EXTRA domain.mission.service.MissionConditionEvaluator -> BROKER domain.order.event.TradeCompletionEvent
 EXTRA domain.mission.service.MissionEventListener -> BROKER domain.member.entity.Member
@@ -38,23 +38,12 @@ EXTRA domain.mission.service.MissionService -> BROKER domain.account.repository.
 EXTRA domain.mission.service.MissionService -> BROKER domain.account.repository.AccountStockRepository
 EXTRA domain.mission.service.MissionService -> BROKER domain.member.entity.Member
 EXTRA domain.mission.service.MissionService -> BROKER domain.member.repository.MemberRepository
-EXTRA domain.notification.controller.AdminNotificationController -> BROKER domain.member.entity.Member
-EXTRA domain.notification.controller.AdminNotificationController -> BROKER domain.member.repository.MemberRepository
 EXTRA domain.notification.controller.NotificationController -> BROKER domain.member.entity.Member
 EXTRA domain.notification.controller.NotificationController -> BROKER domain.member.repository.MemberRepository
-EXTRA domain.notification.controller.TestNotificationController -> BROKER domain.member.entity.Member
-EXTRA domain.notification.controller.TestNotificationController -> BROKER domain.member.repository.MemberRepository
-EXTRA domain.notification.service.AdminNotificationService -> BROKER domain.member.entity.Member
-EXTRA domain.notification.service.ExecutionNotificationService -> BROKER domain.member.entity.Member
-EXTRA domain.notification.service.ExecutionNotificationService -> BROKER domain.member.repository.MemberRepository
-EXTRA domain.notification.service.FcmTokenService -> BROKER domain.member.entity.Member
-EXTRA domain.notification.service.FcmTokenService -> BROKER domain.member.repository.MemberRepository
-EXTRA domain.notification.service.MarketNotificationService -> BROKER domain.member.entity.Member
-EXTRA domain.notification.service.MarketNotificationService -> BROKER domain.member.repository.MemberRepository
-EXTRA domain.notification.service.MissionNotificationService -> BROKER domain.member.entity.Member
-EXTRA domain.notification.service.MissionNotificationService -> BROKER domain.member.repository.MemberRepository
 EXTRA domain.notification.service.NotificationService -> BROKER domain.member.entity.Member
 EXTRA domain.notification.service.NotificationService -> BROKER domain.member.repository.MemberRepository
+EXTRA domain.notification.service.NotificationSettingService -> BROKER domain.member.entity.Member
+EXTRA domain.notification.service.NotificationSettingService -> BROKER domain.member.repository.MemberRepository
 
 # 증권사 → 부가: 회원의 칭호·미션 연관, 미션 이벤트 발행 (6단계) — 13건
 BROKER domain.member.dto.MemberResponse -> EXTRA domain.title.dto.TitleResponse

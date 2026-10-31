@@ -2,7 +2,7 @@ package grit.stockIt.domain.notification.service;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import grit.stockIt.domain.member.entity.Member;
+import grit.stockIt.domain.notification.entity.NotificationSetting;
 import grit.stockIt.domain.notification.entity.Notification;
 import grit.stockIt.domain.notification.enums.NotificationType;
 import grit.stockIt.domain.notification.repository.NotificationRepository;
@@ -37,7 +37,7 @@ public class AdminNotificationService {
     @Async(AsyncConfig.NOTIFICATION_EXECUTOR)
     @Transactional
     public CompletableFuture<BroadcastResult> sendBroadcastNotification(
-            List<Member> members, String title, String body) {
+            List<NotificationSetting> recipients, String title, String body) {
         
         int successCount = 0;
         int failCount = 0;
@@ -48,11 +48,12 @@ public class AdminNotificationService {
         
         String detailData = createDetailData(title, body);
         
-        for (Member member : members) {
+        for (NotificationSetting setting : recipients) {
+            Long memberId = setting.getMemberId();
             try {
                 // DB에 알림 저장 (모든 회원에게 저장)
                 Notification notification = Notification.builder()
-                        .memberId(member.getMemberId())
+                        .memberId(memberId)
                         .type(NotificationType.SYSTEM)
                         .title(title)
                         .message(body)
@@ -65,10 +66,10 @@ public class AdminNotificationService {
                 savedCount++;
                 
                 // FCM 푸시 알림 전송 (토큰이 있는 경우만)
-                if (member.hasFcmToken() && fcmService != null) {
+                if (setting.hasFcmToken() && fcmService != null) {
                     // executionNotificationEnabled 체크 안 함
                     boolean success = fcmService.sendExecutionNotification(
-                            member.getFcmToken(),
+                            setting.getFcmToken(),
                             data
                     );
                     
@@ -76,13 +77,13 @@ public class AdminNotificationService {
                         successCount++;
                     } else {
                         failCount++;
-                        log.warn("FCM 알림 전송 실패: memberId={}", member.getMemberId());
+                        log.warn("FCM 알림 전송 실패: memberId={}", memberId);
                     }
                 }
                 
             } catch (Exception e) {
                 failCount++;
-                log.error("알림 처리 중 오류 발생: memberId={}", member.getMemberId(), e);
+                log.error("알림 처리 중 오류 발생: memberId={}", memberId, e);
             }
         }
         

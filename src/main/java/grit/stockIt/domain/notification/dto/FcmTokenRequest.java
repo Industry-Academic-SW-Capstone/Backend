@@ -1,4 +1,4 @@
-package grit.stockIt.domain.member.dto;
+package grit.stockIt.domain.notification.dto;
 
 import com.fasterxml.jackson.databind.PropertyNamingStrategies;
 import com.fasterxml.jackson.databind.annotation.JsonNaming;

@@ -1,7 +1,7 @@
 package grit.stockIt.domain.notification.controller;
 
-import grit.stockIt.domain.member.entity.Member;
-import grit.stockIt.domain.member.repository.MemberRepository;
+import grit.stockIt.domain.notification.entity.NotificationSetting;
+import grit.stockIt.domain.notification.service.NotificationSettingService;
 import grit.stockIt.domain.notification.service.FcmService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -22,13 +22,13 @@ import java.util.Map;
 public class TestNotificationController {
 
     private final FcmService fcmService;
-    private final MemberRepository memberRepository;
+    private final NotificationSettingService notificationSettingService;
 
     public TestNotificationController(
             @org.springframework.beans.factory.annotation.Autowired(required = false) FcmService fcmService,
-            MemberRepository memberRepository) {
+            NotificationSettingService notificationSettingService) {
         this.fcmService = fcmService;
-        this.memberRepository = memberRepository;
+        this.notificationSettingService = notificationSettingService;
     }
 
     @Operation(
@@ -42,12 +42,10 @@ public class TestNotificationController {
 
         log.info("=== 테스트 FCM 알림 전송 API 호출: memberId={}, title={}, body={} ===", memberId, title, body);
 
-        // Member 조회
-        Member member = memberRepository.findById(memberId)
-                .orElseThrow(() -> new IllegalArgumentException("Member를 찾을 수 없습니다: memberId=" + memberId));
+        NotificationSetting setting = notificationSettingService.settingOf(memberId);
 
         // FCM 토큰 확인
-        if (!member.hasFcmToken()) {
+        if (!setting.hasFcmToken()) {
             Map<String, Object> response = new HashMap<>();
             response.put("success", false);
             response.put("message", "FCM 토큰이 등록되지 않은 사용자입니다.");
@@ -72,7 +70,7 @@ public class TestNotificationController {
             return ResponseEntity.badRequest().body(response);
         }
         
-        boolean success = fcmService.sendExecutionNotification(member.getFcmToken(), data);
+        boolean success = fcmService.sendExecutionNotification(setting.getFcmToken(), data);
 
         // 응답
         Map<String, Object> response = new HashMap<>();
@@ -82,7 +80,7 @@ public class TestNotificationController {
                 "memberId", memberId,
                 "title", title,
                 "body", body,
-                "fcmToken", member.getFcmToken().substring(0, Math.min(20, member.getFcmToken().length())) + "..."
+                "fcmToken", setting.getFcmToken().substring(0, Math.min(20, setting.getFcmToken().length())) + "..."
         ));
 
         return ResponseEntity.ok(response);

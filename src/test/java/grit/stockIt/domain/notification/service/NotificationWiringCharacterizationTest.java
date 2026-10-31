@@ -2,8 +2,8 @@ package grit.stockIt.domain.notification.service;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import grit.stockIt.domain.member.entity.Member;
-import grit.stockIt.domain.member.repository.MemberRepository;
+import grit.stockIt.domain.notification.entity.NotificationSetting;
+import grit.stockIt.domain.notification.repository.NotificationSettingRepository;
 import grit.stockIt.domain.mission.enums.MissionTrack;
 import grit.stockIt.domain.notification.entity.Notification;
 import grit.stockIt.domain.notification.enums.NotificationType;
@@ -22,7 +22,6 @@ import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -76,19 +75,14 @@ class NotificationWiringCharacterizationTest {
     // 멤버 목 생성 헬퍼. W5-M/W6-M 픽스처는 각 테스트가 지역에서 직접 구성한다.
     // ---------------------------------------------------------------------
 
-    private static Member memberWithToken(long id, String token) {
-        Member member = mock(Member.class);
-        when(member.getMemberId()).thenReturn(id);
-        when(member.hasFcmToken()).thenReturn(true);
-        when(member.getFcmToken()).thenReturn(token);
-        return member;
+    private static NotificationSetting memberWithToken(long id, String token) {
+        NotificationSetting setting = NotificationSetting.defaultFor(id);
+        setting.updateFcmToken(token);
+        return setting;
     }
 
-    private static Member memberWithoutToken(long id) {
-        Member member = mock(Member.class);
-        when(member.getMemberId()).thenReturn(id);
-        when(member.hasFcmToken()).thenReturn(false);
-        return member;
+    private static NotificationSetting memberWithoutToken(long id) {
+        return NotificationSetting.defaultFor(id);
     }
 
     private static ExecutionFilledEvent executionEvent() {
@@ -116,14 +110,15 @@ class NotificationWiringCharacterizationTest {
 
         @Test
         void w1_execution_nullFcmService_savesAndDoesNotThrow() {
-            MemberRepository memberRepository = mock(MemberRepository.class);
+            NotificationSettingService notificationSettingService = mock(NotificationSettingService.class);
+            NotificationSettingRepository notificationSettingRepository = mock(NotificationSettingRepository.class);
             NotificationRepository notificationRepository = mock(NotificationRepository.class);
             ObjectMapper objectMapper = spy(new ObjectMapper());
-            Member member = memberWithToken(100L, "token-a");
-            when(memberRepository.findById(100L)).thenReturn(Optional.of(member));
+            NotificationSetting member = memberWithToken(100L, "token-a");
+            when(notificationSettingService.settingOf(100L)).thenReturn(member);
 
             ExecutionNotificationService service = new ExecutionNotificationService(
-                    null, memberRepository, notificationRepository, objectMapper);
+                    null, notificationSettingService, notificationRepository, objectMapper);
 
             assertThatCode(() -> service.handleExecutionFilledEvent(executionEvent()))
                     .doesNotThrowAnyException();
@@ -133,14 +128,15 @@ class NotificationWiringCharacterizationTest {
 
         @Test
         void w1_mission_nullFcmService_savesAndDoesNotThrow() {
-            MemberRepository memberRepository = mock(MemberRepository.class);
+            NotificationSettingService notificationSettingService = mock(NotificationSettingService.class);
+            NotificationSettingRepository notificationSettingRepository = mock(NotificationSettingRepository.class);
             NotificationRepository notificationRepository = mock(NotificationRepository.class);
             ObjectMapper objectMapper = spy(new ObjectMapper());
-            Member member = memberWithToken(100L, "token-a");
-            when(memberRepository.findById(100L)).thenReturn(Optional.of(member));
+            NotificationSetting member = memberWithToken(100L, "token-a");
+            when(notificationSettingService.settingOf(100L)).thenReturn(member);
 
             MissionNotificationService service = new MissionNotificationService(
-                    null, memberRepository, notificationRepository, objectMapper);
+                    null, notificationSettingService, notificationRepository, objectMapper);
 
             assertThatCode(() -> service.handleMissionCompletedEvent(missionEvent()))
                     .doesNotThrowAnyException();
@@ -150,14 +146,15 @@ class NotificationWiringCharacterizationTest {
 
         @Test
         void w1_market_nullFcmService_savesAndCompletesLoop() {
-            MemberRepository memberRepository = mock(MemberRepository.class);
+            NotificationSettingService notificationSettingService = mock(NotificationSettingService.class);
+            NotificationSettingRepository notificationSettingRepository = mock(NotificationSettingRepository.class);
             NotificationRepository notificationRepository = mock(NotificationRepository.class);
             ObjectMapper objectMapper = spy(new ObjectMapper());
-            Member member0 = memberWithToken(1L, "t1");
-            when(memberRepository.findAll()).thenReturn(List.of(member0));
+            NotificationSetting member0 = memberWithToken(1L, "t1");
+            when(notificationSettingRepository.findAllByFcmTokenIsNotNull()).thenReturn(List.of(member0));
 
             MarketNotificationService service = new MarketNotificationService(
-                    null, memberRepository, notificationRepository, objectMapper);
+                    null, notificationSettingRepository, notificationRepository, objectMapper);
 
             assertThatCode(service::sendMarketOpenNotification).doesNotThrowAnyException();
 
@@ -194,14 +191,15 @@ class NotificationWiringCharacterizationTest {
 
         @Test
         void w2_execution_noToken_savesButSkipsFcm() {
-            MemberRepository memberRepository = mock(MemberRepository.class);
+            NotificationSettingService notificationSettingService = mock(NotificationSettingService.class);
+            NotificationSettingRepository notificationSettingRepository = mock(NotificationSettingRepository.class);
             NotificationRepository notificationRepository = mock(NotificationRepository.class);
             ObjectMapper objectMapper = spy(new ObjectMapper());
             FcmService fcmService = mock(FcmService.class);
-            Member targetMember = memberWithoutToken(100L);
-            when(memberRepository.findById(100L)).thenReturn(Optional.of(targetMember));
+            NotificationSetting targetMember = memberWithoutToken(100L);
+            when(notificationSettingService.settingOf(100L)).thenReturn(targetMember);
 
-            new ExecutionNotificationService(fcmService, memberRepository, notificationRepository, objectMapper)
+            new ExecutionNotificationService(fcmService, notificationSettingService, notificationRepository, objectMapper)
                     .handleExecutionFilledEvent(executionEvent());
 
             verify(notificationRepository, times(1)).save(any(Notification.class));
@@ -210,14 +208,15 @@ class NotificationWiringCharacterizationTest {
 
         @Test
         void w2_mission_noToken_savesButSkipsFcm() {
-            MemberRepository memberRepository = mock(MemberRepository.class);
+            NotificationSettingService notificationSettingService = mock(NotificationSettingService.class);
+            NotificationSettingRepository notificationSettingRepository = mock(NotificationSettingRepository.class);
             NotificationRepository notificationRepository = mock(NotificationRepository.class);
             ObjectMapper objectMapper = spy(new ObjectMapper());
             FcmService fcmService = mock(FcmService.class);
-            Member targetMember = memberWithoutToken(100L);
-            when(memberRepository.findById(100L)).thenReturn(Optional.of(targetMember));
+            NotificationSetting targetMember = memberWithoutToken(100L);
+            when(notificationSettingService.settingOf(100L)).thenReturn(targetMember);
 
-            new MissionNotificationService(fcmService, memberRepository, notificationRepository, objectMapper)
+            new MissionNotificationService(fcmService, notificationSettingService, notificationRepository, objectMapper)
                     .handleMissionCompletedEvent(missionEvent());
 
             verify(notificationRepository, times(1)).save(any(Notification.class));
@@ -226,14 +225,15 @@ class NotificationWiringCharacterizationTest {
 
         @Test
         void w2_market_noToken_skipsSaveEntirely() {
-            MemberRepository memberRepository = mock(MemberRepository.class);
+            NotificationSettingService notificationSettingService = mock(NotificationSettingService.class);
+            NotificationSettingRepository notificationSettingRepository = mock(NotificationSettingRepository.class);
             NotificationRepository notificationRepository = mock(NotificationRepository.class);
             ObjectMapper objectMapper = spy(new ObjectMapper());
             FcmService fcmService = mock(FcmService.class);
-            Member member0 = memberWithoutToken(1L);
-            when(memberRepository.findAll()).thenReturn(List.of(member0));
+            NotificationSetting member0 = memberWithoutToken(1L);
+            when(notificationSettingRepository.findAllByFcmTokenIsNotNull()).thenReturn(List.of(member0));
 
-            new MarketNotificationService(fcmService, memberRepository, notificationRepository, objectMapper)
+            new MarketNotificationService(fcmService, notificationSettingRepository, notificationRepository, objectMapper)
                     .sendMarketOpenNotification();
 
             verify(notificationRepository, never()).save(any(Notification.class));
@@ -266,15 +266,16 @@ class NotificationWiringCharacterizationTest {
 
         @Test
         void w3_execution_disabled_skipsFcm() {
-            MemberRepository memberRepository = mock(MemberRepository.class);
+            NotificationSettingService notificationSettingService = mock(NotificationSettingService.class);
+            NotificationSettingRepository notificationSettingRepository = mock(NotificationSettingRepository.class);
             NotificationRepository notificationRepository = mock(NotificationRepository.class);
             ObjectMapper objectMapper = spy(new ObjectMapper());
             FcmService fcmService = mock(FcmService.class);
-            Member member = memberWithToken(100L, "token-a");
-            when(member.isExecutionNotificationEnabled()).thenReturn(false);
-            when(memberRepository.findById(100L)).thenReturn(Optional.of(member));
+            NotificationSetting member = memberWithToken(100L, "token-a");
+            member.updateExecutionNotification(false);
+            when(notificationSettingService.settingOf(100L)).thenReturn(member);
 
-            new ExecutionNotificationService(fcmService, memberRepository, notificationRepository, objectMapper)
+            new ExecutionNotificationService(fcmService, notificationSettingService, notificationRepository, objectMapper)
                     .handleExecutionFilledEvent(executionEvent());
 
             verify(notificationRepository, times(1)).save(any(Notification.class));
@@ -286,15 +287,16 @@ class NotificationWiringCharacterizationTest {
          */
         @Test
         void w3_execution_enabled_sendsFcmExactlyOnce() {
-            MemberRepository memberRepository = mock(MemberRepository.class);
+            NotificationSettingService notificationSettingService = mock(NotificationSettingService.class);
+            NotificationSettingRepository notificationSettingRepository = mock(NotificationSettingRepository.class);
             NotificationRepository notificationRepository = mock(NotificationRepository.class);
             ObjectMapper objectMapper = spy(new ObjectMapper());
             FcmService fcmService = mock(FcmService.class);
-            Member member = memberWithToken(100L, "token-a");
-            when(member.isExecutionNotificationEnabled()).thenReturn(true);
-            when(memberRepository.findById(100L)).thenReturn(Optional.of(member));
+            NotificationSetting member = memberWithToken(100L, "token-a");
+            member.updateExecutionNotification(true);
+            when(notificationSettingService.settingOf(100L)).thenReturn(member);
 
-            new ExecutionNotificationService(fcmService, memberRepository, notificationRepository, objectMapper)
+            new ExecutionNotificationService(fcmService, notificationSettingService, notificationRepository, objectMapper)
                     .handleExecutionFilledEvent(executionEvent());
 
             verify(fcmService, times(1)).sendExecutionNotification(anyString(), any());
@@ -306,15 +308,16 @@ class NotificationWiringCharacterizationTest {
          */
         @Test
         void w3_mission_ignoresExecutionEnabledFlag_stillSendsFcm() {
-            MemberRepository memberRepository = mock(MemberRepository.class);
+            NotificationSettingService notificationSettingService = mock(NotificationSettingService.class);
+            NotificationSettingRepository notificationSettingRepository = mock(NotificationSettingRepository.class);
             NotificationRepository notificationRepository = mock(NotificationRepository.class);
             ObjectMapper objectMapper = spy(new ObjectMapper());
             FcmService fcmService = mock(FcmService.class);
-            Member member = memberWithToken(100L, "token-a");
-            when(member.isExecutionNotificationEnabled()).thenReturn(false);
-            when(memberRepository.findById(100L)).thenReturn(Optional.of(member));
+            NotificationSetting member = memberWithToken(100L, "token-a");
+            member.updateExecutionNotification(false);
+            when(notificationSettingService.settingOf(100L)).thenReturn(member);
 
-            new MissionNotificationService(fcmService, memberRepository, notificationRepository, objectMapper)
+            new MissionNotificationService(fcmService, notificationSettingService, notificationRepository, objectMapper)
                     .handleMissionCompletedEvent(missionEvent());
 
             verify(fcmService, times(1)).sendExecutionNotification(anyString(), any());
@@ -322,16 +325,16 @@ class NotificationWiringCharacterizationTest {
 
         @Test
         void w3_market_ignoresExecutionEnabledFlag_stillSendsFcm() {
-            MemberRepository memberRepository = mock(MemberRepository.class);
+            NotificationSettingService notificationSettingService = mock(NotificationSettingService.class);
+            NotificationSettingRepository notificationSettingRepository = mock(NotificationSettingRepository.class);
             NotificationRepository notificationRepository = mock(NotificationRepository.class);
             ObjectMapper objectMapper = spy(new ObjectMapper());
             FcmService fcmService = mock(FcmService.class);
-            Member member = memberWithToken(1L, "t1");
-            when(member.isExecutionNotificationEnabled()).thenReturn(false);
-            Member member0 = member;
-            when(memberRepository.findAll()).thenReturn(List.of(member0));
+            NotificationSetting member0 = memberWithToken(1L, "t1");
+            member0.updateExecutionNotification(false);
+            when(notificationSettingRepository.findAllByFcmTokenIsNotNull()).thenReturn(List.of(member0));
 
-            new MarketNotificationService(fcmService, memberRepository, notificationRepository, objectMapper)
+            new MarketNotificationService(fcmService, notificationSettingRepository, notificationRepository, objectMapper)
                     .sendMarketOpenNotification();
 
             verify(fcmService, times(1)).sendExecutionNotification(anyString(), any());
@@ -342,8 +345,8 @@ class NotificationWiringCharacterizationTest {
             NotificationRepository notificationRepository = mock(NotificationRepository.class);
             ObjectMapper objectMapper = spy(new ObjectMapper());
             FcmService fcmService = mock(FcmService.class);
-            Member member = memberWithToken(1L, "t1");
-            when(member.isExecutionNotificationEnabled()).thenReturn(false);
+            NotificationSetting member = memberWithToken(1L, "t1");
+            member.updateExecutionNotification(false);
 
             new AdminNotificationService(fcmService, notificationRepository, objectMapper)
                     .sendBroadcastNotification(List.of(member), "제목", "본문");
@@ -361,52 +364,55 @@ class NotificationWiringCharacterizationTest {
     // =====================================================================
 
     @Nested
-    @DisplayName("배선 4: 멤버 조회 실패 시 예외가 호출자에게 전파된다")
+    @DisplayName("배선 4: 수신 설정 조회 실패 시 예외가 호출자에게 전파된다")
     class WiringExceptionRethrow {
 
         @Test
-        void w4_execution_memberNotFound_propagates() {
-            MemberRepository memberRepository = mock(MemberRepository.class);
+        void w4_execution_settingLookupFails_propagates() {
+            NotificationSettingService notificationSettingService = mock(NotificationSettingService.class);
+            NotificationSettingRepository notificationSettingRepository = mock(NotificationSettingRepository.class);
             NotificationRepository notificationRepository = mock(NotificationRepository.class);
             ObjectMapper objectMapper = spy(new ObjectMapper());
-            when(memberRepository.findById(100L)).thenReturn(Optional.empty());
+            when(notificationSettingService.settingOf(100L)).thenThrow(new IllegalStateException("DB down"));
 
             ExecutionNotificationService service = new ExecutionNotificationService(
-                    mock(FcmService.class), memberRepository, notificationRepository, objectMapper);
+                    mock(FcmService.class), notificationSettingService, notificationRepository, objectMapper);
 
             assertThatThrownBy(() -> service.handleExecutionFilledEvent(executionEvent()))
                     .isInstanceOf(IllegalStateException.class)
-                    .hasMessageContaining("Member를 찾을 수 없습니다");
+                    .hasMessage("DB down");
 
             verify(notificationRepository, never()).save(any(Notification.class));
         }
 
         @Test
-        void w4_mission_memberNotFound_propagates() {
-            MemberRepository memberRepository = mock(MemberRepository.class);
+        void w4_mission_settingLookupFails_propagates() {
+            NotificationSettingService notificationSettingService = mock(NotificationSettingService.class);
+            NotificationSettingRepository notificationSettingRepository = mock(NotificationSettingRepository.class);
             NotificationRepository notificationRepository = mock(NotificationRepository.class);
             ObjectMapper objectMapper = spy(new ObjectMapper());
-            when(memberRepository.findById(100L)).thenReturn(Optional.empty());
+            when(notificationSettingService.settingOf(100L)).thenThrow(new IllegalStateException("DB down"));
 
             MissionNotificationService service = new MissionNotificationService(
-                    mock(FcmService.class), memberRepository, notificationRepository, objectMapper);
+                    mock(FcmService.class), notificationSettingService, notificationRepository, objectMapper);
 
             assertThatThrownBy(() -> service.handleMissionCompletedEvent(missionEvent()))
                     .isInstanceOf(IllegalStateException.class)
-                    .hasMessageContaining("Member를 찾을 수 없습니다");
+                    .hasMessage("DB down");
 
             verify(notificationRepository, never()).save(any(Notification.class));
         }
 
         @Test
         void w4_market_findAllThrows_propagates() {
-            MemberRepository memberRepository = mock(MemberRepository.class);
+            NotificationSettingService notificationSettingService = mock(NotificationSettingService.class);
+            NotificationSettingRepository notificationSettingRepository = mock(NotificationSettingRepository.class);
             NotificationRepository notificationRepository = mock(NotificationRepository.class);
             ObjectMapper objectMapper = spy(new ObjectMapper());
-            when(memberRepository.findAll()).thenThrow(new IllegalStateException("DB down"));
+            when(notificationSettingRepository.findAllByFcmTokenIsNotNull()).thenThrow(new IllegalStateException("DB down"));
 
             MarketNotificationService service = new MarketNotificationService(
-                    mock(FcmService.class), memberRepository, notificationRepository, objectMapper);
+                    mock(FcmService.class), notificationSettingRepository, notificationRepository, objectMapper);
 
             assertThatThrownBy(service::sendMarketOpenNotification)
                     .isInstanceOf(IllegalStateException.class)
@@ -437,11 +443,12 @@ class NotificationWiringCharacterizationTest {
 
         @Test
         void w5_execution_jsonFailure_propagates() throws Exception {
-            MemberRepository memberRepository = mock(MemberRepository.class);
+            NotificationSettingService notificationSettingService = mock(NotificationSettingService.class);
+            NotificationSettingRepository notificationSettingRepository = mock(NotificationSettingRepository.class);
             NotificationRepository notificationRepository = mock(NotificationRepository.class);
             ObjectMapper objectMapper = spy(new ObjectMapper());
-            Member targetMember = memberWithToken(100L, "token-a");
-            when(memberRepository.findById(100L)).thenReturn(Optional.of(targetMember));
+            NotificationSetting targetMember = memberWithToken(100L, "token-a");
+            when(notificationSettingService.settingOf(100L)).thenReturn(targetMember);
 
             // 인자 분기: executionId 키를 담은 맵으로 넘어오는 호출만 던진다
             doThrow(new JsonProcessingException("boom") { })
@@ -450,7 +457,7 @@ class NotificationWiringCharacterizationTest {
                             arg instanceof Map<?, ?> m && m.containsKey("executionId")));
 
             ExecutionNotificationService service = new ExecutionNotificationService(
-                    mock(FcmService.class), memberRepository, notificationRepository, objectMapper);
+                    mock(FcmService.class), notificationSettingService, notificationRepository, objectMapper);
 
             assertThatThrownBy(() -> service.handleExecutionFilledEvent(executionEvent()))
                     .isInstanceOf(IllegalStateException.class)
@@ -459,11 +466,12 @@ class NotificationWiringCharacterizationTest {
 
         @Test
         void w5_mission_jsonFailure_propagates() throws Exception {
-            MemberRepository memberRepository = mock(MemberRepository.class);
+            NotificationSettingService notificationSettingService = mock(NotificationSettingService.class);
+            NotificationSettingRepository notificationSettingRepository = mock(NotificationSettingRepository.class);
             NotificationRepository notificationRepository = mock(NotificationRepository.class);
             ObjectMapper objectMapper = spy(new ObjectMapper());
-            Member targetMember = memberWithToken(100L, "token-a");
-            when(memberRepository.findById(100L)).thenReturn(Optional.of(targetMember));
+            NotificationSetting targetMember = memberWithToken(100L, "token-a");
+            when(notificationSettingService.settingOf(100L)).thenReturn(targetMember);
 
             doThrow(new JsonProcessingException("boom") { })
                     .when(objectMapper)
@@ -471,7 +479,7 @@ class NotificationWiringCharacterizationTest {
                             arg instanceof Map<?, ?> m && m.containsKey("missionId")));
 
             MissionNotificationService service = new MissionNotificationService(
-                    mock(FcmService.class), memberRepository, notificationRepository, objectMapper);
+                    mock(FcmService.class), notificationSettingService, notificationRepository, objectMapper);
 
             assertThatThrownBy(() -> service.handleMissionCompletedEvent(missionEvent()))
                     .isInstanceOf(IllegalStateException.class)
@@ -508,18 +516,19 @@ class NotificationWiringCharacterizationTest {
          */
         @Test
         void w5_market_oneOfFourTokenHoldersFails_swallowsAndContinues() throws Exception {
-            MemberRepository memberRepository = mock(MemberRepository.class);
+            NotificationSettingService notificationSettingService = mock(NotificationSettingService.class);
+            NotificationSettingRepository notificationSettingRepository = mock(NotificationSettingRepository.class);
             NotificationRepository notificationRepository = mock(NotificationRepository.class);
             ObjectMapper objectMapper = spy(new ObjectMapper());
             FcmService fcmService = mock(FcmService.class);
             when(fcmService.sendExecutionNotification(anyString(), any())).thenReturn(true);
 
             // W5-M: 4명 전원 토큰 보유
-            Member member0 = memberWithToken(1L, "t1");
-            Member member1 = memberWithToken(2L, "t2");
-            Member member2 = memberWithToken(3L, "t3");
-            Member member3 = memberWithToken(4L, "t4");
-            when(memberRepository.findAll()).thenReturn(List.of(member0, member1, member2, member3));
+            NotificationSetting member0 = memberWithToken(1L, "t1");
+            NotificationSetting member1 = memberWithToken(2L, "t2");
+            NotificationSetting member2 = memberWithToken(3L, "t3");
+            NotificationSetting member3 = memberWithToken(4L, "t4");
+            when(notificationSettingRepository.findAllByFcmTokenIsNotNull()).thenReturn(List.of(member0, member1, member2, member3));
 
             // Market 은 인자 분기 불가 → 호출 순서 기반 스텁 (AtomicInteger 카운터 형태)
             AtomicInteger callCount = new AtomicInteger(0);
@@ -531,7 +540,7 @@ class NotificationWiringCharacterizationTest {
             }).when(objectMapper).writeValueAsString(any(Object.class));
 
             MarketNotificationService service = new MarketNotificationService(
-                    fcmService, memberRepository, notificationRepository, objectMapper);
+                    fcmService, notificationSettingRepository, notificationRepository, objectMapper);
 
             assertThatCode(service::sendMarketOpenNotification).doesNotThrowAnyException();
 
@@ -546,23 +555,24 @@ class NotificationWiringCharacterizationTest {
          */
         @Test
         void w5_market_allFourTokenHoldersFail_neverSavesAndReturnsNormally() throws Exception {
-            MemberRepository memberRepository = mock(MemberRepository.class);
+            NotificationSettingService notificationSettingService = mock(NotificationSettingService.class);
+            NotificationSettingRepository notificationSettingRepository = mock(NotificationSettingRepository.class);
             NotificationRepository notificationRepository = mock(NotificationRepository.class);
             ObjectMapper objectMapper = spy(new ObjectMapper());
             FcmService fcmService = mock(FcmService.class);
 
-            Member member0 = memberWithToken(1L, "t1");
-            Member member1 = memberWithToken(2L, "t2");
-            Member member2 = memberWithToken(3L, "t3");
-            Member member3 = memberWithToken(4L, "t4");
-            when(memberRepository.findAll()).thenReturn(List.of(member0, member1, member2, member3));
+            NotificationSetting member0 = memberWithToken(1L, "t1");
+            NotificationSetting member1 = memberWithToken(2L, "t2");
+            NotificationSetting member2 = memberWithToken(3L, "t3");
+            NotificationSetting member3 = memberWithToken(4L, "t4");
+            when(notificationSettingRepository.findAllByFcmTokenIsNotNull()).thenReturn(List.of(member0, member1, member2, member3));
 
             doThrow(new JsonProcessingException("boom") { })
                     .when(objectMapper)
                     .writeValueAsString(any(Object.class));
 
             MarketNotificationService service = new MarketNotificationService(
-                    fcmService, memberRepository, notificationRepository, objectMapper);
+                    fcmService, notificationSettingRepository, notificationRepository, objectMapper);
 
             assertThatCode(service::sendMarketOpenNotification).doesNotThrowAnyException();
 
@@ -588,24 +598,25 @@ class NotificationWiringCharacterizationTest {
 
         @Test
         void w6_market_twoTokenHoldersTwoWithout_savesTwoAndSendsTwo() {
-            MemberRepository memberRepository = mock(MemberRepository.class);
+            NotificationSettingService notificationSettingService = mock(NotificationSettingService.class);
+            NotificationSettingRepository notificationSettingRepository = mock(NotificationSettingRepository.class);
             NotificationRepository notificationRepository = mock(NotificationRepository.class);
             ObjectMapper objectMapper = spy(new ObjectMapper());
             FcmService fcmService = mock(FcmService.class);
 
             // W6-M: 토큰 2 / 무토큰 2
-            Member member0 = memberWithToken(1L, "t1");
-            Member member1 = memberWithoutToken(2L);
-            Member member2 = memberWithToken(3L, "t3");
-            Member member3 = memberWithoutToken(4L);
-            when(memberRepository.findAll()).thenReturn(List.of(member0, member1, member2, member3));
+            NotificationSetting member0 = memberWithToken(1L, "t1");
+            NotificationSetting member1 = memberWithoutToken(2L);
+            NotificationSetting member2 = memberWithToken(3L, "t3");
+            NotificationSetting member3 = memberWithoutToken(4L);
+            when(notificationSettingRepository.findAllByFcmTokenIsNotNull()).thenReturn(List.of(member0, member1, member2, member3));
 
             // 토큰 보유 2명 중 성공 1 · 실패 1
             when(fcmService.sendExecutionNotification(anyString(), any()))
                     .thenReturn(true)
                     .thenReturn(false);
 
-            new MarketNotificationService(fcmService, memberRepository, notificationRepository, objectMapper)
+            new MarketNotificationService(fcmService, notificationSettingRepository, notificationRepository, objectMapper)
                     .sendMarketOpenNotification();
 
             verify(notificationRepository, times(2)).save(any(Notification.class));
@@ -704,11 +715,12 @@ class NotificationWiringCharacterizationTest {
 
         @Test
         void w8_eachServiceUsesItsOwnType() {
-            MemberRepository memberRepository = mock(MemberRepository.class);
+            NotificationSettingService notificationSettingService = mock(NotificationSettingService.class);
+            NotificationSettingRepository notificationSettingRepository = mock(NotificationSettingRepository.class);
             NotificationRepository notificationRepository = mock(NotificationRepository.class);
             ObjectMapper objectMapper = spy(new ObjectMapper());
-            Member targetMember = memberWithToken(100L, "token-a");
-            when(memberRepository.findById(100L)).thenReturn(Optional.of(targetMember));
+            NotificationSetting targetMember = memberWithToken(100L, "token-a");
+            when(notificationSettingService.settingOf(100L)).thenReturn(targetMember);
 
             List<Notification> saved = new ArrayList<>();
             when(notificationRepository.save(any(Notification.class))).thenAnswer(inv -> {
@@ -716,10 +728,10 @@ class NotificationWiringCharacterizationTest {
                 return inv.getArgument(0);
             });
 
-            new ExecutionNotificationService(mock(FcmService.class), memberRepository,
+            new ExecutionNotificationService(mock(FcmService.class), notificationSettingService,
                     notificationRepository, objectMapper)
                     .handleExecutionFilledEvent(executionEvent());
-            new MissionNotificationService(mock(FcmService.class), memberRepository,
+            new MissionNotificationService(mock(FcmService.class), notificationSettingService,
                     notificationRepository, objectMapper)
                     .handleMissionCompletedEvent(missionEvent());
 

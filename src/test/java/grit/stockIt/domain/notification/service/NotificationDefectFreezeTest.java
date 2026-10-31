@@ -1,8 +1,8 @@
 package grit.stockIt.domain.notification.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import grit.stockIt.domain.member.entity.Member;
-import grit.stockIt.domain.member.repository.MemberRepository;
+import grit.stockIt.domain.notification.entity.NotificationSetting;
+import grit.stockIt.domain.notification.repository.NotificationSettingRepository;
 import grit.stockIt.domain.mission.enums.MissionTrack;
 import grit.stockIt.domain.notification.entity.Notification;
 import grit.stockIt.domain.notification.event.ExecutionFilledEvent;
@@ -17,7 +17,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -85,25 +84,23 @@ import static org.mockito.Mockito.when;
  */
 class NotificationDefectFreezeTest {
 
-    private static Member memberWithToken(long id, String token) {
-        Member member = mock(Member.class);
-        when(member.getMemberId()).thenReturn(id);
-        when(member.hasFcmToken()).thenReturn(true);
-        when(member.getFcmToken()).thenReturn(token);
-        when(member.isExecutionNotificationEnabled()).thenReturn(true);
-        return member;
+    private static NotificationSetting memberWithToken(long id, String token) {
+        NotificationSetting setting = NotificationSetting.defaultFor(id);
+        setting.updateFcmToken(token);
+        return setting;
     }
 
     private record Captured(Notification notification, Map<String, String> fcmData) { }
 
     @SuppressWarnings("unchecked")
     private static Captured runExecution(ExecutionFilledEvent event) {
-        MemberRepository memberRepository = mock(MemberRepository.class);
+        NotificationSettingService notificationSettingService = mock(NotificationSettingService.class);
+            NotificationSettingRepository notificationSettingRepository = mock(NotificationSettingRepository.class);
         NotificationRepository notificationRepository = mock(NotificationRepository.class);
         ObjectMapper objectMapper = spy(new ObjectMapper());
         FcmService fcmService = mock(FcmService.class);
-        Member targetMember = memberWithToken(100L, "t");
-            when(memberRepository.findById(100L)).thenReturn(Optional.of(targetMember));
+        NotificationSetting targetMember = memberWithToken(100L, "t");
+            when(notificationSettingService.settingOf(100L)).thenReturn(targetMember);
 
         List<Notification> saved = new ArrayList<>();
         when(notificationRepository.save(any(Notification.class))).thenAnswer(inv -> {
@@ -116,7 +113,7 @@ class NotificationDefectFreezeTest {
             return true;
         });
 
-        new ExecutionNotificationService(fcmService, memberRepository, notificationRepository, objectMapper)
+        new ExecutionNotificationService(fcmService, notificationSettingService, notificationRepository, objectMapper)
                 .handleExecutionFilledEvent(event);
 
         return new Captured(saved.get(0), sent.get(0));
@@ -124,12 +121,13 @@ class NotificationDefectFreezeTest {
 
     @SuppressWarnings("unchecked")
     private static Captured runMission(MissionCompletedEvent event) {
-        MemberRepository memberRepository = mock(MemberRepository.class);
+        NotificationSettingService notificationSettingService = mock(NotificationSettingService.class);
+            NotificationSettingRepository notificationSettingRepository = mock(NotificationSettingRepository.class);
         NotificationRepository notificationRepository = mock(NotificationRepository.class);
         ObjectMapper objectMapper = spy(new ObjectMapper());
         FcmService fcmService = mock(FcmService.class);
-        Member targetMember = memberWithToken(100L, "t");
-            when(memberRepository.findById(100L)).thenReturn(Optional.of(targetMember));
+        NotificationSetting targetMember = memberWithToken(100L, "t");
+            when(notificationSettingService.settingOf(100L)).thenReturn(targetMember);
 
         List<Notification> saved = new ArrayList<>();
         when(notificationRepository.save(any(Notification.class))).thenAnswer(inv -> {
@@ -142,7 +140,7 @@ class NotificationDefectFreezeTest {
             return true;
         });
 
-        new MissionNotificationService(fcmService, memberRepository, notificationRepository, objectMapper)
+        new MissionNotificationService(fcmService, notificationSettingService, notificationRepository, objectMapper)
                 .handleMissionCompletedEvent(event);
 
         return new Captured(saved.get(0), sent.get(0));
@@ -340,12 +338,13 @@ class NotificationDefectFreezeTest {
 
         @SuppressWarnings("unchecked")
         private Captured runMarketSingleMember() {
-            MemberRepository memberRepository = mock(MemberRepository.class);
+            NotificationSettingService notificationSettingService = mock(NotificationSettingService.class);
+            NotificationSettingRepository notificationSettingRepository = mock(NotificationSettingRepository.class);
             NotificationRepository notificationRepository = mock(NotificationRepository.class);
             ObjectMapper objectMapper = spy(new ObjectMapper());
             FcmService fcmService = mock(FcmService.class);
-            Member member0 = memberWithToken(1L, "t1");
-            when(memberRepository.findAll()).thenReturn(List.of(member0));
+            NotificationSetting member0 = memberWithToken(1L, "t1");
+            when(notificationSettingRepository.findAllByFcmTokenIsNotNull()).thenReturn(List.of(member0));
 
             List<Notification> saved = new ArrayList<>();
             when(notificationRepository.save(any(Notification.class))).thenAnswer(inv -> {
@@ -358,7 +357,7 @@ class NotificationDefectFreezeTest {
                 return true;
             });
 
-            new MarketNotificationService(fcmService, memberRepository, notificationRepository, objectMapper)
+            new MarketNotificationService(fcmService, notificationSettingRepository, notificationRepository, objectMapper)
                     .sendMarketOpenNotification();
 
             return new Captured(saved.get(0), sent.get(0));
@@ -412,15 +411,16 @@ class NotificationDefectFreezeTest {
          */
         @Test
         void df4_market_differentMembersReceiveDifferentSentAt() throws Exception {
-            MemberRepository memberRepository = mock(MemberRepository.class);
+            NotificationSettingService notificationSettingService = mock(NotificationSettingService.class);
+            NotificationSettingRepository notificationSettingRepository = mock(NotificationSettingRepository.class);
             NotificationRepository notificationRepository = mock(NotificationRepository.class);
             ObjectMapper objectMapper = spy(new ObjectMapper());
             FcmService fcmService = mock(FcmService.class);
 
-            Member member1 = memberWithToken(1L, "t1");
-            Member member2 = memberWithToken(2L, "t2");
-            Member member3 = memberWithToken(3L, "t3");
-            when(memberRepository.findAll()).thenReturn(List.of(member1, member2, member3));
+            NotificationSetting member1 = memberWithToken(1L, "t1");
+            NotificationSetting member2 = memberWithToken(2L, "t2");
+            NotificationSetting member3 = memberWithToken(3L, "t3");
+            when(notificationSettingRepository.findAllByFcmTokenIsNotNull()).thenReturn(List.of(member1, member2, member3));
 
             List<Notification> saved = new ArrayList<>();
             when(notificationRepository.save(any(Notification.class))).thenAnswer(inv -> {
@@ -432,7 +432,7 @@ class NotificationDefectFreezeTest {
             });
             when(fcmService.sendExecutionNotification(anyString(), any())).thenReturn(true);
 
-            new MarketNotificationService(fcmService, memberRepository, notificationRepository, objectMapper)
+            new MarketNotificationService(fcmService, notificationSettingRepository, notificationRepository, objectMapper)
                     .sendMarketOpenNotification();
 
             assertThat(saved).hasSize(3);

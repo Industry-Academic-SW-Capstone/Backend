@@ -80,7 +80,6 @@ public class DummyDataService {
                     .name(name)
                     .provider(AuthProvider.LOCAL)
                     .password("test1234") // 더미 비밀번호
-                    .executionNotificationEnabled(true)
                     .build();
             
             members.add(member);

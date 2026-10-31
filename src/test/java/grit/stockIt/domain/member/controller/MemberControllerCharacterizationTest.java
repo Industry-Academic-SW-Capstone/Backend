@@ -13,12 +13,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.fasterxml.jackson.databind.ObjectMapper;
 import grit.stockIt.domain.account.repository.AccountRepository;
 import grit.stockIt.domain.auth.service.KakaoAuthService;
-import grit.stockIt.domain.member.dto.FcmTokenRequest;
 import grit.stockIt.domain.member.dto.MemberLoginRequest;
 import grit.stockIt.domain.member.dto.MemberResponse;
 import grit.stockIt.domain.member.dto.MemberSignupRequest;
 import grit.stockIt.domain.member.dto.MemberUpdateRequest;
-import grit.stockIt.domain.member.dto.NotificationSettingsRequest;
 import grit.stockIt.domain.member.dto.RepresentativeTitleResponse;
 import grit.stockIt.domain.member.dto.TitleSelectRequest;
 import grit.stockIt.domain.member.entity.AuthProvider;
@@ -30,6 +28,11 @@ import grit.stockIt.domain.title.repository.MemberTitleRepository;
 import grit.stockIt.domain.title.repository.TitleRepository;
 import grit.stockIt.global.exception.GlobalExceptionHandler;
 import grit.stockIt.global.jwt.JwtToken;
+import grit.stockIt.domain.notification.controller.NotificationSettingController;
+import grit.stockIt.domain.notification.dto.FcmTokenRequest;
+import grit.stockIt.domain.notification.entity.NotificationSetting;
+import grit.stockIt.domain.notification.dto.NotificationSettingsRequest;
+import grit.stockIt.domain.notification.repository.NotificationSettingRepository;
 import grit.stockIt.global.support.IntegrationTestSupport;
 import java.math.BigDecimal;
 import java.util.ArrayList;
@@ -77,6 +80,11 @@ class MemberControllerCharacterizationTest extends IntegrationTestSupport {
 
     @Autowired
     private MemberController memberController;
+    @Autowired
+    private NotificationSettingController notificationSettingController;
+
+    @Autowired
+    private NotificationSettingRepository notificationSettingRepository;
 
     @Autowired
     private KakaoAuthService kakaoAuthService;
@@ -485,17 +493,17 @@ class MemberControllerCharacterizationTest extends IntegrationTestSupport {
         saveMember(email);
         authenticateAs(email);
 
-        ResponseEntity<String> registered = memberController.registerFcmToken(new FcmTokenRequest("fcm-token-1"));
+        ResponseEntity<String> registered = notificationSettingController.registerFcmToken(new FcmTokenRequest("fcm-token-1"));
 
         assertThat(registered.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(registered.getBody()).isEqualTo("FCM 토큰이 등록되었습니다.");
-        assertThat(memberRepository.findByEmail(email).orElseThrow().getFcmToken()).isEqualTo("fcm-token-1");
+        assertThat(settingOf(email).getFcmToken()).isEqualTo("fcm-token-1");
 
-        ResponseEntity<String> removed = memberController.removeFcmToken();
+        ResponseEntity<String> removed = notificationSettingController.removeFcmToken();
 
         assertThat(removed.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(removed.getBody()).isEqualTo("FCM 토큰이 삭제되었습니다.");
-        assertThat(memberRepository.findByEmail(email).orElseThrow().getFcmToken()).isNull();
+        assertThat(settingOf(email).getFcmToken()).isNull();
     }
 
     @Test
@@ -506,18 +514,18 @@ class MemberControllerCharacterizationTest extends IntegrationTestSupport {
         authenticateAs(email);
 
         ResponseEntity<String> disabled =
-                memberController.updateNotificationSettings(new NotificationSettingsRequest(false));
+                notificationSettingController.updateNotificationSettings(new NotificationSettingsRequest(false));
 
         assertThat(disabled.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(disabled.getBody()).isEqualTo("알림 설정이 변경되었습니다.");
-        assertThat(memberRepository.findByEmail(email).orElseThrow().isExecutionNotificationEnabled()).isFalse();
+        assertThat(settingOf(email).isExecutionNotificationEnabled()).isFalse();
 
         ResponseEntity<String> enabled =
-                memberController.updateNotificationSettings(new NotificationSettingsRequest(true));
+                notificationSettingController.updateNotificationSettings(new NotificationSettingsRequest(true));
 
         assertThat(enabled.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(enabled.getBody()).isEqualTo("알림 설정이 변경되었습니다.");
-        assertThat(memberRepository.findByEmail(email).orElseThrow().isExecutionNotificationEnabled()).isTrue();
+        assertThat(settingOf(email).isExecutionNotificationEnabled()).isTrue();
     }
 
     @Test
@@ -586,16 +594,16 @@ class MemberControllerCharacterizationTest extends IntegrationTestSupport {
         assertThat(memberController.logout().getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
         assertThat(memberController.logout().getBody()).isEqualTo("인증되지 않은 요청입니다.");
 
-        ResponseEntity<String> registered = memberController.registerFcmToken(new FcmTokenRequest("fcm-token"));
+        ResponseEntity<String> registered = notificationSettingController.registerFcmToken(new FcmTokenRequest("fcm-token"));
         assertThat(registered.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
         assertThat(registered.getBody()).isEqualTo("인증되지 않은 요청입니다.");
 
-        ResponseEntity<String> removed = memberController.removeFcmToken();
+        ResponseEntity<String> removed = notificationSettingController.removeFcmToken();
         assertThat(removed.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
         assertThat(removed.getBody()).isEqualTo("인증되지 않은 요청입니다.");
 
         ResponseEntity<String> settings =
-                memberController.updateNotificationSettings(new NotificationSettingsRequest(true));
+                notificationSettingController.updateNotificationSettings(new NotificationSettingsRequest(true));
         assertThat(settings.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
         assertThat(settings.getBody()).isEqualTo("인증되지 않은 요청입니다.");
     }
@@ -624,5 +632,10 @@ class MemberControllerCharacterizationTest extends IntegrationTestSupport {
                 .andExpect(status().isInternalServerError())
                 .andExpect(jsonPath("$.status").value(500))
                 .andExpect(jsonPath("$.message").value("서버 처리 중 오류가 발생했습니다."));
+    }
+
+    private NotificationSetting settingOf(String email) {
+        Long memberId = memberRepository.findByEmail(email).orElseThrow().getMemberId();
+        return notificationSettingRepository.findById(memberId).orElseThrow();
     }
 }

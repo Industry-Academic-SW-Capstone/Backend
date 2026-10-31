@@ -2,7 +2,6 @@ package grit.stockIt.domain.member.controller;
 
 import grit.stockIt.domain.member.dto.*;
 import grit.stockIt.domain.member.service.LocalAuthService;
-import grit.stockIt.domain.member.service.MemberNotificationSettingsService;
 import grit.stockIt.domain.member.service.MemberProfileService;
 import grit.stockIt.domain.member.service.MemberTitleService;
 import grit.stockIt.global.jwt.JwtToken;
@@ -33,7 +32,6 @@ public class MemberController {
 
     private final MemberProfileService memberProfileService;
     private final LocalAuthService localAuthService;
-    private final MemberNotificationSettingsService memberNotificationSettingsService;
     private final MemberTitleService memberTitleService;
     private final grit.stockIt.domain.account.service.AccountService accountService;
     @Operation(summary = "회원가입", description = "새로운 회원을 등록합니다.")
@@ -121,53 +119,6 @@ public class MemberController {
         return ResponseEntity.ok(resp);
     }
 
-    @Operation(summary = "FCM 토큰 등록/업데이트", description = "FCM 푸시 알림을 받기 위한 토큰을 등록하거나 업데이트합니다.")
-    @PutMapping("/fcm-token")
-    public ResponseEntity<String> registerFcmToken(@Valid @RequestBody FcmTokenRequest request) {
-        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-        
-        if (auth == null || !auth.isAuthenticated() || "anonymousUser".equals(auth.getPrincipal())) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("인증되지 않은 요청입니다.");
-        }
-        
-        String email = auth.getName();
-        memberNotificationSettingsService.updateFcmToken(email, request.getFcmToken());
-        log.info("FCM 토큰 등록/업데이트: email={}", email);
-        
-        return ResponseEntity.ok("FCM 토큰이 등록되었습니다.");
-    }
-
-    @Operation(summary = "FCM 토큰 삭제", description = "등록된 FCM 토큰을 삭제합니다.")
-    @DeleteMapping("/fcm-token")
-    public ResponseEntity<String> removeFcmToken() {
-        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-        
-        if (auth == null || !auth.isAuthenticated() || "anonymousUser".equals(auth.getPrincipal())) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("인증되지 않은 요청입니다.");
-        }
-        
-        String email = auth.getName();
-        memberNotificationSettingsService.removeFcmToken(email);
-        log.info("FCM 토큰 삭제: email={}", email);
-        
-        return ResponseEntity.ok("FCM 토큰이 삭제되었습니다.");
-    }
-
-    @Operation(summary = "알림 설정 변경", description = "체결 알림 설정을 변경합니다.")
-    @PatchMapping("/notification-settings")
-    public ResponseEntity<String> updateNotificationSettings(@Valid @RequestBody NotificationSettingsRequest request) {
-        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-        
-        if (auth == null || !auth.isAuthenticated() || "anonymousUser".equals(auth.getPrincipal())) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("인증되지 않은 요청입니다.");
-        }
-        
-        String email = auth.getName();
-        memberNotificationSettingsService.updateExecutionNotificationSettings(email, request.isExecutionNotificationEnabled());
-        log.info("알림 설정 변경: email={}, enabled={}", email, request.isExecutionNotificationEnabled());
-        
-        return ResponseEntity.ok("알림 설정이 변경되었습니다.");
-    }
 
     // @Valid 실패 시: 400 + 에러메시지 한 줄
     @ExceptionHandler(MethodArgumentNotValidException.class)

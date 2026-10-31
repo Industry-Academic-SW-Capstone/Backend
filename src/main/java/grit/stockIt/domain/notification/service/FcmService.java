@@ -22,7 +22,7 @@ import java.util.Map;
 public class FcmService {
 
     private final FirebaseMessaging firebaseMessaging;
-    private final FcmTokenService fcmTokenService;
+    private final NotificationSettingService notificationSettingService;
 
     // Data-Only 메시지 전송 (PWA Service Worker에서 제어권 확보)
     // title, body는 data Map에 포함되어 있어야 함
@@ -68,7 +68,7 @@ public class FcmService {
                     "UNREGISTERED".equals(errorCodeName)) {
                     log.warn("FCM 토큰이 무효합니다. 토큰 삭제 처리: token={}, errorCode={}", fcmToken, errorCode);
                     try {
-                        fcmTokenService.handleInvalidToken(fcmToken); // 무효한 FCM 토큰 삭제 처리
+                        notificationSettingService.handleInvalidToken(fcmToken); // 무효한 FCM 토큰 삭제 처리
                     } catch (Exception ex) {
                         log.error("FCM 토큰 삭제 처리 중 오류 발생: token={}", fcmToken, ex);
                     }
@@ -112,7 +112,7 @@ public class FcmService {
                     "UNREGISTERED".equals(errorCodeName)) {
                     log.warn("FCM 토큰이 무효합니다. 토큰 삭제 처리: token={}, errorCode={}", fcmToken, errorCode);
                     try {
-                        fcmTokenService.handleInvalidToken(fcmToken);
+                        notificationSettingService.handleInvalidToken(fcmToken);
                     } catch (Exception ex) {
                         log.error("FCM 토큰 삭제 처리 중 오류 발생: token={}", fcmToken, ex);
                     }
