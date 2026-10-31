@@ -143,6 +143,8 @@ services:
         create exchange.reports.DLT 1
         create member.events 24
         create member.events.DLT 1
+        create extra.events 8
+        create extra.events.DLT 1
     restart: "no"
     networks:
       - backend

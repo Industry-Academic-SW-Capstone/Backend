@@ -7,8 +7,6 @@ import grit.stockIt.domain.account.repository.AccountStockRepository;
 import grit.stockIt.domain.contest.entity.Contest;
 import grit.stockIt.domain.contest.repository.ContestRepository;
 import grit.stockIt.domain.member.event.MemberEventOutbox;
-import grit.stockIt.domain.mission.service.MissionQueryService;
-import grit.stockIt.domain.mission.dto.UserTierStatusResponse;
 import grit.stockIt.domain.ranking.dto.MyRankResponse;
 import grit.stockIt.domain.ranking.dto.RankingItemResponse;
 import grit.stockIt.domain.ranking.dto.RankingResponse;
@@ -44,7 +42,6 @@ public class RankingService {
     private final AccountStockRepository accountStockRepository;
     private final ContestRepository contestRepository;
     private final MemberEventOutbox memberEventOutbox;
-    private final MissionQueryService missionQueryService;
     private final Environment environment;
     private final RankingCalculationService rankingCalculationService;
     private final RankingPriceCollectionService rankingPriceCollectionService;
@@ -183,7 +180,7 @@ public class RankingService {
             grit.stockIt.domain.member.entity.Member member = myAccount.getMember();
             String representativeTitle = member.getRepresentativeTitleName();
             Long representativeTitleId = member.getRepresentativeTitleId();
-            String tier = getTierForMember(member);
+            String tier = member.getTier();
             
             return MyRankResponse.builder()
                     .balanceRank(balanceRank)
@@ -216,7 +213,7 @@ public class RankingService {
         grit.stockIt.domain.member.entity.Member member = myAccount.getMember();
         String representativeTitle = member.getRepresentativeTitleName();
         Long representativeTitleId = member.getRepresentativeTitleId();
-        String tier = getTierForMember(member);
+        String tier = member.getTier();
 
         return MyRankResponse.builder()
                 .balanceRank(balanceRank)
@@ -238,19 +235,6 @@ public class RankingService {
         return rankings.stream()
                 .filter(dto -> dto.getMemberId().equals(memberId))
                 .findFirst();
-    }
-
-    /**
-     * 회원의 티어 정보 조회
-     */
-    private String getTierForMember(grit.stockIt.domain.member.entity.Member member) {
-        try {
-            UserTierStatusResponse tierInfo = missionQueryService.getTierInfo(member.getEmail());
-            return tierInfo.getCurrentTier();
-        } catch (Exception e) {
-            log.warn("티어 조회 실패 (memberId: {}): {}", member.getMemberId(), e.getMessage());
-            return null;
-        }
     }
 
     // ==================== Private 헬퍼 메서드 ====================
@@ -309,7 +293,7 @@ public class RankingService {
 
             String representativeTitle = account.getMember().getRepresentativeTitleName();
             Long representativeTitleId = account.getMember().getRepresentativeTitleId();
-            String tier = getTierForMember(account.getMember());
+            String tier = account.getMember().getTier();
 
             RankingItemResponse dto = RankingItemResponse.builder()
                     .rank(rank)
@@ -356,7 +340,7 @@ public class RankingService {
 
             String representativeTitle = account.getMember().getRepresentativeTitleName();
             Long representativeTitleId = account.getMember().getRepresentativeTitleId();
-            String tier = getTierForMember(account.getMember());
+            String tier = account.getMember().getTier();
 
             RankingItemResponse dto = RankingItemResponse.builder()
                     .rank(rank)

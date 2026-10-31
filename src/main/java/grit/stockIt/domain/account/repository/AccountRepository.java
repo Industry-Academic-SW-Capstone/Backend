@@ -96,4 +96,9 @@ public interface AccountRepository extends JpaRepository<Account, Long> {
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT a FROM Account a WHERE a.accountId = :accountId")
     Optional<Account> findByIdWithLock(@Param("accountId") Long accountId);
+
+    // 보상 지급처럼 회원만 아는 쪽이 기본 계좌를 잠그며 읽는다. 대회를 조인하지 않는 이유는 findByIdWithLock 과 같다.
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT a FROM Account a WHERE a.member.memberId = :memberId AND a.isDefault = true")
+    Optional<Account> findDefaultByMemberIdWithLock(@Param("memberId") Long memberId);
 }

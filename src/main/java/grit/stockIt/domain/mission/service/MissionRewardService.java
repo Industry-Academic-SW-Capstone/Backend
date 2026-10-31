@@ -1,6 +1,5 @@
 package grit.stockIt.domain.mission.service;
 
-import grit.stockIt.domain.account.repository.AccountRepository;
 import grit.stockIt.domain.mission.entity.Mission;
 import grit.stockIt.domain.mission.entity.MissionProgress;
 import grit.stockIt.domain.mission.entity.Reward;
@@ -8,20 +7,18 @@ import grit.stockIt.domain.mission.enums.MissionConditionType;
 import grit.stockIt.domain.mission.enums.MissionStatus;
 import grit.stockIt.domain.mission.enums.MissionTrack;
 import grit.stockIt.domain.mission.enums.MissionType;
+import grit.stockIt.domain.mission.event.ExtraEventOutbox;
 import grit.stockIt.domain.mission.repository.MissionProgressRepository;
 import grit.stockIt.domain.mission.repository.MissionRepository;
 import grit.stockIt.domain.notification.event.MissionCompletedEvent;
 import grit.stockIt.domain.title.entity.MemberTitle;
 import grit.stockIt.domain.title.repository.MemberTitleRepository;
-import jakarta.persistence.EntityManager;
-import jakarta.persistence.LockModeType;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.math.BigDecimal;
 import java.util.List;
 
 /**
@@ -39,8 +36,8 @@ public class MissionRewardService {
     private final MissionRepository missionRepository;
     private final MissionProgressRepository missionProgressRepository;
     private final MemberTitleRepository memberTitleRepository;
-    private final AccountRepository accountRepository;
-    private final EntityManager entityManager;
+    private final ExtraEventOutbox extraEventOutbox;
+    private final MissionTierTracker missionTierTracker;
     private final ApplicationEventPublisher eventPublisher;
     private final MissionTrackPolicy missionTrackPolicy;
 
@@ -94,17 +91,10 @@ public class MissionRewardService {
     public void distributeReward(Long memberId, Reward reward) {
         if (reward == null) return;
 
+        // 계좌는 증권사만 쓴다. 지급 요청을 미션 트랜잭션의 아웃박스에 적고, 증권사가 계좌를 잠그고 지급한다.
         if (reward.getMoneyAmount() > 0) {
-            accountRepository.findByMember_MemberIdAndIsDefaultTrue(memberId)
-                    .ifPresentOrElse(
-                            acc -> {
-                                // 미션 트랜잭션은 계좌를 먼저 읽어 둔다. 잠그며 다시 읽지 않으면 그 사이 커밋된 정산을 덮어쓴다
-                                entityManager.refresh(acc, LockModeType.PESSIMISTIC_WRITE);
-                                acc.increaseCash(BigDecimal.valueOf(reward.getMoneyAmount()));
-                                log.info("보상 지급: {}원", reward.getMoneyAmount());
-                            },
-                            () -> log.error("보상 지급 실패: 기본 계좌 없음 MemberId={}", memberId)
-                    );
+            extraEventOutbox.rewardGranted(memberId, reward.getId(), reward.getMoneyAmount());
+            log.info("보상 지급 요청: {}원", reward.getMoneyAmount());
         }
 
         if (reward.getTitleToGrant() != null) {
@@ -200,10 +190,12 @@ public class MissionRewardService {
                     int currentScore = tracker.getCurrentValue();
 
                     if (currentScore < maxScore) {
+                        String tierBefore = missionTierTracker.tierOf(memberId);
                         int pointsToAdd = MISSION_COMPLETION_ACTIVITY_POINTS; // 미션 당 점수 (기획에 따라 조정)
                         int newScore = Math.min(currentScore + pointsToAdd, maxScore);
                         tracker.setCurrentValue(newScore);
                         log.info("활동 점수 획득: Member={}, Current={}, Max={}", memberId, newScore, maxScore);
+                        missionTierTracker.publishIfChanged(memberId, tierBefore);
                     }
                 });
     }

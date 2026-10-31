@@ -10,8 +10,6 @@ import grit.stockIt.domain.matching.repository.RedisMarketDataRepository;
 import grit.stockIt.domain.member.entity.AuthProvider;
 import grit.stockIt.domain.member.entity.Member;
 import grit.stockIt.domain.member.repository.MemberRepository;
-import grit.stockIt.domain.mission.dto.UserTierStatusResponse;
-import grit.stockIt.domain.mission.service.MissionQueryService;
 import grit.stockIt.domain.ranking.dto.MyRankResponse;
 import grit.stockIt.domain.ranking.dto.RankingItemResponse;
 import grit.stockIt.domain.ranking.dto.RankingResponse;
@@ -93,14 +91,10 @@ class RankingBugFreezeCharacterizationTest extends IntegrationTestSupport {
     @MockBean
     private StockDetailService stockDetailService;
 
-    @MockBean
-    private MissionQueryService missionQueryService;
 
     @BeforeEach
     void setUp() {
         reset(accountRepository, contestRepository, accountStockRepository, redisMarketDataRepository);
-        when(missionQueryService.getTierInfo(anyString()))
-                .thenReturn(UserTierStatusResponse.builder().currentTier("BRONZE 1").build());
         when(stockDetailService.getCurrentPrice(anyString()))
                 .thenReturn(Mono.just(new BigDecimal("10000")));
         Cache rankings = cacheManager.getCache("rankings");
@@ -310,23 +304,6 @@ class RankingBugFreezeCharacterizationTest extends IntegrationTestSupport {
         assertThat(item.getTotalAssets()).isEqualByComparingTo(expectedTotalAssets); // 오버로딩된 정렬용 값이 아닌 실제 총자산
         assertThat(item.getReturnRate()).isEqualByComparingTo(expectedReturnRate);
         assertThat(item.getTotalAssets()).isNotEqualByComparingTo(item.getReturnRate());
-    }
-
-    // ===== e: getTierForMember MissionQueryService 예외 → tier=null 은폐(예외 전파 안함) =====
-
-    @Test
-    @DisplayName("e(버그 동결): MissionQueryService.getTierInfo가 예외를 던지면 tier는 null로 은폐되고 조회는 실패하지 않는다")
-    void e_getTierForMember_missionServiceThrows_tierNulled_noThrow() {
-        Member member = createMember();
-        Contest contest = createContest();
-        createContestAccount(member, contest, new BigDecimal("1000000"));
-        when(missionQueryService.getTierInfo(member.getEmail()))
-                .thenThrow(new RuntimeException("의도된 미션 서비스 예외(특성화)"));
-
-        RankingResponse response = rankingService.getContestRankings(contest.getContestId(), "totalAssets");
-
-        RankingItemResponse item = findItem(response.getRankings(), member.getMemberId()).orElseThrow();
-        assertThat(item.getTier()).isNull();
     }
 
     // ===== f: 동률 rank/sameRankCount 연동 (2개 동률군: [1,1,3,3,5]) =====

@@ -48,6 +48,10 @@ job/        배치 작업 (KIS 마스터 파일 다운로드/파싱)
   가입, 랭커 달성, AI 분석 완료)을 부가 서비스에 알립니다. 트랜잭션 안의 일은 `MemberEventOutbox` 로 아웃박스에 적어 커밋된 것만
   나가고, AI 분석 완료만 바로 보냅니다. 미션(`MissionEventConsumer`, 그룹 `mission`)과 알림(`NotificationEventConsumer`,
   그룹 `notification`)이 각자 받아, 처리 기록(`processed_event`)으로 같은 이벤트를 한 번만 처리합니다. 실패는 재시도 후 DLT.
+- **부가 이벤트 (`contract.ExtraEvent`, Kafka `extra.events`, 키 = 회원)** — 부가 서비스(미션)가 증권사에 보상 예수금 지급을
+  요청하고(`REWARD_GRANTED`) 티어 변화를 알립니다(`TIER_CHANGED`, 티어가 바뀔 때만). 미션 트랜잭션에서 `ExtraEventOutbox` 로
+  아웃박스에 적습니다. 증권사 `ExtraEventConsumer`(그룹 `broker`)가 기본 계좌를 잠그고 지급하거나 회원 테이블의 티어 복사본을
+  바꾸며, 같은 이벤트는 `processed_event` 로 한 번만 처리합니다. 랭킹은 이 복사본(`member.tier`)을 읽습니다.
 - **`MissionCompletedEvent`** — 부가 서비스 안의 메모리 이벤트. 미션 트랜잭션이 커밋된 뒤 같은 스레드에서 알림을 보냅니다.
 
 ## 캐싱 전략 (3계층)

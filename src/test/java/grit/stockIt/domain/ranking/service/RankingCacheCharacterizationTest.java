@@ -9,8 +9,6 @@ import grit.stockIt.domain.matching.repository.RedisMarketDataRepository;
 import grit.stockIt.domain.member.entity.AuthProvider;
 import grit.stockIt.domain.member.entity.Member;
 import grit.stockIt.domain.member.repository.MemberRepository;
-import grit.stockIt.domain.mission.dto.UserTierStatusResponse;
-import grit.stockIt.domain.mission.service.MissionQueryService;
 import grit.stockIt.domain.ranking.dto.RankingResponse;
 import grit.stockIt.domain.stock.service.StockDetailService;
 import grit.stockIt.global.support.IntegrationTestSupport;
@@ -89,14 +87,10 @@ class RankingCacheCharacterizationTest extends IntegrationTestSupport {
     @MockBean
     private StockDetailService stockDetailService;
 
-    @MockBean
-    private MissionQueryService missionQueryService;
 
     @BeforeEach
     void setUp() {
         reset(accountRepository, contestRepository, accountStockRepository, redisMarketDataRepository);
-        when(missionQueryService.getTierInfo(anyString()))
-                .thenReturn(UserTierStatusResponse.builder().currentTier("BRONZE 1").build());
         when(stockDetailService.getCurrentPrice(anyString()))
                 .thenReturn(Mono.just(new BigDecimal("10000")));
         Cache rankings = cacheManager.getCache("rankings");

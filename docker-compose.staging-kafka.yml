@@ -87,6 +87,7 @@ services:
   #   matching.commands   종목 키, 24  (체결 워커 24 = 파티션당 하나)
   #   exchange.reports    계좌 키, 24  (정산 워커 8 이 나눠 맡는다)
   #   member.events       회원 키, 24  (미션·알림이 각자의 그룹으로 읽는다)
+  #   extra.events        회원 키, 8   (보상 지급 요청·티어 변화, 양이 적다)
   #   *.DLT               처리할 수 없는 메시지만, 1
   kafka-init:
     image: apache/kafka:3.9.1
@@ -108,6 +109,8 @@ services:
         create exchange.reports.DLT 1
         create member.events 24
         create member.events.DLT 1
+        create extra.events 8
+        create extra.events.DLT 1
         /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:29092 --describe | grep -E "^Topic:"
     restart: "no"
 

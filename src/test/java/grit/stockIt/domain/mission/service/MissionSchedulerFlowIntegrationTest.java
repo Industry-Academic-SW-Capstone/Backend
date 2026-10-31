@@ -1,5 +1,8 @@
 package grit.stockIt.domain.mission.service;
 
+import grit.stockIt.domain.member.queue.ExtraEventConsumer;
+import grit.stockIt.global.support.OutboxExtraEvents;
+import org.springframework.jdbc.core.JdbcTemplate;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import grit.stockIt.domain.account.entity.Account;
@@ -53,6 +56,10 @@ class MissionSchedulerFlowIntegrationTest extends IntegrationTestSupport {
 
     @Autowired
     private MissionService missionService;
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
+    @Autowired
+    private ExtraEventConsumer extraEventConsumer;
 
     @Autowired
     private MissionBatchService missionBatchService;
@@ -221,7 +228,8 @@ class MissionSchedulerFlowIntegrationTest extends IntegrationTestSupport {
         assertThat(progressOf(holder, SWING_PROFIT_5PCT_ID).getStatus()).isEqualTo(MissionStatus.IN_PROGRESS);
         assertThat(progressOf(holder, SWING_PROFIT_5PCT_ID).getCurrentValue()).isZero();
 
-        // 보상(reward 21: 750,000원)이 기본 계좌에 지급
+        // 보상(reward 21: 750,000원)이 기본 계좌에 지급 — 부가의 지급 요청을 증권사가 받아 지급한다
+        OutboxExtraEvents.deliver(jdbcTemplate, extraEventConsumer, holder.getMemberId());
         assertThat(account.getCash()).isEqualByComparingTo(cashBefore.add(BigDecimal.valueOf(750000)));
 
         // 특성화: 미션 1건 완료 시 활동 점수 트래커(998, 초기값 1200) +10

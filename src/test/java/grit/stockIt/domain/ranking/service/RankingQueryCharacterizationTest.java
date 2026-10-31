@@ -9,8 +9,6 @@ import grit.stockIt.domain.matching.repository.RedisMarketDataRepository;
 import grit.stockIt.domain.member.entity.AuthProvider;
 import grit.stockIt.domain.member.entity.Member;
 import grit.stockIt.domain.member.repository.MemberRepository;
-import grit.stockIt.domain.mission.dto.UserTierStatusResponse;
-import grit.stockIt.domain.mission.service.MissionQueryService;
 import grit.stockIt.domain.ranking.dto.MyRankResponse;
 import grit.stockIt.domain.ranking.dto.RankingItemResponse;
 import grit.stockIt.domain.ranking.dto.RankingResponse;
@@ -86,14 +84,10 @@ class RankingQueryCharacterizationTest extends IntegrationTestSupport {
     @MockBean
     private StockDetailService stockDetailService;
 
-    @MockBean
-    private MissionQueryService missionQueryService;
 
     @BeforeEach
     void setUp() {
         reset(accountRepository, contestRepository, accountStockRepository, redisMarketDataRepository);
-        when(missionQueryService.getTierInfo(anyString()))
-                .thenReturn(UserTierStatusResponse.builder().currentTier("BRONZE 1").build());
         when(stockDetailService.getCurrentPrice(anyString()))
                 .thenReturn(Mono.just(new BigDecimal("10000")));
         Cache rankings = cacheManager.getCache("rankings");
@@ -417,14 +411,14 @@ class RankingQueryCharacterizationTest extends IntegrationTestSupport {
         assertThat(response.getBalanceRank()).isNull();
     }
 
-    // ===== Q14: 티어 enrichment - MissionQueryService 정상 티어 → DTO.tier 채움 =====
+    // ===== Q14: 티어 enrichment - 회원에 복사해 둔 티어 → DTO.tier 채움 =====
 
     @Test
-    @DisplayName("Q14: MissionQueryService가 정상 티어를 반환하면 랭킹 아이템 tier에 채워진다")
-    void q14_tierEnrichment_normalTier_fillsDto() {
-        when(missionQueryService.getTierInfo(anyString()))
-                .thenReturn(UserTierStatusResponse.builder().currentTier("GOLD 2").build());
+    @DisplayName("Q14: 회원에 복사해 둔 티어가 랭킹 아이템 tier에 채워진다")
+    void q14_tierEnrichment_copiedTier_fillsDto() {
         Member member = createMember();
+        member.updateTier("GOLD 2");
+        memberRepository.save(member);
         Contest contest = createContest();
         createContestAccount(member, contest, new BigDecimal("1000000"));
 

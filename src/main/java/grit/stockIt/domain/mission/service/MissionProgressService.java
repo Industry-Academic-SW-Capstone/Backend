@@ -37,6 +37,7 @@ public class MissionProgressService {
     private final MissionConditionEvaluator missionConditionEvaluator;
     private final MissionProgressCalculator missionProgressCalculator;
     private final MissionRewardService missionRewardService;
+    private final MissionTierTracker missionTierTracker;
 
     private static final long JUNK_STOCK_MARKET_CAP_THRESHOLD = 100000000000L;
 
@@ -112,12 +113,14 @@ public class MissionProgressService {
                 .ifPresent(tracker -> {
                     int currentTotalProfit = tracker.getCurrentValue();
                     int newTotalProfit = currentTotalProfit + profitInt;
+                    String tierBefore = missionTierTracker.tierOf(member.getMemberId());
 
                     // 순수 수익금 저장 (마이너스 수익이면 전체 수익금이 깎임)
                     tracker.setCurrentValue(newTotalProfit);
 
                     log.info("누적 수익금 갱신: Member={}, 이번수익={}원, 총누적={}원",
                             member.getName(), profitInt, newTotalProfit);
+                    missionTierTracker.publishIfChanged(member.getMemberId(), tierBefore);
 
                     // Legend 달성 체크 (현재 총 수익금 기반으로 점수 환산하여 체크)
                     missionRewardService.checkLegendTier(member.getMemberId(), getActivityScore(member) + missionProgressCalculator.calculateScoreFromProfit(newTotalProfit));

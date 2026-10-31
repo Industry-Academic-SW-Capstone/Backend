@@ -22,8 +22,6 @@ EXTRA domain.mission.service.MissionProgressService -> BROKER domain.member.enti
 EXTRA domain.mission.service.MissionProgressService -> BROKER domain.member.repository.MemberRepository
 EXTRA domain.mission.service.MissionQueryService -> BROKER domain.member.entity.Member
 EXTRA domain.mission.service.MissionQueryService -> BROKER domain.member.repository.MemberRepository
-EXTRA domain.mission.service.MissionRewardService -> BROKER domain.account.entity.Account
-EXTRA domain.mission.service.MissionRewardService -> BROKER domain.account.repository.AccountRepository
 EXTRA domain.mission.service.MissionService -> BROKER domain.account.entity.Account
 EXTRA domain.mission.service.MissionService -> BROKER domain.account.entity.AccountStock
 EXTRA domain.mission.service.MissionService -> BROKER domain.account.repository.AccountRepository
@@ -45,5 +43,3 @@ BROKER domain.member.service.MemberTitleService -> EXTRA domain.title.entity.Mem
 BROKER domain.member.service.MemberTitleService -> EXTRA domain.title.entity.Title
 BROKER domain.member.service.MemberTitleService -> EXTRA domain.title.repository.MemberTitleRepository
 BROKER domain.member.service.MemberTitleService -> EXTRA domain.title.repository.TitleRepository
-BROKER domain.ranking.service.RankingService -> EXTRA domain.mission.dto.UserTierStatusResponse
-BROKER domain.ranking.service.RankingService -> EXTRA domain.mission.service.MissionQueryService

@@ -1,6 +1,7 @@
 package grit.stockIt.global.config;
 
 import grit.stockIt.contract.InvalidExecutionReportException;
+import grit.stockIt.contract.InvalidExtraEventException;
 import grit.stockIt.contract.InvalidMemberEventException;
 import grit.stockIt.domain.matching.queue.InvalidMatchingCommandException;
 import org.apache.kafka.clients.producer.ProducerConfig;
@@ -71,6 +72,19 @@ public class KafkaConfig {
         ConcurrentKafkaListenerContainerFactory<Object, Object> factory = new ConcurrentKafkaListenerContainerFactory<>();
         configurer.configure(factory, consumerFactory);
         factory.setCommonErrorHandler(boundedRetryHandler(kafkaTemplate, producerFactory, InvalidMemberEventException.class));
+        return factory;
+    }
+
+    // 부가 이벤트(보상 지급 요청·티어)도 정해진 횟수만 다시 시도하고 DLT 로 넘긴다.
+    @Bean
+    public ConcurrentKafkaListenerContainerFactory<Object, Object> extraEventListenerContainerFactory(
+            ConcurrentKafkaListenerContainerFactoryConfigurer configurer,
+            ConsumerFactory<Object, Object> consumerFactory,
+            KafkaTemplate<Object, Object> kafkaTemplate,
+            ProducerFactory<Object, Object> producerFactory) {
+        ConcurrentKafkaListenerContainerFactory<Object, Object> factory = new ConcurrentKafkaListenerContainerFactory<>();
+        configurer.configure(factory, consumerFactory);
+        factory.setCommonErrorHandler(boundedRetryHandler(kafkaTemplate, producerFactory, InvalidExtraEventException.class));
         return factory;
     }
 

@@ -79,7 +79,7 @@ docker-compose --profile load-test run --rm k6 run /scripts/matching-engine-test
 ### 핵심 아키텍처 패턴
 
 - **명령 큐**: 체결·취소·만료는 Kafka `matching.commands`(종목 키) → 종목 파티션 워커, 체결 결과는 `exchange.reports`(계좌 키) → 정산 워커
-- **이벤트 기반**: 체결·정산과 미션·알림은 Kafka 이벤트(`exchange.reports`, `member.events`)와 아웃박스로 디커플링
+- **이벤트 기반**: 체결·정산과 미션·알림은 Kafka 이벤트(`exchange.reports`, `member.events`, `extra.events`)와 아웃박스로 디커플링
 - **3단계 캐싱**: Redis(분산) + Caffeine(로컬 랭킹) + `@Cacheable`
 - **WebSocket**: `/ws`에서 SockJS 위 STOMP, 토픽은 `/topic`·`/queue`, 앱 prefix는 `/app`
 - **JSON 컨벤션**: Jackson SNAKE_CASE — Java camelCase가 API 응답에서 snake_case로 자동 변환

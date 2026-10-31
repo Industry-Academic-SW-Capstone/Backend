@@ -92,6 +92,12 @@ public class Member extends BaseEntity {
     @Column(name = "representative_title_name", length = 100)
     private String representativeTitleName;
 
+    // 티어. 미션 점수는 부가 서비스가 가지므로 티어가 바뀔 때 받은 값을 복사해 둔다 — 랭킹이 부가에 묻지 않고 보여 준다.
+    // 미션 초기화 전 회원은 점수가 없어 가장 낮은 티어다.
+    @Column(name = "tier", length = 20)
+    @Builder.Default
+    private String tier = "BRONZE 1";
+
     /**
      * 카카오 토큰 업데이트 또는 생성
      */
@@ -162,5 +168,9 @@ public class Member extends BaseEntity {
     public void updateRepresentativeTitle(Long titleId, String titleName) {
         this.representativeTitleId = titleId;
         this.representativeTitleName = titleName;
+    }
+
+    public void updateTier(String tier) {
+        this.tier = tier;
     }
 }

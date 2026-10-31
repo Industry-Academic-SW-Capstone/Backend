@@ -1,5 +1,9 @@
 package grit.stockIt.domain.mission.service;
 
+import grit.stockIt.contract.ExtraEvent;
+import grit.stockIt.contract.ExtraEventType;
+import grit.stockIt.domain.member.queue.ExtraEventConsumer;
+import grit.stockIt.global.support.OutboxExtraEvents;
 import grit.stockIt.domain.account.entity.Account;
 import grit.stockIt.domain.account.repository.AccountRepository;
 import grit.stockIt.domain.contest.entity.Contest;
@@ -62,6 +66,8 @@ class MissionServiceIntegrationTest extends IntegrationTestSupport {
 
     @Autowired
     private MissionService missionService;
+    @Autowired
+    private ExtraEventConsumer extraEventConsumer;
     @Autowired
     private MissionProgressService missionProgressService;
     @Autowired
@@ -146,7 +152,9 @@ class MissionServiceIntegrationTest extends IntegrationTestSupport {
         txTemplate.executeWithoutResult(status -> mutator.accept(progress(missionId)));
     }
 
+    // 보상은 부가가 아웃박스에 적은 지급 요청을 증권사가 받아 지급한다. 그 회원의 요청을 전달한 뒤 잔고를 읽는다.
     private BigDecimal defaultAccountCash() {
+        OutboxExtraEvents.deliver(jdbcTemplate, extraEventConsumer, memberId);
         return accountRepository.findById(defaultAccountId).orElseThrow().getCash();
     }
 
@@ -493,6 +501,55 @@ class MissionServiceIntegrationTest extends IntegrationTestSupport {
         assertThatThrownBy(() -> missionEventConsumer.consume(poison)).isInstanceOf(RuntimeException.class);
         assertThat(jdbcTemplate.queryForObject(
                 "SELECT count(*) FROM processed_event WHERE event_id = ?", Long.class, poison.eventId())).isZero();
+    }
+
+    // --- 시나리오 11: 부가 → 증권사 (보상 지급 요청·티어 복사본) ---
+
+    @Test
+    @DisplayName("11. 보상은 계좌를 바로 바꾸지 않고 증권사에 지급 요청만 남긴다")
+    void 보상은_지급요청으로_남는다() {
+        OutboxExtraEvents.deliver(jdbcTemplate, extraEventConsumer, memberId); // 가입 시 티어 이벤트를 비운다
+
+        missionProgressService.updateMissionProgress(buyEvent(defaultAccountId, 1, "10000"));
+
+        assertThat(accountRepository.findById(defaultAccountId).orElseThrow().getCash())
+                .isEqualByComparingTo(INITIAL_CASH);
+        assertThat(OutboxExtraEvents.take(jdbcTemplate, memberId))
+                .filteredOn(event -> event.type() == ExtraEventType.REWARD_GRANTED)
+                .extracting(event -> event.rewardGranted().moneyAmount())
+                .containsExactly(150000L);
+    }
+
+    @Test
+    @DisplayName("11-1. 신규 회원 미션 초기화는 시작 티어(SILVER 1)를 증권사 회원 테이블에 복사한다")
+    void 초기화_티어_복사() {
+        OutboxExtraEvents.deliver(jdbcTemplate, extraEventConsumer, memberId);
+
+        assertThat(memberRepository.findById(memberId).orElseThrow().getTier()).isEqualTo("SILVER 1");
+    }
+
+    @Test
+    @DisplayName("11-2. 점수가 바뀌어도 티어가 그대로면 티어 이벤트를 보내지 않는다")
+    void 티어_그대로면_이벤트_없음() {
+        OutboxExtraEvents.deliver(jdbcTemplate, extraEventConsumer, memberId);
+
+        missionProgressService.updateMissionProgress(buyEvent(defaultAccountId, 1, "10000")); // 활동 점수 1200 -> 1210
+
+        assertThat(OutboxExtraEvents.take(jdbcTemplate, memberId))
+                .extracting(ExtraEvent::type)
+                .doesNotContain(ExtraEventType.TIER_CHANGED);
+    }
+
+    @Test
+    @DisplayName("11-3. 점수가 티어 구간을 넘으면 새 티어를 알려 증권사 회원 테이블이 바뀐다")
+    void 티어_구간_넘으면_복사본_갱신() {
+        OutboxExtraEvents.deliver(jdbcTemplate, extraEventConsumer, memberId);
+        mutateProgress(998L, p -> p.setCurrentValue(1395));
+
+        missionProgressService.updateMissionProgress(buyEvent(defaultAccountId, 1, "10000")); // 1395 -> 1405
+
+        OutboxExtraEvents.deliver(jdbcTemplate, extraEventConsumer, memberId);
+        assertThat(memberRepository.findById(memberId).orElseThrow().getTier()).isEqualTo("SILVER 2");
     }
 
     private MemberEvent tradeCompleted() {

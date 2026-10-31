@@ -110,91 +110,17 @@ public class MissionQueryService {
         int totalScore = activityScore + skillScore;
 
         // 3. 티어 계산
-        String currentTier;
+        int tierIndex = MissionTierPolicy.indexOf(totalScore);
+        String currentTier = MissionTierPolicy.band(tierIndex).name();
+        int currentTierStartScore = MissionTierPolicy.band(tierIndex).startScore(); // 진행도 계산용
         String nextTier;
-        int nextTierScore;        // 다음 티어 승급 점수 (목표)
-        int currentTierStartScore; // [신규] 현재 티어 시작 점수 (진행도 계산용)
-
-        if (totalScore < 800) {
-            currentTier = "BRONZE 1";
-            nextTier = "BRONZE 2";
-            currentTierStartScore = 0;   // 0 ~ 799
-            nextTierScore = 800;
-        } else if (totalScore < 1000) {
-            currentTier = "BRONZE 2";
-            nextTier = "BRONZE 3";
-            currentTierStartScore = 800; // 800 ~ 999
-            nextTierScore = 1000;
-        } else if (totalScore < 1200) {
-            currentTier = "BRONZE 3";
-            nextTier = "SILVER 1";
-            currentTierStartScore = 1000; // 1000 ~ 1199
-            nextTierScore = 1200;
-        } else if (totalScore < 1400) {
-            currentTier = "SILVER 1";
-            nextTier = "SILVER 2";
-            currentTierStartScore = 1200; // 1200 ~ 1399 (신규 유저 시작 구간)
-            nextTierScore = 1400;
-        } else if (totalScore < 1600) {
-            currentTier = "SILVER 2";
-            nextTier = "SILVER 3";
-            currentTierStartScore = 1400;
-            nextTierScore = 1600;
-        } else if (totalScore < 1800) {
-            currentTier = "SILVER 3";
-            nextTier = "GOLD 1";
-            currentTierStartScore = 1600;
-            nextTierScore = 1800;
-        } else if (totalScore < 2000) {
-            currentTier = "GOLD 1";
-            nextTier = "GOLD 2";
-            currentTierStartScore = 1800;
-            nextTierScore = 2000;
-        } else if (totalScore < 2200) {
-            currentTier = "GOLD 2";
-            nextTier = "GOLD 3";
-            currentTierStartScore = 2000;
-            nextTierScore = 2200;
-        } else if (totalScore < 2400) {
-            currentTier = "GOLD 3";
-            nextTier = "MASTER 1";
-            currentTierStartScore = 2200;
-            nextTierScore = 2400;
-        } else if (totalScore < 2600) {
-            currentTier = "MASTER 1";
-            nextTier = "MASTER 2";
-            currentTierStartScore = 2400;
-            nextTierScore = 2600;
-        } else if (totalScore < 2800) {
-            currentTier = "MASTER 2";
-            nextTier = "MASTER 3";
-            currentTierStartScore = 2600;
-            nextTierScore = 2800;
-        } else if (totalScore < 3000) {
-            currentTier = "MASTER 3";
-            nextTier = "GRANDMASTER 1";
-            currentTierStartScore = 2800;
-            nextTierScore = 3000;
-        } else if (totalScore < 3200) {
-            currentTier = "GRANDMASTER 1";
-            nextTier = "GRANDMASTER 2";
-            currentTierStartScore = 3000;
-            nextTierScore = 3200;
-        } else if (totalScore < 3400) {
-            currentTier = "GRANDMASTER 2";
-            nextTier = "GRANDMASTER 3";
-            currentTierStartScore = 3200;
-            nextTierScore = 3400;
-        } else if (totalScore < MissionTierPolicy.LEGEND_THRESHOLD_SCORE) {
-            currentTier = "GRANDMASTER 3";
-            nextTier = "LEGEND";
-            currentTierStartScore = 3400;
-            nextTierScore = MissionTierPolicy.LEGEND_THRESHOLD_SCORE;
-        } else {
-            currentTier = "LEGEND";
+        int nextTierScore; // 다음 티어 승급 점수 (목표)
+        if (MissionTierPolicy.isLast(tierIndex)) {
             nextTier = "MAX";
-            currentTierStartScore = MissionTierPolicy.LEGEND_THRESHOLD_SCORE;
             nextTierScore = totalScore; // Legend는 목표치가 없으므로 현재 점수와 동일시
+        } else {
+            nextTier = MissionTierPolicy.band(tierIndex + 1).name();
+            nextTierScore = MissionTierPolicy.band(tierIndex + 1).startScore();
         }
 
         // 4. 진행도 계산 (현재 구간 내에서의 %)

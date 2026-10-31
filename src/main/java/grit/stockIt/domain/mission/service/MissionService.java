@@ -47,6 +47,7 @@ public class MissionService {
     private final AccountStockRepository accountStockRepository; // 파산 신청 시 보유 주식 평가용
     private final MissionTrackPolicy missionTrackPolicy;
     private final MissionRewardService missionRewardService;
+    private final MissionTierTracker missionTierTracker;
 
     /**
      * [신규] 인생 2회차 (파산 신청) API 로직
@@ -93,11 +94,13 @@ public class MissionService {
         log.info("파산 신청 승인! 구조지원금 지급 완료. Member={}", member.getName());
 
         // [추가] 2. 티어 점수 완전 초기화 (Bronze 0점으로 강등)
+        String tierBefore = missionTierTracker.tierOf(member.getMemberId());
         missionProgressRepository.findByMemberAndMissionTypeWithMission(member.getMemberId(), MissionTrack.ACHIEVEMENT, MissionConditionType.ACTIVITY_SCORE)
                 .ifPresent(p -> p.setCurrentValue(0));
 
         missionProgressRepository.findByMemberAndMissionTypeWithMission(member.getMemberId(), MissionTrack.ACHIEVEMENT, MissionConditionType.SKILL_SCORE)
                 .ifPresent(p -> p.setCurrentValue(0));
+        missionTierTracker.publishIfChanged(member.getMemberId(), tierBefore);
 
         log.info("파산 승인 및 티어 초기화 완료: Member={}", member.getName());
         return bankruptcyProgress.getMission().getReward();
@@ -106,6 +109,7 @@ public class MissionService {
     @Transactional
     public void initializeMissionsForNewMember(Long memberId) {
         log.info("신규 회원 초기 미션 세팅 시작: MemberId={}", memberId);
+        String tierBefore = missionTierTracker.tierOf(memberId);
 
         List<MissionTrack> tracks = Arrays.asList(MissionTrack.SHORT_TERM, MissionTrack.SWING, MissionTrack.LONG_TERM);
         List<Mission> dailyMissions = missionRepository.findAllByTrack(MissionTrack.DAILY);
@@ -146,6 +150,7 @@ public class MissionService {
             missionProgressRepository.save(newProgress);
         }
         log.info("신규 회원 초기 미션 총 {}건 세팅 완료.", allMissions.size());
+        missionTierTracker.publishIfChanged(memberId, tierBefore);
     }
 
     // --- API 관련 메서드 (Controller 호출용) ---

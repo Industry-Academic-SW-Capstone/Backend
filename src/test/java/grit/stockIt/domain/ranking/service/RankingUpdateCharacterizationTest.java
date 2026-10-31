@@ -9,9 +9,7 @@ import grit.stockIt.domain.matching.repository.RedisMarketDataRepository;
 import grit.stockIt.domain.member.entity.AuthProvider;
 import grit.stockIt.domain.member.entity.Member;
 import grit.stockIt.domain.member.repository.MemberRepository;
-import grit.stockIt.domain.mission.dto.UserTierStatusResponse;
 import grit.stockIt.contract.MemberTopics;
-import grit.stockIt.domain.mission.service.MissionQueryService;
 import grit.stockIt.domain.stock.service.StockDetailService;
 import grit.stockIt.global.support.IntegrationTestSupport;
 import org.junit.jupiter.api.AfterEach;
@@ -111,8 +109,6 @@ class RankingUpdateCharacterizationTest extends IntegrationTestSupport {
     @MockBean
     private StockDetailService stockDetailService;
 
-    @MockBean
-    private MissionQueryService missionQueryService;
 
     @BeforeEach
     void setUp() {
@@ -120,8 +116,6 @@ class RankingUpdateCharacterizationTest extends IntegrationTestSupport {
         // 호출기록·스텁을 초기화한다(격리).
         reset(accountRepository, contestRepository, accountStockRepository, redisMarketDataRepository);
         outboxBaseline = jdbcTemplate.queryForObject("SELECT COALESCE(MAX(id), 0) FROM outbox_message", Long.class);
-        when(missionQueryService.getTierInfo(anyString()))
-                .thenReturn(UserTierStatusResponse.builder().currentTier("BRONZE 1").build());
         // 컨테이너 DB에 형제 테스트가 남긴 보유종목이 있어도(캐시미스) 실패하지 않도록 기본 스텁.
         when(stockDetailService.getCurrentPrice(anyString()))
                 .thenReturn(Mono.just(new BigDecimal("10000")));

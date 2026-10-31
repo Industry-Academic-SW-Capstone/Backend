@@ -1,5 +1,8 @@
 package grit.stockIt.domain.mission.service;
 
+import grit.stockIt.domain.member.queue.ExtraEventConsumer;
+import grit.stockIt.global.support.OutboxExtraEvents;
+import org.springframework.jdbc.core.JdbcTemplate;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -51,6 +54,10 @@ class MissionQueryIntegrationTest extends IntegrationTestSupport {
 
     @Autowired
     private MissionService missionService;
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
+    @Autowired
+    private ExtraEventConsumer extraEventConsumer;
 
     @Autowired
     private MissionQueryService missionQueryService;
@@ -254,6 +261,7 @@ class MissionQueryIntegrationTest extends IntegrationTestSupport {
 
         assertThat(reward.getMoneyAmount()).isEqualTo(150000L);
         assertThat(reward.getTitleToGrant()).isNull();
+        OutboxExtraEvents.deliver(jdbcTemplate, extraEventConsumer, member.getMemberId());
         assertThat(account.getCash()).isEqualByComparingTo(cashBefore.add(BigDecimal.valueOf(150000)));
 
         MissionProgress attendance = progressOf(member, DAILY_ATTENDANCE_ID);
@@ -308,6 +316,7 @@ class MissionQueryIntegrationTest extends IntegrationTestSupport {
 
         assertThat(reward.getMoneyAmount()).isEqualTo(20000000L);
         assertThat(reward.getTitleToGrant().getName()).isEqualTo("인생 2회차");
+        OutboxExtraEvents.deliver(jdbcTemplate, extraEventConsumer, member.getMemberId());
         assertThat(account.getCash()).isEqualByComparingTo(BigDecimal.valueOf(20050000));
 
         MissionProgress bankruptcy = progressOf(member, BANKRUPTCY_ID);
