@@ -34,7 +34,8 @@ job/        배치 작업 (KIS 마스터 파일 다운로드/파싱)
 
 - `config/` — Security, WebSocket(STOMP), Redis, JPA, Cache, Flyway, Swagger, 외부 API properties
 - `outbox/` — 아웃박스(업무 트랜잭션에 메시지를 함께 적고 릴레이가 Kafka 로 보냄)
-- `jwt/` — JWT 필터 및 토큰 서비스
+- `jwt/` — JWT 필터 및 토큰 서비스. 토큰에 회원 번호(`mid`)와 이메일을 싣고, 필터는 회원 테이블을 읽지 않고 토큰만으로
+  `LoginMember`(principal)를 세웁니다. 회원 번호가 필요한 곳은 `@AuthenticationPrincipal LoginMember` 또는 `LoginMember.current()`
 - `exception/` — `GlobalExceptionHandler` + 커스텀 예외(`BadRequestException`, `ForbiddenException`, `UntradeableStockException`)
 - `websocket/` — KIS WebSocket 클라이언트, STOMP 브로커, 구독 관리
 
@@ -52,6 +53,9 @@ job/        배치 작업 (KIS 마스터 파일 다운로드/파싱)
   요청하고(`REWARD_GRANTED`) 티어 변화를 알립니다(`TIER_CHANGED`, 티어가 바뀔 때만). 미션 트랜잭션에서 `ExtraEventOutbox` 로
   아웃박스에 적습니다. 증권사 `ExtraEventConsumer`(그룹 `broker`)가 기본 계좌를 잠그고 지급하거나 회원 테이블의 티어 복사본을
   바꾸며, 같은 이벤트는 `processed_event` 로 한 번만 처리합니다. 랭킹은 이 복사본(`member.tier`)을 읽습니다.
+- **서비스 사이 동기 조회 (`contract.BrokerQueryClient`, `contract.ExtraQueryClient`)** — 지금 답이 필요한 드문 조회만 둡니다.
+  부가 → 증권사: 파산 신청 자산, 보유 일수 배치의 보유 회원(묶음으로), 전체 발송 대상 회원. 증권사 → 부가: 대표 칭호 장착 시
+  칭호 존재·보유 여부, 프로필의 보유 칭호. 구현(`LocalBrokerQueryClient`, `LocalExtraQueryClient`)은 지금 같은 프로세스 호출입니다.
 - **`MissionCompletedEvent`** — 부가 서비스 안의 메모리 이벤트. 미션 트랜잭션이 커밋된 뒤 같은 스레드에서 알림을 보냅니다.
 
 ## 캐싱 전략 (3계층)

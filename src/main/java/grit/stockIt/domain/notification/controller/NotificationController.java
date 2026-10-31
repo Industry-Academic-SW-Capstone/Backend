@@ -1,21 +1,17 @@
 package grit.stockIt.domain.notification.controller;
 
-import grit.stockIt.domain.member.entity.Member;
-import grit.stockIt.domain.member.repository.MemberRepository;
 import grit.stockIt.domain.notification.dto.NotificationPageResponse;
 import grit.stockIt.domain.notification.dto.NotificationResponse;
 import grit.stockIt.domain.notification.dto.UnreadCountResponse;
 import grit.stockIt.domain.notification.enums.NotificationType;
 import grit.stockIt.domain.notification.service.NotificationService;
 import grit.stockIt.global.exception.BadRequestException;
+import grit.stockIt.global.jwt.LoginMember;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.core.Authentication;
-import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -28,7 +24,6 @@ import java.util.List;
 public class NotificationController {
 
     private final NotificationService notificationService;
-    private final MemberRepository memberRepository;
 
     @Operation(summary = "알림 목록 조회", description = "사용자의 알림 목록을 페이징하여 조회합니다.")
     @GetMapping
@@ -82,23 +77,9 @@ public class NotificationController {
         return ResponseEntity.ok(response);
     }
 
-    // 현재 인증된 사용자의 memberId 가져오기
     private Long getCurrentMemberId() {
-        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        if (authentication == null || authentication.getPrincipal() == null) {
-            throw new BadRequestException("인증되지 않은 사용자입니다.");
-        }
-
-        // UserDetails에서 이메일 추출
-        UserDetails userDetails = (UserDetails) authentication.getPrincipal();
-        String email = userDetails.getUsername();
-
-        // 이메일로 Member 조회하여 memberId 반환
-        // 인증된 이메일로 회원을 못 찾으면 서버 데이터 불일치 문제
-        Member member = memberRepository.findByEmail(email)
-                .orElseThrow(() -> new IllegalStateException("인증된 회원 정보를 찾을 수 없습니다. email: " + email));
-
-        return member.getMemberId();
+        return LoginMember.current()
+                .map(LoginMember::memberId)
+                .orElseThrow(() -> new BadRequestException("인증되지 않은 사용자입니다."));
     }
 }
-

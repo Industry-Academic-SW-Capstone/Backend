@@ -1,5 +1,6 @@
 package grit.stockIt.domain.notification.controller;
 
+import grit.stockIt.contract.BrokerQueryClient;
 import grit.stockIt.domain.notification.entity.NotificationSetting;
 import grit.stockIt.domain.notification.service.AdminNotificationService;
 import grit.stockIt.domain.notification.service.NotificationSettingService;
@@ -25,6 +26,8 @@ public class AdminNotificationController {
 
     private final AdminNotificationService adminNotificationService;
     private final NotificationSettingService notificationSettingService;
+    // 전체 발송 대상인 회원 목록은 증권사 데이터다.
+    private final BrokerQueryClient brokerQueryClient;
 
     @Operation(
             summary = "전체 사용자에게 알림 전송 (관리자 전용)",
@@ -38,7 +41,7 @@ public class AdminNotificationController {
         
         // 알림 내역은 모든 회원에게 남기고, 푸시는 토큰이 있는 회원에게만 보낸다.
         List<NotificationSetting> recipients =
-                notificationSettingService.recipientsOf(notificationSettingService.allMemberIds());
+                notificationSettingService.recipientsOf(brokerQueryClient.allMemberIds());
         log.info("전체 회원 수: {}", recipients.size());
 
         long membersWithTokenCount = recipients.stream().filter(NotificationSetting::hasFcmToken).count();

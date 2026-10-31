@@ -28,6 +28,7 @@ import grit.stockIt.domain.title.repository.MemberTitleRepository;
 import grit.stockIt.domain.title.repository.TitleRepository;
 import grit.stockIt.global.exception.GlobalExceptionHandler;
 import grit.stockIt.global.jwt.JwtToken;
+import grit.stockIt.global.jwt.LoginMember;
 import grit.stockIt.domain.notification.controller.NotificationSettingController;
 import grit.stockIt.domain.notification.dto.FcmTokenRequest;
 import grit.stockIt.domain.notification.entity.NotificationSetting;
@@ -179,7 +180,7 @@ class MemberControllerCharacterizationTest extends IntegrationTestSupport {
     }
 
     private UserDetails userDetailsPrincipal(String email) {
-        // CustomUserDetailsService가 만드는 principal과 동형 — @AuthenticationPrincipal 엔드포인트용
+        // getUsername 이 이메일인 UserDetails — 이메일로 회원을 찾는 증권사 @AuthenticationPrincipal 엔드포인트용
         return User.builder()
                 .username(email)
                 .password("")
@@ -190,6 +191,12 @@ class MemberControllerCharacterizationTest extends IntegrationTestSupport {
     private void authenticateWithUserDetails(String email) {
         SecurityContextHolder.getContext().setAuthentication(
                 new UsernamePasswordAuthenticationToken(userDetailsPrincipal(email), null, List.of()));
+    }
+
+    // JWT 필터가 세우는 principal — 회원 번호로 동작하는 부가(알림 설정) 엔드포인트용
+    private void authenticateAsLoginMember(Member member) {
+        SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(
+                new LoginMember(member.getMemberId(), member.getEmail(), List.of()), null, List.of()));
     }
 
     // Authentication 기반 엔드포인트(/me, PUT /me, /me/accounts, /logout, fcm-token, notification-settings)용
@@ -490,8 +497,7 @@ class MemberControllerCharacterizationTest extends IntegrationTestSupport {
     @DisplayName("[T2-03] FCM 토큰 등록과 삭제는 각각 200과 고정 메시지를 반환하고 DB에 반영된다")
     void registerAndRemoveFcmTokenReflectInDatabase() {
         String email = uniqueEmail("t23");
-        saveMember(email);
-        authenticateAs(email);
+        authenticateAsLoginMember(saveMember(email));
 
         ResponseEntity<String> registered = notificationSettingController.registerFcmToken(new FcmTokenRequest("fcm-token-1"));
 
@@ -510,8 +516,7 @@ class MemberControllerCharacterizationTest extends IntegrationTestSupport {
     @DisplayName("[T2-04] 알림 설정 변경은 true/false 모두 200과 고정 메시지를 반환하고 DB에 반영된다")
     void updateNotificationSettingsReflectInDatabase() {
         String email = uniqueEmail("t24");
-        saveMember(email);
-        authenticateAs(email);
+        authenticateAsLoginMember(saveMember(email));
 
         ResponseEntity<String> disabled =
                 notificationSettingController.updateNotificationSettings(new NotificationSettingsRequest(false));

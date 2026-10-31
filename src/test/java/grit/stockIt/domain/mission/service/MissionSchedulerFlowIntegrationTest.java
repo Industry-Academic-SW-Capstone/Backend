@@ -99,7 +99,7 @@ class MissionSchedulerFlowIntegrationTest extends IntegrationTestSupport {
 
         // given: 출석을 완료한 회원 (연쇄 갱신으로 모든 스트릭 진행도 1)
         Member attendee = createMemberWithMissions();
-        missionService.claimDailyAttendance(attendee.getEmail());
+        missionService.claimDailyAttendance(attendee.getMemberId());
         missionProgressRepository.flush();
 
         // when
@@ -128,7 +128,7 @@ class MissionSchedulerFlowIntegrationTest extends IntegrationTestSupport {
     void resetDailyMissions_일일미션_진행도와_상태를_초기화한다() {
         // given: 출석 완료(101 COMPLETED) + 리포트 미션 일부 진행 + 트랙 미션 진행 + 카이팅 진행
         Member member = createMemberWithMissions();
-        missionService.claimDailyAttendance(member.getEmail());
+        missionService.claimDailyAttendance(member.getMemberId());
         progressOf(member, DAILY_REPORT_VIEW_ID).setCurrentValue(2);
         progressOf(member, SHORT_TERM_FIRST_ID).setCurrentValue(3);
         progressOf(member, KITING_ACHIEVEMENT_ID).setCurrentValue(10);

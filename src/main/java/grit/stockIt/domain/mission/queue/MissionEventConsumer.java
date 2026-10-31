@@ -48,8 +48,8 @@ public class MissionEventConsumer {
             case TRADE_COMPLETED -> () -> missionProgressService.updateMissionProgress(toTradeCompletion(event));
             case MEMBER_REGISTERED -> () -> missionService.initializeMissionsForNewMember(event.memberId());
             case RANKER_ACHIEVED -> () -> missionProgressService.processRankerAchievement(List.of(event.memberId()));
-            case STOCK_ANALYZED -> () -> missionService.handleReportView(event.email());
-            case PORTFOLIO_ANALYZED -> () -> missionService.handlePortfolioAnalysis(event.email());
+            case STOCK_ANALYZED -> () -> missionService.handleReportView(event.memberId());
+            case PORTFOLIO_ANALYZED -> () -> missionService.handlePortfolioAnalysis(event.memberId());
             case EXECUTION_FILLED -> () -> { };
         };
         handler.run();

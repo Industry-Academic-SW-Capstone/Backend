@@ -7,7 +7,7 @@ import java.util.UUID;
 
 // member.events 메시지. 받는 쪽이 증권사 테이블을 다시 읽지 않도록 필요한 내용을 싣는다. 종류마다 채우는 부분이 다르다.
 // eventId 는 받는 쪽이 같은 이벤트를 두 번 처리하지 않게 거르는 키다. 필드는 추가만 한다.
-// 분석 이벤트는 요청 스레드가 이메일만 알아 memberId 대신 email 을 싣는다.
+// email 은 예전 분석 이벤트가 쓰던 필드다. 이제 모든 이벤트가 memberId 를 싣는다(필드는 지우지 않는다).
 public record MemberEvent(
         String eventId,
         MemberEventType type,
@@ -41,13 +41,12 @@ public record MemberEvent(
         return new MemberEvent(newId(), type, memberId, null, now(), null, null);
     }
 
-    public static MemberEvent analyzed(MemberEventType type, String email) {
-        return new MemberEvent(newId(), type, null, email, now(), null, null);
+    public static MemberEvent analyzed(MemberEventType type, Long memberId) {
+        return new MemberEvent(newId(), type, memberId, null, now(), null, null);
     }
 
-    // 파티션 키. 회원 ID 가 없는 분석 이벤트는 이메일로 나눈다.
     public String key() {
-        return memberId != null ? String.valueOf(memberId) : email;
+        return String.valueOf(memberId);
     }
 
     public void validate() {
@@ -60,8 +59,7 @@ public record MemberEvent(
         return switch (type) {
             case TRADE_COMPLETED -> memberId != null && tradeCompleted != null;
             case EXECUTION_FILLED -> memberId != null && executionFilled != null;
-            case MEMBER_REGISTERED, RANKER_ACHIEVED -> memberId != null;
-            case STOCK_ANALYZED, PORTFOLIO_ANALYZED -> email != null;
+            case MEMBER_REGISTERED, RANKER_ACHIEVED, STOCK_ANALYZED, PORTFOLIO_ANALYZED -> memberId != null;
         };
     }
 

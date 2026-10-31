@@ -1,7 +1,5 @@
 package grit.stockIt.domain.mission.service;
 
-import grit.stockIt.domain.member.entity.Member;
-import grit.stockIt.domain.member.repository.MemberRepository;
 import grit.stockIt.domain.mission.dto.MemberTitleResponse;
 import grit.stockIt.domain.mission.dto.MissionDashboardResponse;
 import grit.stockIt.domain.mission.dto.MissionListResponse;
@@ -11,7 +9,6 @@ import grit.stockIt.domain.mission.enums.MissionConditionType;
 import grit.stockIt.domain.mission.enums.MissionTrack;
 import grit.stockIt.domain.mission.repository.MissionProgressRepository;
 import grit.stockIt.domain.title.repository.MemberTitleRepository;
-import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -22,7 +19,7 @@ import java.util.stream.Collectors;
 
 /**
  * [B-2 분리] 미션 조회 전용 서비스 (읽기 전용 트랜잭션).
- * MissionController GET 4개와 RankingService.getTierForMember가 진입점이다.
+ * MissionController GET 4개가 진입점이다. 회원은 로그인 토큰의 회원 번호로만 가리킨다.
  */
 @Slf4j
 @Service
@@ -30,24 +27,22 @@ import java.util.stream.Collectors;
 @Transactional(readOnly = true)
 public class MissionQueryService {
 
-    private final MemberRepository memberRepository;
     private final MissionProgressRepository missionProgressRepository;
     private final MemberTitleRepository memberTitleRepository;
     private final MissionProgressCalculator missionProgressCalculator;
 
     // 대시보드용 요약 정보 조회
-    public MissionDashboardResponse getMissionDashboard(String email) {
-        Member member = getMemberByEmail(email);
+    public MissionDashboardResponse getMissionDashboard(Long memberId) {
 
         // 1. 연속 출석 일수 (업적 중 LOGIN_STREAK 타입의 현재 진행도 조회)
 // 7일, 15일, 30일 업적 미션들과 충돌하지 않음
         int streak = missionProgressRepository
-                .findTopByMemberAndConditionOrderByGoalDesc(member.getMemberId(), MissionTrack.ACHIEVEMENT, MissionConditionType.LOGIN_STREAK)
+                .findTopByMemberAndConditionOrderByGoalDesc(memberId, MissionTrack.ACHIEVEMENT, MissionConditionType.LOGIN_STREAK)
                 .map(MissionProgress::getCurrentValue)
                 .orElse(0); // 트래커 미션이 아직 생성 안 됐으면 0일
 
         // 2. 남은 일일 미션 개수 (DAILY 트랙 중, 완료되지 않은 것의 개수)
-        List<MissionProgress> dailyMissions = missionProgressRepository.findAllByMemberIdAndMission_Track(member.getMemberId(), MissionTrack.DAILY);
+        List<MissionProgress> dailyMissions = missionProgressRepository.findAllByMemberIdAndMission_Track(memberId, MissionTrack.DAILY);
         int remaining = (int) dailyMissions.stream()
                 .filter(mp -> !mp.isCompleted())
                 .count();
@@ -59,9 +54,8 @@ public class MissionQueryService {
     }
 
     // 트랙별 미션 리스트 조회 (Enum 변환을 통한 안정성 확보)
-    public List<MissionListResponse> getMissionsByTrack(String email, String trackName) {
-        Member member = getMemberByEmail(email);
-        List<MissionProgress> allProgress = missionProgressRepository.findByMemberWithMissionAndReward(member.getMemberId());
+    public List<MissionListResponse> getMissionsByTrack(Long memberId, String trackName) {
+        List<MissionProgress> allProgress = missionProgressRepository.findByMemberWithMissionAndReward(memberId);
 
         // 1. "ALL"인 경우 전체 반환 (대소문자 무시: all, ALL 등)
         if (trackName == null || "ALL".equalsIgnoreCase(trackName)) {
@@ -82,28 +76,26 @@ public class MissionQueryService {
 
         } catch (IllegalArgumentException e) {
             // 정의되지 않은 트랙 이름이 들어온 경우 (예: "ABCD")
-            log.warn("유효하지 않은 미션 트랙 요청: email={}, track={}", email, trackName);
+            log.warn("유효하지 않은 미션 트랙 요청: memberId={}, track={}", memberId, trackName);
             return List.of(); // 빈 리스트 반환하여 에러 방지
         }
     }
 
     // 보유 칭호 목록 조회
-    public List<MemberTitleResponse> getMyTitles(String email) {
-        Member member = getMemberByEmail(email);
-        return memberTitleRepository.findAllByMemberId(member.getMemberId()).stream()
+    public List<MemberTitleResponse> getMyTitles(Long memberId) {
+        return memberTitleRepository.findAllByMemberId(memberId).stream()
                 .map(MemberTitleResponse::new)
                 .collect(Collectors.toList());
     }
 
-    public UserTierStatusResponse getTierInfo(String email) {
-        Member member = getMemberByEmail(email);
+    public UserTierStatusResponse getTierInfo(Long memberId) {
 
         // 1. 활동 점수
-        int activityScore = missionProgressRepository.findByMemberAndMissionTypeWithMission(member.getMemberId(), MissionTrack.ACHIEVEMENT, MissionConditionType.ACTIVITY_SCORE)
+        int activityScore = missionProgressRepository.findByMemberAndMissionTypeWithMission(memberId, MissionTrack.ACHIEVEMENT, MissionConditionType.ACTIVITY_SCORE)
                 .map(MissionProgress::getCurrentValue).orElse(0);
 
         // 2. 실력 점수
-        int totalProfit = missionProgressRepository.findByMemberAndMissionTypeWithMission(member.getMemberId(), MissionTrack.ACHIEVEMENT, MissionConditionType.SKILL_SCORE)
+        int totalProfit = missionProgressRepository.findByMemberAndMissionTypeWithMission(memberId, MissionTrack.ACHIEVEMENT, MissionConditionType.SKILL_SCORE)
                 .map(MissionProgress::getCurrentValue).orElse(0);
 
         int skillScore = missionProgressCalculator.calculateScoreFromProfit(totalProfit);
@@ -148,14 +140,7 @@ public class MissionQueryService {
                 .build();
     }
 
-    public List<MissionProgress> getMissionProgressList(String email) {
-        Member member = getMemberByEmail(email);
-        return missionProgressRepository.findByMemberWithMissionAndReward(member.getMemberId());
-    }
-
-    // getMemberByEmail은 B-6 방침과 동일하게 private 복제 (과추상화 금지)
-    private Member getMemberByEmail(String email) {
-        return memberRepository.findByEmail(email)
-                .orElseThrow(() -> new EntityNotFoundException("회원을 찾을 수 없습니다. Email: " + email));
+    public List<MissionProgress> getMissionProgressList(Long memberId) {
+        return missionProgressRepository.findByMemberWithMissionAndReward(memberId);
     }
 }

@@ -22,6 +22,8 @@ public interface MissionProgressRepository extends JpaRepository<MissionProgress
     // --- [추가] 시드 복사기 업적용: 완료된 미션 개수 카운트 ---
     long countByMemberIdAndStatus(Long memberId, MissionStatus status);
 
+    boolean existsByMemberId(Long memberId);
+
     List<MissionProgress> findAllByMission_Track(MissionTrack track);
 
     List<MissionProgress> findAllByMemberIdAndMission_Track(Long memberId, MissionTrack track);

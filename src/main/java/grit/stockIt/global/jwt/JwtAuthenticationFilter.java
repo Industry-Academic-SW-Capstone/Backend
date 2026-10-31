@@ -4,6 +4,8 @@ import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import grit.stockIt.global.auth.AdminEmailAllowlist;
+import io.jsonwebtoken.Claims;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.lang.NonNull;
@@ -11,13 +13,13 @@ import org.springframework.security.authentication.AnonymousAuthenticationToken;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.security.core.userdetails.UserDetails;
-import org.springframework.security.core.userdetails.UserDetailsService;
-import org.springframework.security.core.userdetails.UsernameNotFoundException;
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.web.authentication.WebAuthenticationDetailsSource;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
+import java.util.List;
 
 // JWT 인증 필터.
 //
@@ -27,14 +29,18 @@ import java.io.IOException;
 //
 // 토큰을 세울 수 없으면 인증 없이 다음 필터로 넘긴다. 거절은 이 필터가 아니라
 // 인가 규칙과 AuthenticationEntryPoint 가 담당한다.
+//
+// 회원 테이블을 읽지 않는다. 토큰의 회원 번호·이메일로 LoginMember 를 세운다 — 서비스마다 같은 서명 키로 검증만 한다.
+// 그래서 탈퇴한 회원의 토큰도 만료까지는 통과한다(그 회원의 데이터가 없어 각 API 가 거절한다).
 @Slf4j
 @RequiredArgsConstructor
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private static final String BEARER_PREFIX = "Bearer ";
+    private static final String ADMIN_ROLE = "ROLE_ADMIN";
 
     private final JwtService jwtService;
-    private final UserDetailsService userDetailsService;
+    private final AdminEmailAllowlist adminEmailAllowlist;
 
     @Override
     protected void doFilterInternal(
@@ -60,40 +66,39 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             return;
         }
 
-        // 회원 조회 전에 서명·만료부터 검증한다 — 위조 토큰으로 DB를 때리지 않게 한다.
-        if (!jwtService.validateToken(jwt)) {
-            log.warn("유효하지 않은 JWT 토큰");
-            return;
-        }
-
-        String email;
+        LoginMember loginMember;
         try {
-            email = jwtService.extractEmail(jwt);
+            loginMember = loginMemberOf(jwtService.parseClaims(jwt));
         } catch (Exception e) {
-            log.warn("JWT 토큰 파싱 실패: {}", e.getMessage());
+            log.warn("유효하지 않은 JWT 토큰: {}", e.getMessage());
             return;
         }
-        if (email == null) {
-            return;
-        }
-
-        UserDetails userDetails;
-        try {
-            userDetails = userDetailsService.loadUserByUsername(email);
-        } catch (UsernameNotFoundException e) {
-            // 탈퇴한 회원의 유효 토큰. 여기서 던지면 필터 예외라 500이 되므로 미인증으로 넘긴다.
-            log.warn("JWT는 유효하나 회원이 존재하지 않습니다");
+        if (loginMember == null) {
+            // 회원 번호가 없는 예전 토큰. 다시 로그인하면 새 토큰을 받는다.
+            log.warn("회원 번호가 없는 JWT 토큰");
             return;
         }
 
         UsernamePasswordAuthenticationToken authToken = new UsernamePasswordAuthenticationToken(
-                userDetails,
+                loginMember,
                 null, // 비밀번호는 JWT에서 검증했으므로 null
-                userDetails.getAuthorities()
+                loginMember.getAuthorities()
         );
         authToken.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
 
         SecurityContextHolder.getContext().setAuthentication(authToken);
+    }
+
+    private LoginMember loginMemberOf(Claims claims) {
+        String email = claims.getSubject();
+        Number memberId = claims.get(JwtService.MEMBER_ID_CLAIM, Number.class);
+        if (email == null || memberId == null) {
+            return null;
+        }
+        List<GrantedAuthority> authorities = adminEmailAllowlist.isAdmin(email)
+                ? List.of(new SimpleGrantedAuthority(ADMIN_ROLE))
+                : List.of();
+        return new LoginMember(memberId.longValue(), email, authorities);
     }
 
     private boolean isAlreadyAuthenticated() {

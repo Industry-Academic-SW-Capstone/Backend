@@ -10,8 +10,8 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import grit.stockIt.global.jwt.LoginMember;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
-import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.web.bind.annotation.*;
 import grit.stockIt.domain.mission.scheduler.MissionScheduler;
 
@@ -35,8 +35,8 @@ public class MissionController {
      */
     @GetMapping("/dashboard")
     @Operation(summary = "미션 대시보드 요약", description = "메인화면 상단 위젯에 표시할 연속 출석일과 남은 미션 수를 반환합니다.")
-    public ResponseEntity<MissionDashboardResponse> getDashboardSummary(@AuthenticationPrincipal UserDetails userDetails) {
-        return ResponseEntity.ok(missionQueryService.getMissionDashboard(userDetails.getUsername()));
+    public ResponseEntity<MissionDashboardResponse> getDashboardSummary(@AuthenticationPrincipal LoginMember loginMember) {
+        return ResponseEntity.ok(missionQueryService.getMissionDashboard(loginMember.memberId()));
     }
 
     /**
@@ -47,10 +47,10 @@ public class MissionController {
     @GetMapping
     @Operation(summary = "미션 목록 조회", description = "트랙별 미션 및 업적 진행도를 반환합니다. 보상 정보(금액/칭호)가 포함됩니다.")
     public ResponseEntity<List<MissionListResponse>> getMissions(
-            @AuthenticationPrincipal UserDetails userDetails,
+            @AuthenticationPrincipal LoginMember loginMember,
             @RequestParam(required = false, defaultValue = "ALL") String track
     ) {
-        return ResponseEntity.ok(missionQueryService.getMissionsByTrack(userDetails.getUsername(), track));
+        return ResponseEntity.ok(missionQueryService.getMissionsByTrack(loginMember.memberId(), track));
     }
 
     /**
@@ -58,8 +58,8 @@ public class MissionController {
      */
     @GetMapping("/titles")
     @Operation(summary = "보유 칭호 조회", description = "사용자가 획득한 모든 칭호 목록을 반환합니다.")
-    public ResponseEntity<List<MemberTitleResponse>> getMyTitles(@AuthenticationPrincipal UserDetails userDetails) {
-        return ResponseEntity.ok(missionQueryService.getMyTitles(userDetails.getUsername()));
+    public ResponseEntity<List<MemberTitleResponse>> getMyTitles(@AuthenticationPrincipal LoginMember loginMember) {
+        return ResponseEntity.ok(missionQueryService.getMyTitles(loginMember.memberId()));
     }
 
     /**
@@ -68,13 +68,13 @@ public class MissionController {
      */
     @PostMapping("/attendance")
     public ResponseEntity<RewardResponse> claimDailyAttendance(
-            @AuthenticationPrincipal UserDetails userDetails
+            @AuthenticationPrincipal LoginMember loginMember
     ) {
-        String email = userDetails.getUsername();
-        log.info("Request: claimDailyAttendance for Email={}", email);
+        Long memberId = loginMember.memberId();
+        log.info("Request: claimDailyAttendance for MemberId={}", memberId);
 
         // 1. 서비스 호출
-        Reward savedReward = missionService.claimDailyAttendance(email);
+        Reward savedReward = missionService.claimDailyAttendance(memberId);
 
         // 2. Entity -> DTO 변환
         RewardResponse responseDto = new RewardResponse(savedReward);
@@ -89,13 +89,13 @@ public class MissionController {
     @PostMapping("/bankruptcy")
     @Operation(summary = "파산 신청 (인생 2회차)", description = "총 자산이 5만원 미만일 때 구조지원금을 신청합니다.")
     public ResponseEntity<RewardResponse> applyForBankruptcy(
-            @AuthenticationPrincipal UserDetails userDetails
+            @AuthenticationPrincipal LoginMember loginMember
     ) {
         // 토큰에서 이메일(String)만 추출해서 넘김
-        String email = userDetails.getUsername();
+        Long memberId = loginMember.memberId();
 
         // 서비스가 이메일로 멤버 찾아서 로직 수행
-        Reward reward = missionService.applyForBankruptcy(email);
+        Reward reward = missionService.applyForBankruptcy(memberId);
 
         return ResponseEntity.ok(new RewardResponse(reward));
     }
@@ -105,7 +105,7 @@ public class MissionController {
      */
     @GetMapping("/tier")
     @Operation(summary = "티어 및 점수 조회", description = "활동 점수와 실력 점수를 합산한 현재 티어 정보를 반환합니다.")
-    public ResponseEntity<UserTierStatusResponse> getMyTierStatus(@AuthenticationPrincipal UserDetails userDetails) {
-        return ResponseEntity.ok(missionQueryService.getTierInfo(userDetails.getUsername()));
+    public ResponseEntity<UserTierStatusResponse> getMyTierStatus(@AuthenticationPrincipal LoginMember loginMember) {
+        return ResponseEntity.ok(missionQueryService.getTierInfo(loginMember.memberId()));
     }
 }

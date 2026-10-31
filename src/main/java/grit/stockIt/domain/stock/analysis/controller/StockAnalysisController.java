@@ -9,7 +9,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.*;
 import reactor.core.publisher.Mono;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
-import org.springframework.security.core.userdetails.UserDetails;
+import grit.stockIt.global.jwt.LoginMember;
 
 // 종목분석 컨트롤러
 @Slf4j
@@ -23,12 +23,10 @@ public class StockAnalysisController {
 
     @Operation(summary = "종목분석", description = "종목에 대한 AI 분석을 수행합니다.")
     @PostMapping("/{stockCode}/analyze")
-    public Mono<StockAnalysisResponse> analyzeStock(@PathVariable String stockCode, @AuthenticationPrincipal UserDetails userDetails) {
-        // 비로그인 사용자 처리(선택사항)가 필요하다면 여기서 체크
-        String email = userDetails != null ? userDetails.getUsername() : null;
-
-        // 서비스로 email 전달
-        return stockAnalysisService.analyzeStock(stockCode, email);
+    public Mono<StockAnalysisResponse> analyzeStock(@PathVariable String stockCode, @AuthenticationPrincipal LoginMember loginMember) {
+        // 비로그인 사용자는 회원 번호 없이 분석만 받는다
+        Long memberId = loginMember != null ? loginMember.memberId() : null;
+        return stockAnalysisService.analyzeStock(stockCode, memberId);
     }
 }
 

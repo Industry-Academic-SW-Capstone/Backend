@@ -1,7 +1,5 @@
 package grit.stockIt.domain.notification.service;
 
-import grit.stockIt.domain.member.entity.Member;
-import grit.stockIt.domain.member.repository.MemberRepository;
 import grit.stockIt.domain.notification.entity.NotificationSetting;
 import grit.stockIt.domain.notification.repository.NotificationSettingRepository;
 import lombok.RequiredArgsConstructor;
@@ -20,7 +18,6 @@ import java.util.stream.Collectors;
 public class NotificationSettingService {
 
     private final NotificationSettingRepository notificationSettingRepository;
-    private final MemberRepository memberRepository;
 
     // 행이 없는 회원은 저장하지 않은 기본값을 돌려준다(토큰 없음, 체결 알림 켬).
     @Transactional(readOnly = true)
@@ -51,20 +48,6 @@ public class NotificationSettingService {
         return memberIds.stream()
                 .map(memberId -> settings.getOrDefault(memberId, NotificationSetting.defaultFor(memberId)))
                 .toList();
-    }
-
-    // 로그인 정보에는 이메일만 있어 회원 번호를 회원 테이블에서 찾는다.
-    @Transactional(readOnly = true)
-    public Long memberIdOf(String email) {
-        return memberRepository.findByEmail(email)
-                .map(Member::getMemberId)
-                .orElseThrow(() -> new IllegalArgumentException("회원을 찾을 수 없습니다."));
-    }
-
-    // 전체 발송 대상인 모든 회원 번호. 회원 목록은 증권사 데이터다.
-    @Transactional(readOnly = true)
-    public List<Long> allMemberIds() {
-        return memberRepository.findAll().stream().map(Member::getMemberId).toList();
     }
 
     // FCM 이 무효라고 알려 온 토큰을 지운다.

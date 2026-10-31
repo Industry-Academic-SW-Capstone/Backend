@@ -1,6 +1,6 @@
 package grit.stockIt.domain.mission.service;
 
-import grit.stockIt.domain.account.repository.AccountStockRepository;
+import grit.stockIt.contract.BrokerQueryClient;
 import grit.stockIt.domain.mission.entity.MissionProgress;
 import grit.stockIt.domain.mission.enums.MissionConditionType;
 import grit.stockIt.domain.mission.enums.MissionStatus;
@@ -12,6 +12,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * [B-5 분리] 스케줄러 호출용 배치 서비스 (자정 초기화·홀딩 일수 갱신).
@@ -25,7 +27,7 @@ import java.util.List;
 public class MissionBatchService {
 
     private final MissionProgressRepository missionProgressRepository;
-    private final AccountStockRepository accountStockRepository;
+    private final BrokerQueryClient brokerQueryClient;
     private final MissionRewardService missionRewardService;
 
     /**
@@ -36,13 +38,14 @@ public class MissionBatchService {
         List<MissionProgress> holdingProgressList = missionProgressRepository
                 .findAllByMission_ConditionTypeAndStatus(MissionConditionType.HOLDING_DAYS, MissionStatus.IN_PROGRESS);
 
+        // 2. 그중 주식을 하나라도 가진 회원 (수량 > 0) — 보유 주식은 증권사 데이터라 한 번에 묻는다
+        Set<Long> holders = brokerQueryClient.membersHoldingStock(
+                holdingProgressList.stream().map(MissionProgress::getMemberId).collect(Collectors.toSet()));
+
         for (MissionProgress progress : holdingProgressList) {
             Long memberId = progress.getMemberId();
 
-            // 2. 회원이 주식을 하나라도 가지고 있는지 확인 (수량 > 0)
-            boolean hasStock = accountStockRepository.existsByAccount_Member_MemberIdAndQuantityGreaterThan(memberId, 0);
-
-            if (hasStock) {
+            if (holders.contains(memberId)) {
                 progress.incrementProgress(1);
                 log.info("홀딩 미션 +1일 증가: MemberId={}, MissionId={}, NewValue={}",
                         memberId, progress.getMission().getId(), progress.getCurrentValue());

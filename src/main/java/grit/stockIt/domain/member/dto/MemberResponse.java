@@ -4,7 +4,6 @@ import com.fasterxml.jackson.databind.PropertyNamingStrategies;
 import com.fasterxml.jackson.databind.annotation.JsonNaming;
 import grit.stockIt.domain.account.entity.Account;
 import grit.stockIt.domain.member.entity.Member;
-import grit.stockIt.domain.title.dto.TitleResponse;
 import lombok.AccessLevel;
 import lombok.AllArgsConstructor;
 import lombok.Builder;

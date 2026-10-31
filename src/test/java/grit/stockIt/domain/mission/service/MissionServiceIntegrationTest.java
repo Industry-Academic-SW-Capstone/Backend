@@ -440,12 +440,12 @@ class MissionServiceIntegrationTest extends IntegrationTestSupport {
     @Test
     @DisplayName("9-1. handleReportView: 리포트 3회 열람 시 일일 미션(103)이 완료된다")
     void handleReportView_일일미션_진행_및_완료() {
-        missionService.handleReportView(memberEmail);
+        missionService.handleReportView(memberId);
         assertThat(progress(103L).getCurrentValue()).isEqualTo(1);
         assertThat(progress(103L).getStatus()).isEqualTo(MissionStatus.IN_PROGRESS);
 
-        missionService.handleReportView(memberEmail);
-        missionService.handleReportView(memberEmail);
+        missionService.handleReportView(memberId);
+        missionService.handleReportView(memberId);
         assertThat(progress(103L).getCurrentValue()).isEqualTo(3);
         assertThat(progress(103L).getStatus()).isEqualTo(MissionStatus.COMPLETED);
         assertThat(defaultAccountCash()).isEqualByComparingTo(new BigDecimal("1150000"));
@@ -454,13 +454,13 @@ class MissionServiceIntegrationTest extends IntegrationTestSupport {
     @Test
     @DisplayName("9-2. handlePortfolioAnalysis: 1회 분석으로 일일 미션(104) 완료, 재호출은 무시된다")
     void handlePortfolioAnalysis_일일미션_완료_및_중복무시() {
-        missionService.handlePortfolioAnalysis(memberEmail);
+        missionService.handlePortfolioAnalysis(memberId);
         assertThat(progress(104L).getCurrentValue()).isEqualTo(1);
         assertThat(progress(104L).getStatus()).isEqualTo(MissionStatus.COMPLETED);
         assertThat(defaultAccountCash()).isEqualByComparingTo(new BigDecimal("1150000"));
 
         // 이미 완료된 미션은 진행/보상 없이 무시
-        missionService.handlePortfolioAnalysis(memberEmail);
+        missionService.handlePortfolioAnalysis(memberId);
         assertThat(progress(104L).getCurrentValue()).isEqualTo(1);
         assertThat(defaultAccountCash()).isEqualByComparingTo(new BigDecimal("1150000"));
     }
@@ -494,9 +494,9 @@ class MissionServiceIntegrationTest extends IntegrationTestSupport {
     @DisplayName("10-2. 미션 로직이 실패하면 워커가 예외를 던지고 처리 기록도 남지 않아 다시 받을 수 있다")
     void 미션실패_예외_전파_처리기록_없음() {
         // 예전 메모리 스레드 풀은 예외를 삼켜 그 진행도가 영영 빠졌다. 이제는 던져서 재시도·DLT 로 간다.
-        Long ghostMemberId = 999_999_999L;
-        MemberEvent poison = MemberEvent.tradeCompleted(ghostMemberId, new MemberEvent.TradeCompleted(
-                defaultAccountId, true, STOCK_CODE, OrderMethod.BUY, 1, new BigDecimal("10000"), BigDecimal.ZERO));
+        // 체결가가 빠진 이벤트 — 거래 금액 계산에서 실패한다.
+        MemberEvent poison = MemberEvent.tradeCompleted(memberId, new MemberEvent.TradeCompleted(
+                defaultAccountId, true, STOCK_CODE, OrderMethod.BUY, 1, null, BigDecimal.ZERO));
 
         assertThatThrownBy(() -> missionEventConsumer.consume(poison)).isInstanceOf(RuntimeException.class);
         assertThat(jdbcTemplate.queryForObject(

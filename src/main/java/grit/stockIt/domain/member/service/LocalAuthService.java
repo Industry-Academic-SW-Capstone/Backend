@@ -63,7 +63,7 @@ public class LocalAuthService {
             throw new IllegalArgumentException("비밀번호가 일치하지 않습니다.");
         }
 
-        String accessToken = jwtService.generateToken(member.getEmail());
+        String accessToken = jwtService.generateToken(member.getMemberId(), member.getEmail());
         return JwtToken.builder()
                 .accessToken(accessToken)
                 .build();

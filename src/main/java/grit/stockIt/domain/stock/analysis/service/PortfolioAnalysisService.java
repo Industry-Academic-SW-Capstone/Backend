@@ -38,15 +38,14 @@ public class PortfolioAnalysisService {
     private final MemberEventOutbox memberEventOutbox;
 
     @Transactional(readOnly = true)
-    public Mono<PortfolioAnalysisResponse> analyzePortfolio(Long accountId, String email) {
-        log.info("포트폴리오 분석 요청: accountId={}, email={}", accountId, email);
+    public Mono<PortfolioAnalysisResponse> analyzePortfolio(Long accountId, Long memberId) {
+        log.info("포트폴리오 분석 요청: accountId={}, memberId={}", accountId, memberId);
 
         // 1. Account 조회 및 권한 확인
         Account account = accountRepository.findById(accountId)
                 .orElseThrow(() -> new BadRequestException("계좌를 찾을 수 없습니다."));
 
-        // 검증 로직 수정 (파라미터 email 사용)
-        if (!account.getMember().getEmail().equals(email)) {
+        if (!account.getMember().getMemberId().equals(memberId)) {
             return Mono.error(new ForbiddenException("해당 계좌에 대한 권한이 없습니다."));
         }
 
@@ -94,8 +93,8 @@ public class PortfolioAnalysisService {
                     // [수정] response.stocks() -> response.stockDetails() 로 변경
                     // null 체크도 함께 해주면 더 안전합니다.
                     if (response.stockDetails() != null && !response.stockDetails().isEmpty()) {
-                        log.info("포트폴리오 분석 성공 이벤트 발행: {}", email);
-                        memberEventOutbox.sendNow(MemberEvent.analyzed(MemberEventType.PORTFOLIO_ANALYZED, email));
+                        log.info("포트폴리오 분석 성공 이벤트 발행: memberId={}", memberId);
+                        memberEventOutbox.sendNow(MemberEvent.analyzed(MemberEventType.PORTFOLIO_ANALYZED, memberId));
                     }
                 })
                 .onErrorResume(e -> {

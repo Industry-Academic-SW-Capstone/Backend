@@ -1,6 +1,7 @@
 package grit.stockIt.global.config;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import grit.stockIt.global.auth.AdminEmailAllowlist;
 import grit.stockIt.global.jwt.JwtAuthenticationFilter;
 import grit.stockIt.global.jwt.JwtService;
 import jakarta.servlet.http.HttpServletRequest;
@@ -13,7 +14,6 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
-import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.AuthenticationEntryPoint;
@@ -105,18 +105,18 @@ public class SecurityConfig {
     };
 
     private final JwtService jwtService;
-    private final UserDetailsService userDetailsService;
+    private final AdminEmailAllowlist adminEmailAllowlist;
     private final ObjectMapper objectMapper;
     private final List<String> allowedOrigins;
 
     public SecurityConfig(
             JwtService jwtService,
-            UserDetailsService userDetailsService,
+            AdminEmailAllowlist adminEmailAllowlist,
             ObjectMapper objectMapper,
             @Value("${app.cors.allowed-origins}") List<String> allowedOrigins
     ) {
         this.jwtService = jwtService;
-        this.userDetailsService = userDetailsService;
+        this.adminEmailAllowlist = adminEmailAllowlist;
         this.objectMapper = objectMapper;
 
         // 공백·빈 항목을 걷어낸 뒤 검사한다. " " 나 "https://a.com," 처럼 빈 항목이 남으면
@@ -153,7 +153,7 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/api/rankings/me").authenticated()
 
                         .requestMatchers(PUBLIC_PATHS).permitAll()
-                        // 부하 진입점(LoadTestController, prod 에 없음). 토큰을 받으면 요청마다 회원 조회가 입구 비용에 더해진다.
+                        // 부하 진입점(LoadTestController, prod 에 없음). 토큰 없이 부른다.
                         .requestMatchers(HttpMethod.POST, "/api/test/mock-execution").permitAll()
                         .requestMatchers(HttpMethod.GET, PUBLIC_GET_PATHS).permitAll()
                         .requestMatchers(PUBLIC_STOCK_CODE_MATCHERS).permitAll()
@@ -162,7 +162,7 @@ public class SecurityConfig {
 
                 // 필터가 시큐리티 체인 안에 있어야 인가 판정 시점에 SecurityContext가 채워져 있다.
                 .addFilterBefore(
-                        new JwtAuthenticationFilter(jwtService, userDetailsService),
+                        new JwtAuthenticationFilter(jwtService, adminEmailAllowlist),
                         UsernamePasswordAuthenticationFilter.class
                 )
 

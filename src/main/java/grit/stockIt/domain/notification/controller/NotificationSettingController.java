@@ -3,6 +3,7 @@ package grit.stockIt.domain.notification.controller;
 import grit.stockIt.domain.notification.dto.FcmTokenRequest;
 import grit.stockIt.domain.notification.dto.NotificationSettingsRequest;
 import grit.stockIt.domain.notification.service.NotificationSettingService;
+import grit.stockIt.global.jwt.LoginMember;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -10,8 +11,6 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.core.Authentication;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -68,10 +67,6 @@ public class NotificationSettingController {
     }
 
     private Optional<Long> currentMemberId() {
-        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-        if (auth == null || !auth.isAuthenticated() || "anonymousUser".equals(auth.getPrincipal())) {
-            return Optional.empty();
-        }
-        return Optional.of(notificationSettingService.memberIdOf(auth.getName()));
+        return LoginMember.current().map(LoginMember::memberId);
     }
 }

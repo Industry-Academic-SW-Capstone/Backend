@@ -65,7 +65,7 @@ public class KakaoAuthService {
             Member member = existingMember.get();
             updateKakaoToken(member, tokenResponse);
 
-            String jwt = jwtService.generateToken(member.getEmail());
+            String jwt = jwtService.generateToken(member.getMemberId(), member.getEmail());
             JwtToken jwtToken = JwtToken.builder().accessToken(jwt).build();
 
             return KakaoLoginResponse.ofExistingUser(jwtToken);
@@ -100,7 +100,7 @@ public class KakaoAuthService {
 
             Member savedMember = memberRegistrationService.register(member);
 
-            String jwt = jwtService.generateToken(savedMember.getEmail());
+            String jwt = jwtService.generateToken(savedMember.getMemberId(), savedMember.getEmail());
             return JwtToken.builder().accessToken(jwt).build();
 
         } catch (DataIntegrityViolationException e) {

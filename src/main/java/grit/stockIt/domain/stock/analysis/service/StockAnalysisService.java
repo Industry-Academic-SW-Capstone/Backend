@@ -40,8 +40,8 @@ public class StockAnalysisService {
     }
 
     // 종목분석 수행
-    public Mono<StockAnalysisResponse> analyzeStock(String stockCode, String email) {
-        log.info("종목분석 시작: stockCode={}, requestUser={}", stockCode, email);
+    public Mono<StockAnalysisResponse> analyzeStock(String stockCode, Long memberId) {
+        log.info("종목분석 시작: stockCode={}, memberId={}", stockCode, memberId);
 
         // 1. 데이터 수집 (병렬 처리)
         Mono<MarketData> marketDataMono = getMarketData(stockCode);
@@ -71,10 +71,10 @@ public class StockAnalysisService {
                 })
                 .doOnSuccess(response -> {
                     // [핵심] 분석 성공 시 이벤트 발행
-                    // email이 있는 경우(로그인 유저)에만 발행
-                    if (email != null) {
-                        log.info("종목 분석 성공 이벤트 발행: {}", email);
-                        memberEventOutbox.sendNow(MemberEvent.analyzed(MemberEventType.STOCK_ANALYZED, email));
+                    // 로그인 유저만 발행
+                    if (memberId != null) {
+                        log.info("종목 분석 성공 이벤트 발행: memberId={}", memberId);
+                        memberEventOutbox.sendNow(MemberEvent.analyzed(MemberEventType.STOCK_ANALYZED, memberId));
                     }
                 })
                 .doOnError(e -> log.error("종목분석 실패: stockCode={}", stockCode, e))

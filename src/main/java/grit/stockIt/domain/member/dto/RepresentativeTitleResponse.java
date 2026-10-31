@@ -1,7 +1,7 @@
 package grit.stockIt.domain.member.dto;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
-import grit.stockIt.domain.title.entity.Title;
+import grit.stockIt.contract.TitleView;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -22,8 +22,8 @@ public class RepresentativeTitleResponse {
     @Schema(description = "칭호 설명", example = "Legend 티어를 달성한 자")
     private String description;
 
-    // Title 엔티티로부터 DTO 생성
-    public static RepresentativeTitleResponse from(Title title) {
+    // 부가가 알려 준 칭호로 DTO 생성
+    public static RepresentativeTitleResponse from(TitleView title) {
         // [수정] title이 없으면 null을 반환하는 게 아니라, 필드가 null인 객체를 반환
         if (title == null) {
             return RepresentativeTitleResponse.builder()
@@ -33,9 +33,9 @@ public class RepresentativeTitleResponse {
                     .build();
         }
         return RepresentativeTitleResponse.builder()
-                .titleId(title.getId())
-                .name(title.getName())
-                .description(title.getDescription())
+                .titleId(title.titleId())
+                .name(title.name())
+                .description(title.description())
                 .build();
     }
 }

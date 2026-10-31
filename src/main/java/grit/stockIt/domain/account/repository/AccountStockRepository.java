@@ -7,6 +7,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -23,13 +24,15 @@ public interface AccountStockRepository extends JpaRepository<AccountStock, Long
     List<AccountStock> findByAccountIdWithStock(@Param("accountId") Long accountId);
 
 
-    // --- [추가] 스케줄러에서 홀딩 여부 체크용 ---
-    // 회원의 계좌 중 수량이 0보다 큰 주식이 하나라도 있는지 확인
-    boolean existsByAccount_Member_MemberIdAndQuantityGreaterThan(Long memberId, int quantity);
-    // --- [추가] 특정 계좌의 보유 주식 목록 전체 조회 ---
+    // --- [추가] 스케줄러에서 홀딩 여부 체크용 ---    // --- [추가] 특정 계좌의 보유 주식 목록 전체 조회 ---
     List<AccountStock> findAllByAccount(Account account);
 
     // --- [추가] 모든 보유 주식의 중복 제거된 종목 코드 조회 ---
     @Query("SELECT DISTINCT ast.stock.code FROM AccountStock ast WHERE ast.quantity > 0")
     List<String> findDistinctStockCodes();
+
+    // 주어진 회원 중 어느 계좌에든 수량이 0보다 큰 주식을 가진 회원
+    @Query("SELECT DISTINCT a.member.memberId FROM AccountStock s JOIN s.account a "
+            + "WHERE a.member.memberId IN :memberIds AND s.quantity > 0")
+    List<Long> findMemberIdsHoldingStock(@Param("memberIds") Collection<Long> memberIds);
 }

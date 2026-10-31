@@ -1,11 +1,6 @@
 package grit.stockIt.domain.mission.service;
 
-import grit.stockIt.domain.account.entity.Account;
-import grit.stockIt.domain.account.entity.AccountStock;
-import grit.stockIt.domain.account.repository.AccountRepository;
-import grit.stockIt.domain.account.repository.AccountStockRepository;
-import grit.stockIt.domain.member.entity.Member;
-import grit.stockIt.domain.member.repository.MemberRepository;
+import grit.stockIt.contract.BrokerQueryClient;
 import grit.stockIt.domain.mission.entity.Mission;
 import grit.stockIt.domain.mission.entity.MissionProgress;
 import grit.stockIt.domain.mission.entity.Reward;
@@ -40,11 +35,9 @@ import java.util.stream.Stream;
 public class MissionService {
 
     // --- 의존성 주입 ---
-    private final MemberRepository memberRepository;
     private final MissionRepository missionRepository;
     private final MissionProgressRepository missionProgressRepository;
-    private final AccountRepository accountRepository;
-    private final AccountStockRepository accountStockRepository; // 파산 신청 시 보유 주식 평가용
+    private final BrokerQueryClient brokerQueryClient; // 파산 신청 시 자산 확인 — 계좌는 증권사 데이터다
     private final MissionTrackPolicy missionTrackPolicy;
     private final MissionRewardService missionRewardService;
     private final MissionTierTracker missionTierTracker;
@@ -54,24 +47,10 @@ public class MissionService {
      * - 조건: (보유 현금 + 보유 주식의 원금 총액) < 50,000원
      */
     @Transactional
-    public Reward applyForBankruptcy(String email) {
-        Member member = getMemberByEmail(email);
-        // 1. 기본 계좌 조회
-        Account account = accountRepository.findByMemberAndIsDefaultTrue(member)
+    public Reward applyForBankruptcy(Long memberId) {
+        // 1~3. 총 자산 (기본 계좌 현금 + 보유 주식 원금) — 증권사에 묻는다
+        BigDecimal totalAsset = brokerQueryClient.defaultAccountAsset(memberId)
                 .orElseThrow(() -> new EntityNotFoundException("기본 계좌가 없습니다."));
-
-// 2. 해당 계좌의 보유 주식 목록 조회 (Repository 사용)
-        // Account 엔티티에 accountStocks 리스트가 없으므로 리포지토리로 별도 조회
-        List<AccountStock> myStocks = accountStockRepository.findAllByAccount(account);
-
-        // 3. 보유 주식 총 평가금액 계산 (평단가 * 보유수량)
-        // [수정] getBuyPrice() -> getAveragePrice()
-        BigDecimal totalStockAsset = myStocks.stream()
-                .map(as -> as.getAveragePrice().multiply(BigDecimal.valueOf(as.getQuantity())))
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
-
-        // 3. 총 자산 (현금 + 주식 원금)
-        BigDecimal totalAsset = account.getCash().add(totalStockAsset);
 
         // 4. 100만원 미만인지 확인
         if (totalAsset.compareTo(BigDecimal.valueOf(1000000)) >= 0) {
@@ -80,7 +59,7 @@ public class MissionService {
 
         // 5. 업적 달성 처리
         MissionProgress bankruptcyProgress = missionProgressRepository
-                .findByMemberAndMissionTypeWithMission(member.getMemberId(), MissionTrack.ACHIEVEMENT, MissionConditionType.ASSET_UNDER_THRESHOLD)
+                .findByMemberAndMissionTypeWithMission(memberId, MissionTrack.ACHIEVEMENT, MissionConditionType.ASSET_UNDER_THRESHOLD)
                 .orElseThrow(() -> new EntityNotFoundException("인생 2회차 미션 데이터를 찾을 수 없습니다."));
 
         if (bankruptcyProgress.isCompleted()) {
@@ -89,20 +68,20 @@ public class MissionService {
 
         bankruptcyProgress.setCurrentValue(bankruptcyProgress.getMission().getGoalValue()); // 조건 충족 표시
         bankruptcyProgress.complete();
-        missionRewardService.distributeReward(member.getMemberId(), bankruptcyProgress.getMission().getReward());
+        missionRewardService.distributeReward(memberId, bankruptcyProgress.getMission().getReward());
 
-        log.info("파산 신청 승인! 구조지원금 지급 완료. Member={}", member.getName());
+        log.info("파산 신청 승인! 구조지원금 지급 완료. MemberId={}", memberId);
 
         // [추가] 2. 티어 점수 완전 초기화 (Bronze 0점으로 강등)
-        String tierBefore = missionTierTracker.tierOf(member.getMemberId());
-        missionProgressRepository.findByMemberAndMissionTypeWithMission(member.getMemberId(), MissionTrack.ACHIEVEMENT, MissionConditionType.ACTIVITY_SCORE)
+        String tierBefore = missionTierTracker.tierOf(memberId);
+        missionProgressRepository.findByMemberAndMissionTypeWithMission(memberId, MissionTrack.ACHIEVEMENT, MissionConditionType.ACTIVITY_SCORE)
                 .ifPresent(p -> p.setCurrentValue(0));
 
-        missionProgressRepository.findByMemberAndMissionTypeWithMission(member.getMemberId(), MissionTrack.ACHIEVEMENT, MissionConditionType.SKILL_SCORE)
+        missionProgressRepository.findByMemberAndMissionTypeWithMission(memberId, MissionTrack.ACHIEVEMENT, MissionConditionType.SKILL_SCORE)
                 .ifPresent(p -> p.setCurrentValue(0));
-        missionTierTracker.publishIfChanged(member.getMemberId(), tierBefore);
+        missionTierTracker.publishIfChanged(memberId, tierBefore);
 
-        log.info("파산 승인 및 티어 초기화 완료: Member={}", member.getName());
+        log.info("파산 승인 및 티어 초기화 완료: MemberId={}", memberId);
         return bankruptcyProgress.getMission().getReward();
     }
 
@@ -156,10 +135,9 @@ public class MissionService {
     // --- API 관련 메서드 (Controller 호출용) ---
 
     @Transactional
-    public Reward claimDailyAttendance(String email) {
-        Member member = getMemberByEmail(email);
+    public Reward claimDailyAttendance(Long memberId) {
         MissionProgress attendanceProgress = missionProgressRepository
-                .findByMemberAndMissionTypeWithMission(member.getMemberId(), MissionTrack.DAILY, MissionConditionType.LOGIN_COUNT)
+                .findByMemberAndMissionTypeWithMission(memberId, MissionTrack.DAILY, MissionConditionType.LOGIN_COUNT)
                 .orElseThrow(() -> new EntityNotFoundException("일일 출석 미션을 찾을 수 없습니다."));
 
         if (attendanceProgress.getStatus() == MissionStatus.COMPLETED || attendanceProgress.isCompleted()) {
@@ -172,32 +150,24 @@ public class MissionService {
     }
 
     @Transactional
-    public void handleReportView(String email) {
-        handleDailySimpleMission(email, MissionConditionType.VIEW_REPORT);
+    public void handleReportView(Long memberId) {
+        handleDailySimpleMission(memberId, MissionConditionType.VIEW_REPORT);
     }
 
     @Transactional
-    public void handlePortfolioAnalysis(String email) {
-        handleDailySimpleMission(email, MissionConditionType.ANALYZE_PORTFOLIO);
+    public void handlePortfolioAnalysis(Long memberId) {
+        handleDailySimpleMission(memberId, MissionConditionType.ANALYZE_PORTFOLIO);
     }
 
-    private void handleDailySimpleMission(String email, MissionConditionType type) {
-        Member member = getMemberByEmail(email);
-        missionProgressRepository.findByMemberAndMissionTypeWithMission(member.getMemberId(), MissionTrack.DAILY, type)
+    private void handleDailySimpleMission(Long memberId, MissionConditionType type) {
+        missionProgressRepository.findByMemberAndMissionTypeWithMission(memberId, MissionTrack.DAILY, type)
                 .ifPresent(progress -> {
                     if (progress.getStatus() != MissionStatus.COMPLETED && !progress.isCompleted()) {
                         progress.incrementProgress(1);
-                        log.info("일일 미션({}) 진행도 갱신: MemberId={}", type, member.getMemberId());
+                        log.info("일일 미션({}) 진행도 갱신: MemberId={}", type, memberId);
                         missionRewardService.checkMissionCompletion(progress);
                     }
                 });
-    }
-
-    // --- Helper Methods ---
-
-    private Member getMemberByEmail(String email) {
-        return memberRepository.findByEmail(email)
-                .orElseThrow(() -> new EntityNotFoundException("회원을 찾을 수 없습니다. Email: " + email));
     }
 
     // findDailyAttendanceMission 제거 (직접 쿼리 사용으로 대체됨)

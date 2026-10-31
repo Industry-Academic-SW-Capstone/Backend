@@ -1,7 +1,5 @@
 package grit.stockIt.domain.notification.service;
 
-import grit.stockIt.domain.member.entity.Member;
-import grit.stockIt.domain.member.repository.MemberRepository;
 import grit.stockIt.domain.notification.dto.NotificationPageResponse;
 import grit.stockIt.domain.notification.dto.NotificationResponse;
 import grit.stockIt.domain.notification.dto.UnreadCountResponse;
@@ -26,14 +24,12 @@ import java.util.List;
 public class NotificationService {
 
     private final NotificationRepository notificationRepository;
-    private final MemberRepository memberRepository;
 
     // 알림 목록 조회
     public NotificationPageResponse getNotifications(Long memberId, int page, int size) {
-        Member member = findMemberById(memberId);
 
         Pageable pageable = PageRequest.of(page, size);
-        Page<Notification> notificationPage = notificationRepository.findByMemberIdOrderByCreatedAtDesc(member.getMemberId(), pageable);
+        Page<Notification> notificationPage = notificationRepository.findByMemberIdOrderByCreatedAtDesc(memberId, pageable);
 
         Page<NotificationResponse> responsePage = notificationPage.map(NotificationResponse::from);
 
@@ -42,8 +38,7 @@ public class NotificationService {
 
     // 읽지 않은 알림 개수 조회
     public UnreadCountResponse getUnreadCount(Long memberId) {
-        Member member = findMemberById(memberId);
-        long count = notificationRepository.countByMemberIdAndIsReadFalse(member.getMemberId());
+        long count = notificationRepository.countByMemberIdAndIsReadFalse(memberId);
         return UnreadCountResponse.of(count);
     }
 
@@ -70,8 +65,7 @@ public class NotificationService {
     // 전체 알림 읽음 처리
     @Transactional
     public void markAllAsRead(Long memberId) {
-        Member member = findMemberById(memberId);
-        List<Notification> unreadNotifications = notificationRepository.findByMemberIdAndIsReadFalseOrderByCreatedAtDesc(member.getMemberId());
+        List<Notification> unreadNotifications = notificationRepository.findByMemberIdAndIsReadFalseOrderByCreatedAtDesc(memberId);
 
         unreadNotifications.forEach(Notification::markAsRead);
 
@@ -94,19 +88,11 @@ public class NotificationService {
 
     // 타입별 알림 조회
     public List<NotificationResponse> getNotificationsByType(Long memberId, NotificationType type) {
-        Member member = findMemberById(memberId);
-        List<Notification> notifications = notificationRepository.findByMemberIdAndTypeOrderByCreatedAtDesc(member.getMemberId(), type);
+        List<Notification> notifications = notificationRepository.findByMemberIdAndTypeOrderByCreatedAtDesc(memberId, type);
 
         return notifications.stream()
                 .map(NotificationResponse::from)
                 .toList();
-    }
-
-    // Member 조회 헬퍼 메서드
-    // 인증된 세션의 memberId로 조회하므로, 못 찾으면 서버 데이터 불일치 문제
-    private Member findMemberById(Long memberId) {
-        return memberRepository.findById(memberId)
-                .orElseThrow(() -> new IllegalStateException("인증된 회원 정보를 찾을 수 없습니다. memberId: " + memberId));
     }
 
     // Notification 조회 헬퍼 메서드
