@@ -173,10 +173,13 @@ ON CONFLICT (topic, partition_no) DO UPDATE
 | 대상 | 일시 실패 | 처리할 수 없는 메시지 |
 |------|-----------|------------------------|
 | `matching.commands` | **무한 재시도** (200ms → 5s 지수 백오프). 건너뛰면 유실되고 종목 안의 순서가 깨진다. 그동안 파티션이 멈추므로 lag 으로 드러난다 | 역직렬화 실패·`InvalidMatchingCommandException` → `matching.commands.DLT` |
-| `exchange.reports` | 10회 재시도 후 DLT. 계좌 하나 때문에 파티션이 멈추지 않게 한다. DLT 로 간 통보는 아직 자동으로 다시 처리하지 않는다 | `InvalidExecutionReportException` → `exchange.reports.DLT` |
+| `exchange.reports` | 10회 재시도 후 DLT. 계좌 하나 때문에 파티션이 멈추지 않게 한다. DLT 로 간 통보는 관리자가 보고 다시 보낸다(아래) | `InvalidExecutionReportException` → `exchange.reports.DLT` |
 
 - 에러 핸들러 빈(`DefaultErrorHandler`)은 하나만 둔다. 둘이면 Boot 가 기본 팩토리에 어느 쪽도 붙이지 않는다. 정산은 전용 컨테이너 팩토리를 쓴다.
 - 역직렬화 실패는 `ErrorHandlingDeserializer` 가 감싸 원래 바이트 그대로 DLT 에 남긴다.
+- **DLT 재처리** (`DeadLetterService`, 관리자 API `/api/admin/dlt`): 실패 사유(헤더)·원래 토픽·키·내용을 보고, 원인을 고친 뒤
+  미처리분을 원래 토픽에 같은 키·같은 바이트로 다시 보내거나(`replay`) 버린다(`skip`). 자동으로 다시 보내지 않는다 — 원인이 그대로면
+  같은 실패만 반복된다. 받는 쪽이 모두 멱등이라 다시 보내도 안전하다. 어디까지 처리했는지는 그룹 `dlt-replay` 의 커밋된 offset 이다.
 
 ## 커넥션 예산
 
@@ -221,5 +224,6 @@ lag 과 DLT 적재 수는 kafka-exporter 로 본다. 대시보드는 `monitoring
 - `domain/settlement/` — 정산 워커(`ExecutionReportConsumer`)와 정산
 - `global/outbox/` — 아웃박스 기록·릴레이
 - `global/config/KafkaConfig.java` — 실패 처리·DLT
+- `global/dlt/DeadLetterService.java` — DLT 조회·재전송·건너뜀
 - `src/main/resources/kafka.yml` — 프로듀서·컨슈머 설정
 - `docker-compose.yml`(로컬) / `docker-compose.staging-kafka.yml`(스테이징) — 브로커와 토픽

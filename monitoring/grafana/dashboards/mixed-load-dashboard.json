@@ -1809,6 +1809,57 @@
           "legendFormat": "p{{partition}}"
         }
       ]
+    },
+    {
+      "id": 33,
+      "type": "timeseries",
+      "title": "DLT 토픽별 적재 · 처리 (dlt-replay)",
+      "description": "적재 = DLT 에 들어온 누적 수, 처리 = 관리자 API(/api/admin/dlt)로 재전송·건너뜀한 위치. 둘의 차이가 아직 처리하지 않은 메시지다.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 116,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum by (topic) (kafka_topic_partition_current_offset{topic=~\".+\\\\.DLT\"})",
+          "legendFormat": "{{topic}} 적재"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum by (topic) (kafka_consumergroup_current_offset{consumergroup=\"dlt-replay\"})",
+          "legendFormat": "{{topic}} 처리"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
     }
   ]
 }
