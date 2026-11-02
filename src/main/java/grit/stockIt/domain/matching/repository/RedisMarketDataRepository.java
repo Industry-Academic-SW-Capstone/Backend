@@ -1,5 +1,6 @@
 package grit.stockIt.domain.matching.repository;
 
+import grit.stockIt.contract.MarketPriceCache;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataAccessException;
@@ -15,7 +16,7 @@ import java.util.Optional;
 @Slf4j
 @Repository
 @RequiredArgsConstructor
-public class RedisMarketDataRepository {
+public class RedisMarketDataRepository implements MarketPriceCache {
 
     private static final String LAST_PRICE_KEY_PATTERN = "sim:price:last:%s";
     private static final Duration CACHE_TTL = Duration.ofMinutes(5); // 5분 캐시
@@ -25,6 +26,7 @@ public class RedisMarketDataRepository {
 
     private final StringRedisTemplate redisTemplate;
 
+    @Override
     public void updateLastPrice(String stockCode, BigDecimal price) {
         if (stockCode == null || price == null) {
             return;
@@ -40,6 +42,7 @@ public class RedisMarketDataRepository {
         }
     }
 
+    @Override
     public Optional<BigDecimal> getLastPrice(String stockCode) {
         if (stockCode == null) {
             return Optional.empty();
@@ -59,6 +62,7 @@ public class RedisMarketDataRepository {
         }
     }
 
+    @Override
     public void updateUpperLimitPrice(String stockCode, BigDecimal price) {
         if (stockCode == null || price == null) {
             return;
@@ -74,6 +78,7 @@ public class RedisMarketDataRepository {
         }
     }
 
+    @Override
     public Optional<BigDecimal> getUpperLimitPrice(String stockCode) {
         if (stockCode == null) {
             return Optional.empty();

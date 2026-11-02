@@ -6,7 +6,6 @@ import grit.stockIt.domain.order.entity.Order;
 import grit.stockIt.domain.order.entity.OrderMethod;
 import grit.stockIt.domain.order.repository.HoldReleaseWriter;
 import grit.stockIt.domain.order.repository.OrderRepository;
-import grit.stockIt.global.util.TransactionHandler;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -24,7 +23,6 @@ public class OrderHoldReleaseService {
     private final AccountRepository accountRepository;
     private final OrderRepository orderRepository;
     private final OrderHoldService orderHoldService;
-    private final OrderSubscriptionService orderSubscriptionService;
 
     @Transactional
     public void release(ExecutionReport report) {
@@ -45,10 +43,6 @@ public class OrderHoldReleaseService {
             orderHoldService.releaseBuyHold(order);
         } else {
             orderHoldService.releaseSellHold(order, report.canceledQuantity());
-        }
-
-        if (report.canceledQuantity() > 0) {
-            TransactionHandler.afterCommit(() -> orderSubscriptionService.unsubscribeOnCancel(order));
         }
         log.info("홀딩 해제 완료: type={} orderId={} canceledQuantity={}",
                 report.type(), report.orderId(), report.canceledQuantity());

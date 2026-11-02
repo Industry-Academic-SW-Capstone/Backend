@@ -1,21 +1,2 @@
 # 서비스 경계 위반 목록 — ServiceBoundaryTest 가 읽는다. 위반을 고치면 해당 줄을 지운다. 비면 Gradle 모듈로 나눈다.
 # 형식: <서비스> <클래스> -> <서비스> <클래스>  (grit.stockIt. 생략)
-
-# 거래소 → 시세: 체결 트랜잭션 안의 구독 해제 (7단계) — 1건
-EXCHANGE domain.matching.service.LimitOrderExecutionService -> MARKET global.websocket.manager.OrderSubscriptionCoordinator
-
-# 증권사 → 시세: 주문 구독 등록, 시세 캐시 읽기 (7단계) — 3건
-BROKER domain.order.service.OrderSubscriptionService -> MARKET global.websocket.manager.OrderSubscriptionCoordinator
-BROKER domain.ranking.service.RankingPriceCollectionService -> MARKET domain.matching.repository.RedisMarketDataRepository
-BROKER domain.stock.service.StockDetailService -> MARKET domain.matching.repository.RedisMarketDataRepository
-
-# 시세 → 거래소: FILL 발행이 거래소 지표를 씀 (7단계) — 1건
-MARKET domain.matching.queue.KafkaFillCommandPublisher -> EXCHANGE domain.matching.queue.MatchingQueueMetrics
-
-# 시세 → 증권사: 시세 응답 DTO (7단계) — 2건
-MARKET global.websocket.client.KisWebSocketClient -> BROKER domain.stock.dto.StockOrderBookResponse
-MARKET global.websocket.client.KisWebSocketClient -> BROKER domain.stock.dto.StockPriceUpdateResponse
-
-# 부가 → 증권사: 회원·계좌·보유 종목·주문 조회 (6단계) — 19건
-
-# 증권사 → 부가: 회원의 칭호·미션 연관, 미션 이벤트 발행 (6단계) — 9건

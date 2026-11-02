@@ -1,5 +1,6 @@
 package grit.stockIt.domain.stock.service;
 
+import grit.stockIt.contract.PriceChangeSign;
 import grit.stockIt.domain.stock.dto.KisRankingResponse;
 import grit.stockIt.domain.stock.dto.KisStockDataDto;
 import grit.stockIt.domain.stock.dto.StockRankingResponse;
@@ -140,7 +141,7 @@ public class StockRankingParsingService {
                 parseIntValue(kisData.currentPrice()),
                 parseIntValue(kisData.changeAmount()),
                 kisData.changeRate(),
-                StockRankingResponse.PriceChangeSign.fromCode(kisData.changeSign())
+                PriceChangeSign.fromCode(kisData.changeSign())
         );
     }
 

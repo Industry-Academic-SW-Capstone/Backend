@@ -1,5 +1,6 @@
 package grit.stockIt.domain.stock.service;
 
+import grit.stockIt.contract.PriceChangeSign;
 import grit.stockIt.domain.stock.dto.KisRankingResponse;
 import grit.stockIt.domain.stock.dto.KisStockDataDto;
 import grit.stockIt.domain.stock.dto.StockRankingResponse;
@@ -414,7 +415,7 @@ class StockRankingParsingServiceTest {
             assertThat(result.currentPrice()).isEqualTo(70000);
             assertThat(result.changeAmount()).isEqualTo(1000);
             assertThat(result.changeRate()).isEqualTo("1.45");
-            assertThat(result.changeSign()).isEqualTo(StockRankingResponse.PriceChangeSign.RISE);
+            assertThat(result.changeSign()).isEqualTo(PriceChangeSign.RISE);
         }
 
         @Test
@@ -424,7 +425,7 @@ class StockRankingParsingServiceTest {
                     "005930", "삼성전자", "1", "70000", null, "0", "0.0", "0", "0");
 
             assertThat(service.mapKisDataToStockRankingResponse(dto).changeSign())
-                    .isEqualTo(StockRankingResponse.PriceChangeSign.STEADY);
+                    .isEqualTo(PriceChangeSign.STEADY);
         }
 
         @Test
@@ -434,7 +435,7 @@ class StockRankingParsingServiceTest {
                     "005930", "삼성전자", "1", "70000", "9", "0", "0.0", "0", "0");
 
             assertThat(service.mapKisDataToStockRankingResponse(dto).changeSign())
-                    .isEqualTo(StockRankingResponse.PriceChangeSign.STEADY);
+                    .isEqualTo(PriceChangeSign.STEADY);
         }
     }
 

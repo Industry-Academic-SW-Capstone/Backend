@@ -1,4 +1,4 @@
-package grit.stockIt.domain.stock.dto;
+package grit.stockIt.global.websocket.dto;
 
 import java.time.LocalDateTime;
 import java.util.List;

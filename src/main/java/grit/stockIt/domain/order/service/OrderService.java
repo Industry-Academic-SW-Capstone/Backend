@@ -34,7 +34,6 @@ public class OrderService {
     private final OrderAuthorizationService orderAuthorizationService;
     private final OrderPricingService orderPricingService;
     private final OrderHoldService orderHoldService;
-    private final OrderSubscriptionService orderSubscriptionService;
     private final OrderCommandOutbox orderCommandOutbox;
 
     // 지정가 주문 생성
@@ -83,9 +82,6 @@ public class OrderService {
         // 같은 트랜잭션에서 거래소로 보낼 주문 명령을 적는다. 주문이 롤백되면 명령도 나가지 않는다.
         orderCommandOutbox.order(savedOrder);
 
-        // 커밋된 뒤에만 시세 구독을 연다. 롤백된 주문 때문에 구독이 열리지 않게 한다.
-        orderSubscriptionService.subscribeAfterCommit(savedOrder, stock);
-
         log.info("지정가 주문 생성 완료: orderId={} stock={} quantity={}", savedOrder.getOrderId(), stock.getCode(), savedOrder.getQuantity());
         return OrderResponse.from(savedOrder);
     }
@@ -118,10 +114,6 @@ public class OrderService {
                 orderMethod
         );
 
-        // 시장가 주문도 지정가 주문처럼 웹소켓 구독을 먼저 시작
-        // 최근 체결가 조회 전에 구독이 시작되어 체결 이벤트를 받을 수 있도록 함
-        orderSubscriptionService.preSubscribe(stock.getCode());
-
         BigDecimal holdAmount = BigDecimal.ZERO;
         if (orderMethod == OrderMethod.SELL) {
             orderHoldService.applySellHold(order);
@@ -139,9 +131,6 @@ public class OrderService {
 
         // 같은 트랜잭션에서 거래소로 보낼 주문 명령을 적는다. 주문이 롤백되면 명령도 나가지 않는다.
         orderCommandOutbox.order(savedOrder);
-
-        // 커밋된 뒤에만 시세 구독을 연다. 롤백된 주문 때문에 구독이 열리지 않게 한다.
-        orderSubscriptionService.subscribeAfterCommit(savedOrder, stock);
 
         log.info("시장가 주문 생성 완료: orderId={} stock={} quantity={}", savedOrder.getOrderId(), stock.getCode(), savedOrder.getQuantity());
         return OrderResponse.from(savedOrder);

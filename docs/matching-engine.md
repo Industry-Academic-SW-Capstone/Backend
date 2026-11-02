@@ -25,7 +25,7 @@ KIS 실시간 체결 틱에 맞춰 사용자 주문을 체결하는 엔진의 �
 [체결 틱]  KIS WebSocket → LimitOrderFillEventMessage → LimitOrderFillEventListener
 [부하 진입] POST /api/test/mock-execution (prod 제외)
    └─ FillCommandPublisher (KafkaFillCommandPublisher)
-        ├─ 현재가 Redis 갱신 (sim:price:last:{code})
+        ├─ 현재가 Redis 갱신 (sim:price:last:{code}, 계약 MarketPriceCache — 증권사의 랭킹·종목 상세도 이걸로 읽는다)
         └─ FILL 명령 → matching.commands (key=종목) → 브로커 ack 대기(1초)
 [만료]  거래소 MarketOrderExpiryScheduler (평일 15:40) — 오더북의 미체결 시장가 주문마다 EXPIRE 명령
 
@@ -44,7 +44,11 @@ exchange.reports  파티션 24 — 워커 8 (ExecutionReportConsumer, 리스너 
    ├─ FILL                      → ExecutionSettlementService.settle
    │                              계좌 잠금 → execution 저장 → trade_order 체결 수량 갱신 → 현금·보유·홀딩 반영 → Settlement 저장
    └─ CANCELED/EXPIRED/REJECTED → OrderHoldReleaseService.release
-                                  hold_release 기록 → 계좌 잠금 → trade_order 취소 → 홀딩 해제 → 구독 해제
+                                  hold_release 기록 → 계좌 잠금 → trade_order 취소 → 홀딩 해제
+
+exchange.reports — 시세 워커 1 (OpenOrderReportConsumer, 리스너 id·그룹 market)
+   ├─ ACCEPTED                              → 열린 주문 등록 → 그 종목 첫 등록이면 KIS 실시간 구독
+   └─ FILL(남은 수량 0)/CANCELED/EXPIRED/REJECTED → 열린 주문 제거 → 주문도 보는 사람도 없으면 구독 해제
 ```
 
 ## 왜 단일 작성자인가
@@ -116,7 +120,7 @@ ON CONFLICT (topic, partition_no) DO UPDATE
   - 시장가 주문은 센티넬 가격(매수 999,999,999 / 매도 0.01)이라 항상 지정가보다 앞선다
 - **배분** (`LimitOrderMatchPlanner`): 틱 수량을 우선순위대로 후보에 나눈다. 순수 로직이라 DB 를 보지 않는다.
 - **반영**: 오더북 주문을 다시 읽어 남은 수량으로 배분을 한 번 더 조이고 `applyFill`, 체결 원장(`exchange_fill`) 저장.
-  체결 번호는 여기서 붙고 통보로 건너가 증권사 `execution` 의 번호가 된다. 전량 체결된 주문은 시세 구독을 해제한다.
+  체결 번호는 여기서 붙고 통보로 건너가 증권사 `execution` 의 번호가 된다.
 - 체결마다 FILL 통보(이 체결 뒤의 누적 체결 수량·남은 수량 포함)를 같은 트랜잭션에서 아웃박스에 적는다.
 
 ## 취소·만료 (`OrderCancelService`, 거래소)
@@ -138,7 +142,7 @@ ON CONFLICT (topic, partition_no) DO UPDATE
 - **매도**: 보유 주식 수량을 홀딩(`AccountStock.holdQuantity`).
 - 계좌는 `findByIdWithLock` 으로 잠근다. 연관(회원·대회)을 조인하지 않는다 — PostgreSQL 은 잠글 테이블을 명시하지 않은 행 잠금을
   FROM 절의 모든 테이블에 걸어, 조인하면 참가자 전원이 공유하는 대회 행까지 잠긴다.
-- 같은 트랜잭션에서 ORDER 명령을 아웃박스에 적는다. 주문이 롤백되면 명령도 나가지 않는다. 커밋 후 시세 구독을 등록한다.
+- 같은 트랜잭션에서 ORDER 명령을 아웃박스에 적는다. 주문이 롤백되면 명령도 나가지 않는다.
 - **취소 API는 접수만 한다.** 권한과 "이미 취소/체결"(증권사가 아는 상태)을 먼저 보고 400/403, 통과하면 CANCEL 명령을 아웃박스에 적고
   202(`OrderCancelAcceptedResponse`). 최종 판정은 거래소가 하고, 결과는 주문 상태로 확인한다.
 
@@ -152,7 +156,6 @@ ON CONFLICT (topic, partition_no) DO UPDATE
 - **홀딩 해제** (`OrderHoldReleaseService.release`, CANCELED·EXPIRED·REJECTED 통보):
   1. `hold_release` 에 주문 번호를 넣는다(`ON CONFLICT DO NOTHING`). 0행이면 이미 푼 주문이라 건너뛴다
   2. 계좌를 잠근 뒤 주문을 취소 상태로 바꾸고 홀딩 해제 — 매수는 남은 `OrderHold` 전부, 매도는 통보의 남은 수량만큼
-  3. 남은 수량이 있으면 커밋 뒤 시세 구독 해제
 - 중복 방어: 정산은 `settlement.execution_id` 유니크, 홀딩 해제는 `hold_release.order_id`.
 - 정산이 재시도를 다 써 DLT 로 간 체결이 나중에 처리되면 순서가 뒤바뀐다. 이때도 정산은 실패하지 않는다 —
   홀딩이 이미 풀렸으면 남은 만큼만 뺀다(`deductHold`).

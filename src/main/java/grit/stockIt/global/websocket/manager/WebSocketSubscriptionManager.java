@@ -16,8 +16,8 @@ public class WebSocketSubscriptionManager {
     // 종목코드 -> 실시간 화면 구독자 수
     private final Map<String, AtomicInteger> viewerCounts = new ConcurrentHashMap<>();
     
-    // 종목코드 -> 실시간 매칭을 위해 유지해야 하는 주문 참조 수
-    private final Map<String, AtomicInteger> orderReferenceCounts = new ConcurrentHashMap<>();
+    // 종목코드 -> 오더북에 열려 있는 주문 번호. 거래소 통보로 넣고 뺀다 — 같은 통보가 두 번 와도 결과가 같다.
+    private final Map<String, Set<Long>> openOrders = new ConcurrentHashMap<>();
     
     // 세션ID -> 구독 중인 종목 코드들
     private final Map<String, Set<String>> sessionSubscriptions = new ConcurrentHashMap<>();
@@ -58,38 +58,34 @@ public class WebSocketSubscriptionManager {
         return count != null ? count.get() : 0;
     }
     
-    // 주문 기준 구독 참조 수 증가
-    public int incrementOrderReference(String stockCode) {
-        int count = orderReferenceCounts
-                .computeIfAbsent(stockCode, k -> new AtomicInteger(0))
-                .incrementAndGet();
-        
-        log.debug("종목 {} 주문 참조 수 증가: {}", stockCode, count);
-        return count;
+    // 열린 주문을 더한다. 이미 있으면 false. compute 안에서 바꿔 빈 집합 정리와 겹쳐도 더한 것이 사라지지 않는다.
+    public boolean addOpenOrder(String stockCode, Long orderId) {
+        boolean[] added = new boolean[1];
+        openOrders.compute(stockCode, (key, orders) -> {
+            Set<Long> current = orders != null ? orders : ConcurrentHashMap.newKeySet();
+            added[0] = current.add(orderId);
+            return current;
+        });
+        log.debug("종목 {} 열린 주문 {} 추가={} 현재 {}건", stockCode, orderId, added[0], getOrderReferenceCount(stockCode));
+        return added[0];
     }
-    
-    // 주문 기준 구독 참조 수 감소
-    public int decrementOrderReference(String stockCode) {
-        AtomicInteger count = orderReferenceCounts.get(stockCode);
-        if (count == null) {
-            return 0;
-        }
-        
-        int newCount = Math.max(count.decrementAndGet(), 0);
-        if (newCount <= 0) {
-            orderReferenceCounts.remove(stockCode);
-        }
-        cleanupIfInactive(stockCode);
-        
-        log.debug("종목 {} 주문 참조 수 감소: {}", stockCode, newCount);
-        return newCount;
+
+    // 닫힌 주문을 뺀다. 없던 주문이면 false. 비면 종목을 지운다.
+    public boolean removeOpenOrder(String stockCode, Long orderId) {
+        boolean[] removed = new boolean[1];
+        openOrders.computeIfPresent(stockCode, (key, orders) -> {
+            removed[0] = orders.remove(orderId);
+            return orders.isEmpty() ? null : orders;
+        });
+        log.debug("종목 {} 열린 주문 {} 제거={} 현재 {}건", stockCode, orderId, removed[0], getOrderReferenceCount(stockCode));
+        return removed[0];
     }
-    
+
     public int getOrderReferenceCount(String stockCode) {
-        AtomicInteger count = orderReferenceCounts.get(stockCode);
-        return count != null ? count.get() : 0;
+        Set<Long> orders = openOrders.get(stockCode);
+        return orders != null ? orders.size() : 0;
     }
-    
+
     // 현재 화면 구독자나 주문 참조가 하나라도 존재하는지
     public boolean hasActiveReason(String stockCode) {
         return getSubscriberCount(stockCode) > 0 || getOrderReferenceCount(stockCode) > 0;
@@ -133,7 +129,7 @@ public class WebSocketSubscriptionManager {
     public Set<String> getAllSubscribedStocks() {
         Set<String> allStocks = ConcurrentHashMap.newKeySet();
         allStocks.addAll(viewerCounts.keySet());
-        allStocks.addAll(orderReferenceCounts.keySet());
+        allStocks.addAll(openOrders.keySet());
         return allStocks;
     }
     
@@ -155,7 +151,6 @@ public class WebSocketSubscriptionManager {
     private void cleanupIfInactive(String stockCode) {
         if (!hasActiveReason(stockCode)) {
             viewerCounts.remove(stockCode);
-            orderReferenceCounts.remove(stockCode);
         }
     }
 }

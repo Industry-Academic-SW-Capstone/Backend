@@ -46,6 +46,7 @@ class ServiceBoundaryTest {
         CLASS_OVERRIDES.put("domain.matching.event.LimitOrderFillEventListener", Service.MARKET);
         CLASS_OVERRIDES.put("domain.matching.event.LimitOrderFillEventMessage", Service.MARKET);
         CLASS_OVERRIDES.put("domain.matching.queue.KafkaFillCommandPublisher", Service.MARKET);
+        CLASS_OVERRIDES.put("domain.matching.queue.FillCommandMetrics", Service.MARKET);
         CLASS_OVERRIDES.put("domain.matching.service.FillCommandPublisher", Service.MARKET);
         CLASS_OVERRIDES.put("domain.matching.service.FillDispatchResult", Service.MARKET);
         CLASS_OVERRIDES.put("domain.matching.repository.RedisMarketDataRepository", Service.MARKET);

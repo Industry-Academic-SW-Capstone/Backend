@@ -10,7 +10,6 @@ import grit.stockIt.domain.matching.repository.ConsumerWatermarkWriter;
 import grit.stockIt.domain.matching.repository.ExchangeFillRepository;
 import grit.stockIt.domain.matching.repository.ExchangeOrderRepository;
 import grit.stockIt.domain.matching.repository.OrderBookRepository;
-import grit.stockIt.global.websocket.manager.OrderSubscriptionCoordinator;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -32,7 +31,6 @@ public class LimitOrderExecutionService {
     private final ExchangeOrderRepository exchangeOrderRepository;
     private final ExchangeFillRepository exchangeFillRepository;
     private final OrderBookRepository orderBookRepository;
-    private final OrderSubscriptionCoordinator orderSubscriptionCoordinator;
     private final ConsumerWatermarkWriter consumerWatermarkWriter;
     private final ExecutionReportOutbox executionReportOutbox;
 
@@ -100,7 +98,6 @@ public class LimitOrderExecutionService {
             FillCommand command = fillCommands.get(orderId);
             if (order == null || !order.isOpen()) {
                 log.warn("오더북에 없는 주문이라 건너뜁니다. orderId={}", orderId);
-                orderSubscriptionCoordinator.unregisterLimitOrder(stockCode);
                 continue;
             }
 
@@ -113,9 +110,6 @@ public class LimitOrderExecutionService {
 
             order.applyFill(desiredFillQuantity);
             ExchangeFill fill = exchangeFillRepository.save(ExchangeFill.of(order, event.price(), desiredFillQuantity));
-            if (!order.isOpen()) {
-                orderSubscriptionCoordinator.unregisterLimitOrder(stockCode);
-            }
             executions.add(new FilledExecution(fill.getFillId(), order.getOrderId(), order.getAccountId(),
                     stockCode, order.getOrderMethod(), event.price(), desiredFillQuantity,
                     order.getFilledQuantity(), order.getRemainingQuantity()));

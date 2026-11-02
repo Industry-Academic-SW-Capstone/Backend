@@ -54,7 +54,7 @@ job/        배치 작업 (KIS 마스터 파일 다운로드/파싱)
   아웃박스에 적습니다. 증권사 `ExtraEventConsumer`(그룹 `broker`)가 기본 계좌를 잠그고 지급하거나 회원 테이블의 티어 복사본을
   바꾸며, 같은 이벤트는 `processed_event` 로 한 번만 처리합니다. 랭킹은 이 복사본(`member.tier`)을 읽습니다.
 - **서비스 사이 동기 조회 (`contract.BrokerQueryClient`, `contract.ExtraQueryClient`)** — 지금 답이 필요한 드문 조회만 둡니다.
-  부가 → 증권사: 파산 신청 자산, 보유 일수 배치의 보유 회원(묶음으로), 전체 발송 대상 회원. 증권사 → 부가: 대표 칭호 장착 시
+  시세 → 거래소: 기동 시 열린 주문(`ExchangeQueryClient`). 부가 → 증권사: 파산 신청 자산, 보유 일수 배치의 보유 회원(묶음으로), 전체 발송 대상 회원. 증권사 → 부가: 대표 칭호 장착 시
   칭호 존재·보유 여부, 프로필의 보유 칭호. 구현(`LocalBrokerQueryClient`, `LocalExtraQueryClient`)은 지금 같은 프로세스 호출입니다.
 - **`MissionCompletedEvent`** — 부가 서비스 안의 메모리 이벤트. 미션 트랜잭션이 커밋된 뒤 같은 스레드에서 알림을 보냅니다.
 
@@ -62,7 +62,7 @@ job/        배치 작업 (KIS 마스터 파일 다운로드/파싱)
 
 | 계층 | 용도 | 설정 |
 |------|------|------|
-| Redis (분산) | 시세(현재가), 세션성 데이터 | `RedisConfig` |
+| Redis (분산) | 시세(현재가·상한가 — 시세가 주인, 다른 서비스는 계약 `MarketPriceCache`로 읽고 씀), 세션성 데이터 | `RedisConfig` |
 | Caffeine (로컬) | 랭킹 (`rankings` 캐시, TTL 60초) | `CacheConfig` |
 | `@Cacheable` | 메서드 단위 캐싱 | Spring Cache 추상화 |
 
@@ -73,7 +73,7 @@ job/        배치 작업 (KIS 마스터 파일 다운로드/파싱)
 - 서버 수신 prefix: `/app`
 - 설정: `global/config/WebSocketConfig.java`
 - KIS 실시간 시세는 `global/websocket/client/KisWebSocketClient`가 수신하며,
-  구독 관리는 `WebSocketSubscriptionManager` / `OrderSubscriptionCoordinator`가 담당합니다.
+  구독 관리는 `WebSocketSubscriptionManager` / `OrderSubscriptionCoordinator`가 담당합니다. 열린 주문은 시세가 `exchange.reports`(그룹 `market`)로 따라갑니다.
 
 > 서버 주도 스트리밍 모델, 구독 참조 카운팅, 브로드캐스트 흐름 등 상세는 [websocket.md](websocket.md).
 

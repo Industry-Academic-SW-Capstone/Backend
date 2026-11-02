@@ -1,7 +1,7 @@
 package grit.stockIt.domain.ranking.service;
 
+import grit.stockIt.contract.MarketPriceCache;
 import grit.stockIt.domain.account.repository.AccountStockRepository;
-import grit.stockIt.domain.matching.repository.RedisMarketDataRepository;
 import grit.stockIt.domain.stock.service.StockDetailService;
 import com.google.common.util.concurrent.RateLimiter;
 import lombok.extern.slf4j.Slf4j;
@@ -27,7 +27,7 @@ import java.util.Set;
 public class RankingPriceCollectionService {
 
     private final AccountStockRepository accountStockRepository;
-    private final RedisMarketDataRepository redisMarketDataRepository;
+    private final MarketPriceCache marketPriceCache;
     private final StockDetailService stockDetailService;
 
     /**
@@ -43,11 +43,11 @@ public class RankingPriceCollectionService {
 
     public RankingPriceCollectionService(
             AccountStockRepository accountStockRepository,
-            RedisMarketDataRepository redisMarketDataRepository,
+            MarketPriceCache marketPriceCache,
             StockDetailService stockDetailService,
             @Value("${kis.api.rate-limit-per-second:25.0}") double rateLimitPerSecond) {
         this.accountStockRepository = accountStockRepository;
-        this.redisMarketDataRepository = redisMarketDataRepository;
+        this.marketPriceCache = marketPriceCache;
         this.stockDetailService = stockDetailService;
         this.kisApiRateLimiter = RateLimiter.create(rateLimitPerSecond);
     }
@@ -76,7 +76,7 @@ public class RankingPriceCollectionService {
         List<String> cacheMissStocks = new ArrayList<>();
 
         for (String stockCode : stockCodes) {
-            Optional<BigDecimal> cachedPrice = redisMarketDataRepository.getLastPrice(stockCode);
+            Optional<BigDecimal> cachedPrice = marketPriceCache.getLastPrice(stockCode);
             if (cachedPrice.isPresent()) {
                 prices.put(stockCode, cachedPrice.get());
             } else {

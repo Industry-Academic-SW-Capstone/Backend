@@ -1,11 +1,11 @@
 package grit.stockIt.domain.ranking.service;
 
+import grit.stockIt.contract.MarketPriceCache;
 import grit.stockIt.domain.account.entity.Account;
 import grit.stockIt.domain.account.repository.AccountRepository;
 import grit.stockIt.domain.account.repository.AccountStockRepository;
 import grit.stockIt.domain.contest.entity.Contest;
 import grit.stockIt.domain.contest.repository.ContestRepository;
-import grit.stockIt.domain.matching.repository.RedisMarketDataRepository;
 import grit.stockIt.domain.member.entity.AuthProvider;
 import grit.stockIt.domain.member.entity.Member;
 import grit.stockIt.domain.member.repository.MemberRepository;
@@ -79,7 +79,7 @@ class RankingQueryCharacterizationTest extends IntegrationTestSupport {
     private AccountStockRepository accountStockRepository;
 
     @SpyBean
-    private RedisMarketDataRepository redisMarketDataRepository;
+    private MarketPriceCache marketPriceCache;
 
     @MockBean
     private StockDetailService stockDetailService;
@@ -87,7 +87,7 @@ class RankingQueryCharacterizationTest extends IntegrationTestSupport {
 
     @BeforeEach
     void setUp() {
-        reset(accountRepository, contestRepository, accountStockRepository, redisMarketDataRepository);
+        reset(accountRepository, contestRepository, accountStockRepository, marketPriceCache);
         when(stockDetailService.getCurrentPrice(anyString()))
                 .thenReturn(Mono.just(new BigDecimal("10000")));
         Cache rankings = cacheManager.getCache("rankings");

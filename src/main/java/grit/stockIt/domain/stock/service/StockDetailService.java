@@ -1,13 +1,13 @@
 package grit.stockIt.domain.stock.service;
 
-import grit.stockIt.domain.matching.repository.RedisMarketDataRepository;
+import grit.stockIt.contract.MarketPriceCache;
+import grit.stockIt.contract.PriceChangeSign;
 import grit.stockIt.domain.stock.analysis.dto.MarketData;
 import grit.stockIt.domain.stock.analysis.dto.StockAnalysisResponse;
 import grit.stockIt.domain.stock.analysis.service.StockAnalysisService;
 import grit.stockIt.domain.stock.dto.KisStockDetailDto;
 import grit.stockIt.domain.stock.dto.KisStockDetailResponse;
 import grit.stockIt.domain.stock.dto.StockDetailResponse;
-import grit.stockIt.domain.stock.dto.StockRankingResponse;
 import grit.stockIt.domain.stock.entity.Stock;
 import grit.stockIt.domain.stock.repository.StockRepository;
 import grit.stockIt.global.auth.KisTokenManager;
@@ -36,7 +36,7 @@ public class StockDetailService {
     private final KisApiProperties kisApiProperties;
     private final StockRepository stockRepository;
     private final ObjectMapper objectMapper;
-    private final RedisMarketDataRepository redisMarketDataRepository;
+    private final MarketPriceCache marketPriceCache;
     private final StockAnalysisService stockAnalysisService;
 
     // 주식 상세 정보 조회
@@ -93,7 +93,7 @@ public class StockDetailService {
     // KIS API에서 현재가만 조회 (캐시 우선)
     public Mono<BigDecimal> getCurrentPrice(String stockCode) {
         // 1. Redis 캐시에서 먼저 조회
-        return Mono.fromCallable(() -> redisMarketDataRepository.getLastPrice(stockCode))
+        return Mono.fromCallable(() -> marketPriceCache.getLastPrice(stockCode))
                 .flatMap(cachedPrice -> {
                     if (cachedPrice.isPresent()) {
                         log.info("캐시에서 현재가 조회: stockCode={}, price={}", stockCode, cachedPrice.get());
@@ -111,7 +111,7 @@ public class StockDetailService {
                                 try {
                                     BigDecimal price = new BigDecimal(priceStr.trim());
                                     // 3. Redis에 캐시 저장
-                                    redisMarketDataRepository.updateLastPrice(stockCode, price);
+                                    marketPriceCache.updateLastPrice(stockCode, price);
                                     log.info("KIS API에서 현재가 조회 및 캐시 저장: stockCode={}, price={}", stockCode, price);
                                     return price;
                                 } catch (NumberFormatException e) {
@@ -125,7 +125,7 @@ public class StockDetailService {
 
     // 시장가 주문의 홀딩 산정용. 상한가는 매매일 내내 고정이라 최근가보다 오래 캐시한다.
     public Mono<BigDecimal> getUpperLimitPrice(String stockCode) {
-        return Mono.fromCallable(() -> redisMarketDataRepository.getUpperLimitPrice(stockCode))
+        return Mono.fromCallable(() -> marketPriceCache.getUpperLimitPrice(stockCode))
                 .flatMap(cached -> cached
                         .map(Mono::just)
                         .orElseGet(() -> fetchUpperLimitPriceFromKis(stockCode)))
@@ -139,7 +139,7 @@ public class StockDetailService {
                     if (upperLimitPrice == null) {
                         throw new IllegalStateException("KIS API에서 상한가를 가져올 수 없습니다: " + stockCode);
                     }
-                    redisMarketDataRepository.updateUpperLimitPrice(stockCode, upperLimitPrice);
+                    marketPriceCache.updateUpperLimitPrice(stockCode, upperLimitPrice);
                     return upperLimitPrice;
                 });
     }
@@ -230,7 +230,7 @@ public class StockDetailService {
                 parseIntValue(kisDetail.currentPrice()),
                 parseIntValue(kisDetail.changeAmount()),
                 kisDetail.changeRate() != null ? kisDetail.changeRate() : "0",
-                StockRankingResponse.PriceChangeSign.fromCode(kisDetail.changeSign()),
+                PriceChangeSign.fromCode(kisDetail.changeSign()),
                 parseLongValue(kisDetail.volume()),
                 parseLongValue(kisDetail.amount()),
                 parseLongValue(kisDetail.marketCap()),

@@ -20,7 +20,6 @@ import grit.stockIt.domain.stock.service.StockDetailService;
 import grit.stockIt.global.exception.BadRequestException;
 import grit.stockIt.global.support.IntegrationTestSupport;
 import grit.stockIt.global.support.OutboxCommands;
-import grit.stockIt.global.websocket.manager.OrderSubscriptionCoordinator;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -39,16 +38,12 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.Mockito.doThrow;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.times;
-import static org.mockito.Mockito.verify;
 
 // 컨테이너·프로파일 설정은 IntegrationTestSupport 싱글턴을 상속.
 // 오더북(afterCommit) 불변식은 실 커밋에 의존하므로 테스트 메서드에 @Transactional을 붙이지 않는다
 // (스프링 @Transactional 롤백 테스트는 afterCommit 콜백을 발화시키지 않아 계획에서 금지됨).
 // 격리 경화: 이 클래스는 OrderCancelQueryCharacterizationTest와 동일한
-// @SpyBean(orderBookRepository/orderSubscriptionCoordinator) + @MockBean(StockDetailService) 구성이라
+// @SpyBean(orderBookRepository) + @MockBean(StockDetailService) 구성이라
 // 스프링이 캐시된 ApplicationContext(=동일 spy 싱글턴)를 재사용한다. @BeforeEach의 Mockito.reset()만으로는
 // 형제 클래스 간 invocation 누출을 완전히 배제할 수 없으므로, 클래스 종료 시 컨텍스트를 폐기해
 // 다음 클래스가 항상 새 spy 인스턴스를 받도록 구조적으로 격리한다(느리지만 결정적).
@@ -80,9 +75,6 @@ class OrderBookInvariantCharacterizationTest extends IntegrationTestSupport {
     @SpyBean
     private OrderBookRepository orderBookRepository;
 
-    @SpyBean
-    private OrderSubscriptionCoordinator orderSubscriptionCoordinator;
-
     @MockBean
     private StockDetailService stockDetailService;
 
@@ -92,8 +84,8 @@ class OrderBookInvariantCharacterizationTest extends IntegrationTestSupport {
     @BeforeEach
     void setUp() {
         // @SpyBean은 캐시된 컨텍스트에서 테스트 간 공유되므로, 각 테스트 시작 시 stub·호출기록을 초기화해
-        // 이전 테스트의 addOrder/register 호출이나 doThrow 스텁이 누출되지 않게 한다(격리).
-        org.mockito.Mockito.reset(orderBookRepository, orderSubscriptionCoordinator);
+        // 이전 테스트의 addOrder 호출이 누출되지 않게 한다(격리).
+        org.mockito.Mockito.reset(orderBookRepository);
         String uniqueId = UUID.randomUUID().toString().substring(0, 8);
         testMember = Member.builder()
                 .name("테스트 사용자 " + uniqueId)
@@ -195,35 +187,11 @@ class OrderBookInvariantCharacterizationTest extends IntegrationTestSupport {
         assertThat(OutboxCommands.take(jdbcTemplate, stock.getCode())).isEmpty();
     }
 
-    // ===== 27c: 구독 등록 실패 → 주문·오더북에는 영향 없음 =====
+    // ===== 28: 시장가 KIS 실패 롤백 =====
+    // 예전에는 저장 전에 구독을 먼저 등록해 롤백돼도 구독이 남았다(버그 a). 이제 구독은 시세가 거래소 통보로만 연다.
     @Test
-    @DisplayName("27c. 커밋 후 시세 구독 등록이 실패해도 주문과 주문 명령은 커밋된다")
-    void afterCommit_subscriptionRegistrationFails_orderStillInOrderBook() {
-        // given
-        Account account = createAccount(new BigDecimal("1000000"));
-        Stock stock = createStock();
-        var request = new LimitOrderCreateRequest(account.getAccountId(), stock.getCode(),
-                new BigDecimal("100"), 10, OrderMethod.BUY);
-
-        doThrow(new RuntimeException("simulated subscription failure"))
-                .when(orderSubscriptionCoordinator).registerLimitOrder(stock.getCode());
-
-        // when: 구독 등록 실패는 로그만 남기고 삼켜지므로 서비스 호출은 정상 반환된다
-        var response = orderService.createLimitOrder(request);
-
-        // then: 주문은 DB에 커밋되어 조회 가능
-        Order saved = orderRepository.findById(response.orderId()).orElseThrow();
-        assertThat(saved.getOrderId()).isEqualTo(response.orderId());
-
-        // 주문 명령은 주문 저장과 같은 트랜잭션이라, 구독이라는 부수 기능의 실패와 무관하다.
-        assertThat(orderCommandWritten(response.orderId(), stock.getCode())).isTrue();
-    }
-
-    // ===== 28: 시장가 KIS 실패 롤백 후 선구독 잔존 (버그 의심 a) =====
-    @Test
-    @DisplayName("28(버그 a). 시장가 매수 시 registerLimitOrder는 save/afterCommit 이전에 직접 호출되어, "
-            + "이후 현재가 조회 실패로 트랜잭션이 롤백돼도 구독 등록 호출은 잔존하고 unregister는 발생하지 않는다")
-    void marketOrder_kisFailureRollback_subscriptionRegistrationLeaksAndNeverUnregistered() {
+    @DisplayName("28. 시장가 매수 중 상한가 조회가 실패하면 주문과 홀딩 금액이 롤백된다")
+    void marketOrder_kisFailureRollback_orderAndHoldRolledBack() {
         // given: 상한가 조회 실패로 Mono.error
         Account account = createAccount(new BigDecimal("1000000"));
         Stock stock = createStock();
@@ -236,11 +204,6 @@ class OrderBookInvariantCharacterizationTest extends IntegrationTestSupport {
         org.junit.jupiter.api.Assertions.assertThrows(BadRequestException.class,
                 () -> orderService.createMarketOrder(request));
 
-        // then(버그 a 동결): registerLimitOrder는 저장/afterCommit 이전에 직접 호출되므로 롤백과 무관하게 잔존
-        verify(orderSubscriptionCoordinator, times(1)).registerLimitOrder(stock.getCode());
-        // unregister는 어디에서도 호출되지 않음(보상 로직 없음)
-        verify(orderSubscriptionCoordinator, never()).unregisterLimitOrder(stock.getCode());
-
         // then: 주문/홀딩 금액은 롤백되어 DB에 남지 않음
         List<Order> orders = orderRepository.findAllPendingOrdersByAccountId(
                 account.getAccountId(),
@@ -249,7 +212,6 @@ class OrderBookInvariantCharacterizationTest extends IntegrationTestSupport {
         assertThat(orders).isEmpty();
         Account reloaded = accountRepository.findById(account.getAccountId()).orElseThrow();
         assertThat(reloaded.getHoldAmount()).isEqualByComparingTo(BigDecimal.ZERO);
-
     }
 
     private boolean orderCommandWritten(Long orderId, String stockCode) {

@@ -1,5 +1,6 @@
 package grit.stockIt.domain.stock.service;
 
+import grit.stockIt.contract.PriceChangeSign;
 import grit.stockIt.domain.industry.entity.Industry;
 import grit.stockIt.domain.industry.repository.IndustryRepository;
 import grit.stockIt.domain.stock.dto.IndustryStockRankingResponse;
@@ -256,7 +257,7 @@ class StockRankingApiCharacterizationTest {
 
         assertThat(result).hasSize(1);
         assertThat(result.get(0).changeSign())
-                .isEqualTo(StockRankingResponse.PriceChangeSign.STEADY);
+                .isEqualTo(PriceChangeSign.STEADY);
     }
 
     @Test
@@ -275,8 +276,8 @@ class StockRankingApiCharacterizationTest {
 
         assertThat(result).extracting(StockRankingResponse::changeSign)
                 .containsExactly(
-                        StockRankingResponse.PriceChangeSign.UPPER_LIMIT,
-                        StockRankingResponse.PriceChangeSign.FALL);
+                        PriceChangeSign.UPPER_LIMIT,
+                        PriceChangeSign.FALL);
     }
 
     @Test

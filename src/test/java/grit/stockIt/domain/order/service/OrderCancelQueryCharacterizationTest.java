@@ -36,7 +36,6 @@ import grit.stockIt.global.support.IntegrationTestSupport;
 import grit.stockIt.global.support.ExchangeBook;
 import grit.stockIt.global.support.OutboxCommands;
 import grit.stockIt.global.support.OutboxReports;
-import grit.stockIt.global.websocket.manager.OrderSubscriptionCoordinator;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -60,9 +59,6 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.times;
-import static org.mockito.Mockito.verify;
 
 // OrderService Phase A 특성화: cancelOrder(접수) / 워커 취소(OrderCancelService) / getOrder / getPendingOrders / 인증 미보유 경로.
 // 현재 관찰 가능한 동작(버그 의심 b, f 포함)을 그대로 동결한다. 프로덕션 코드는 수정하지 않는다.
@@ -85,7 +81,6 @@ class OrderCancelQueryCharacterizationTest extends IntegrationTestSupport {
 
     @Autowired
     private OrderHoldReleaseService orderHoldReleaseService;
-
 
     @Autowired
     private OrderRepository orderRepository;
@@ -117,9 +112,6 @@ class OrderCancelQueryCharacterizationTest extends IntegrationTestSupport {
     @SpyBean
     private OrderBookRepository orderBookRepository;
 
-    @SpyBean
-    private OrderSubscriptionCoordinator orderSubscriptionCoordinator;
-
     private Member member;
     private Account account;
     private Stock stock;
@@ -129,7 +121,7 @@ class OrderCancelQueryCharacterizationTest extends IntegrationTestSupport {
     @BeforeEach
     void setUp() {
         // @SpyBean은 캐시된 컨텍스트에서 테스트 간 공유되므로, 각 테스트 시작 시 호출기록을 초기화한다(격리).
-        org.mockito.Mockito.reset(orderBookRepository, orderSubscriptionCoordinator);
+        org.mockito.Mockito.reset(orderBookRepository);
         String uniqueId = UUID.randomUUID().toString().substring(0, 8);
         topic = "matching.commands-" + uniqueId;
 
@@ -267,8 +259,6 @@ class OrderCancelQueryCharacterizationTest extends IntegrationTestSupport {
         assertThat(reloadedHold.getStatus()).isEqualTo(OrderHoldStatus.RELEASED);
         assertThat(reloadedHold.getHoldAmount()).isEqualByComparingTo(BigDecimal.ZERO);
 
-        // remaining>0 취소는 커밋 뒤에 구독을 해제한다.
-        verify(orderSubscriptionCoordinator, times(1)).unregisterLimitOrder(stock.getCode());
     }
 
     // 16. PENDING(remaining>0) SELL 취소 — releaseSellHold로 AccountStock.holdQuantity 감소
@@ -285,7 +275,6 @@ class OrderCancelQueryCharacterizationTest extends IntegrationTestSupport {
         AccountStock reloadedAccountStock = accountStockRepository.findByAccountAndStock(account, stock).orElseThrow();
         assertThat(reloadedAccountStock.getHoldQuantity()).isEqualTo(0);
 
-        verify(orderSubscriptionCoordinator, times(1)).unregisterLimitOrder(stock.getCode());
     }
 
     // 17. PARTIALLY_FILLED 취소 — remaining>0 경로 동일, 부분수량 반영 동결
@@ -333,8 +322,6 @@ class OrderCancelQueryCharacterizationTest extends IntegrationTestSupport {
         AccountStock reloadedAccountStock = accountStockRepository.findByAccountAndStock(account, stock).orElseThrow();
         assertThat(reloadedAccountStock.getHoldQuantity()).isEqualTo(5);
 
-        // remaining<=0 가드 동결: removeOrder/unregisterLimitOrder는 호출되지 않는다.
-        verify(orderSubscriptionCoordinator, never()).unregisterLimitOrder(stock.getCode());
     }
 
     // 19. 이미 취소된 주문
@@ -349,7 +336,6 @@ class OrderCancelQueryCharacterizationTest extends IntegrationTestSupport {
                 .isInstanceOf(BadRequestException.class)
                 .hasMessage("이미 취소된 주문입니다.");
 
-        verify(orderSubscriptionCoordinator, never()).unregisterLimitOrder(stock.getCode());
     }
 
     // 20. 이미 체결된 주문
@@ -364,7 +350,6 @@ class OrderCancelQueryCharacterizationTest extends IntegrationTestSupport {
                 .isInstanceOf(BadRequestException.class)
                 .hasMessage("이미 체결된 주문은 취소할 수 없습니다.");
 
-        verify(orderSubscriptionCoordinator, never()).unregisterLimitOrder(stock.getCode());
     }
 
     // 21. 주문 미존재

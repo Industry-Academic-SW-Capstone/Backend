@@ -2,8 +2,8 @@ package grit.stockIt.global.websocket.client;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import grit.stockIt.domain.order.entity.OrderMethod;
-import grit.stockIt.domain.stock.dto.StockOrderBookResponse;
-import grit.stockIt.domain.stock.dto.StockPriceUpdateResponse;
+import grit.stockIt.global.websocket.dto.StockOrderBookResponse;
+import grit.stockIt.global.websocket.dto.StockPriceUpdateResponse;
 import grit.stockIt.global.auth.KisTokenManager;
 import grit.stockIt.global.websocket.dto.KisWebSocketRequest;
 import grit.stockIt.global.websocket.dto.KisWebSocketResponse;

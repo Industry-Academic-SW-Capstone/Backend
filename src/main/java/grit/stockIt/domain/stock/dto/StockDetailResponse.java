@@ -1,5 +1,6 @@
 package grit.stockIt.domain.stock.dto;
 
+import grit.stockIt.contract.PriceChangeSign;
 /**
  * 주식 상세 정보 DTO (클라이언트 응답용)
  */
@@ -9,7 +10,7 @@ public record StockDetailResponse(
     Integer currentPrice,           // 현재가
     Integer changeAmount,           // 전일대비
     String changeRate,              // 전일대비율
-    StockRankingResponse.PriceChangeSign changeSign, // 등락부호
+    PriceChangeSign changeSign, // 등락부호
     Long volume,                    // 누적거래량
     Long amount,                    // 누적거래대금
     Long marketCap,                 // 시가총액 (원)

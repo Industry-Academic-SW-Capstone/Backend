@@ -1,12 +1,12 @@
 package grit.stockIt.domain.ranking.service;
 
+import grit.stockIt.contract.MarketPriceCache;
 import grit.stockIt.domain.account.entity.Account;
 import grit.stockIt.domain.account.entity.AccountStock;
 import grit.stockIt.domain.account.repository.AccountRepository;
 import grit.stockIt.domain.account.repository.AccountStockRepository;
 import grit.stockIt.domain.contest.entity.Contest;
 import grit.stockIt.domain.contest.repository.ContestRepository;
-import grit.stockIt.domain.matching.repository.RedisMarketDataRepository;
 import grit.stockIt.domain.member.entity.AuthProvider;
 import grit.stockIt.domain.member.entity.Member;
 import grit.stockIt.domain.member.repository.MemberRepository;
@@ -83,7 +83,7 @@ class RankingBugFreezeCharacterizationTest extends IntegrationTestSupport {
     private AccountStockRepository accountStockRepository;
 
     @SpyBean
-    private RedisMarketDataRepository redisMarketDataRepository;
+    private MarketPriceCache marketPriceCache;
 
     @Autowired
     private StockRepository stockRepository;
@@ -94,7 +94,7 @@ class RankingBugFreezeCharacterizationTest extends IntegrationTestSupport {
 
     @BeforeEach
     void setUp() {
-        reset(accountRepository, contestRepository, accountStockRepository, redisMarketDataRepository);
+        reset(accountRepository, contestRepository, accountStockRepository, marketPriceCache);
         when(stockDetailService.getCurrentPrice(anyString()))
                 .thenReturn(Mono.just(new BigDecimal("10000")));
         Cache rankings = cacheManager.getCache("rankings");
@@ -263,7 +263,7 @@ class RankingBugFreezeCharacterizationTest extends IntegrationTestSupport {
         Stock stock = createStock();
         createHolding(account, stock, 10, new BigDecimal("5000"));
         // Redis 미스 강제 (실제로도 이 종목코드는 저장된 적이 없어 자연 미스이지만 명시적으로 고정)
-        doReturn(Optional.empty()).when(redisMarketDataRepository).getLastPrice(stock.getCode());
+        doReturn(Optional.empty()).when(marketPriceCache).getLastPrice(stock.getCode());
 
         BigDecimal price = new BigDecimal("10000");
         when(stockDetailService.getCurrentPrice(stock.getCode())).thenReturn(Mono.just(price));
@@ -417,7 +417,7 @@ class RankingBugFreezeCharacterizationTest extends IntegrationTestSupport {
         Account account = createContestAccount(member, contest, new BigDecimal("5000000"));
         Stock stock = createStock();
         createHolding(account, stock, 10, new BigDecimal("5000"));
-        doReturn(Optional.empty()).when(redisMarketDataRepository).getLastPrice(stock.getCode());
+        doReturn(Optional.empty()).when(marketPriceCache).getLastPrice(stock.getCode());
 
         BigDecimal price = new BigDecimal("10000");
         when(stockDetailService.getCurrentPrice(stock.getCode())).thenReturn(Mono.just(price));

@@ -13,7 +13,6 @@ import grit.stockIt.domain.matching.repository.ExchangeOrderRepository;
 import grit.stockIt.domain.matching.repository.OrderBookRepository;
 import grit.stockIt.domain.order.entity.OrderMethod;
 import grit.stockIt.domain.order.entity.OrderType;
-import grit.stockIt.global.websocket.manager.OrderSubscriptionCoordinator;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -56,7 +55,6 @@ class LimitOrderExecutionServiceTest {
     @Mock private ExchangeOrderRepository exchangeOrderRepository;
     @Mock private ExchangeFillRepository exchangeFillRepository;
     @Mock private OrderBookRepository orderBookRepository;
-    @Mock private OrderSubscriptionCoordinator orderSubscriptionCoordinator;
     @Mock private ConsumerWatermarkWriter consumerWatermarkWriter;
     @Mock private ExecutionReportOutbox executionReportOutbox;
 
@@ -104,7 +102,6 @@ class LimitOrderExecutionServiceTest {
         });
         assertThat(buy.getFilledQuantity()).isEqualTo(10);
         assertThat(buy.getStatus()).isEqualTo(ExchangeOrderStatus.FILLED);
-        verify(orderSubscriptionCoordinator, times(1)).unregisterLimitOrder(STOCK);
     }
 
     @Test
@@ -133,7 +130,6 @@ class LimitOrderExecutionServiceTest {
         });
         assertThat(buy.getStatus()).isEqualTo(ExchangeOrderStatus.OPEN);
         assertThat(buy.getRemainingQuantity()).isEqualTo(5);
-        verify(orderSubscriptionCoordinator, never()).unregisterLimitOrder(STOCK);
     }
 
     @Test
@@ -182,7 +178,6 @@ class LimitOrderExecutionServiceTest {
 
         assertThat(fill(tick(OrderMethod.SELL, "100", 10))).isEmpty();
         verify(exchangeFillRepository, never()).save(any());
-        verify(orderSubscriptionCoordinator).unregisterLimitOrder(STOCK);
     }
 
     @Test

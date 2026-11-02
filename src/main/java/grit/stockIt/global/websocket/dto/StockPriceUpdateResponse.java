@@ -1,5 +1,6 @@
-package grit.stockIt.domain.stock.dto;
+package grit.stockIt.global.websocket.dto;
 
+import grit.stockIt.contract.PriceChangeSign;
 import java.time.LocalDateTime;
 
 /**
@@ -12,7 +13,7 @@ public record StockPriceUpdateResponse(
         Integer currentPrice,
         Integer changeAmount,
         String changeRate,
-        StockRankingResponse.PriceChangeSign changeSign,
+        PriceChangeSign changeSign,
         Long volume,
         LocalDateTime timestamp
 ) {
@@ -34,7 +35,7 @@ public record StockPriceUpdateResponse(
                 currentPrice,
                 changeAmount,
                 changeRate,
-                StockRankingResponse.PriceChangeSign.fromCode(changeSign),
+                PriceChangeSign.fromCode(changeSign),
                 volume,
                 LocalDateTime.now()
         );

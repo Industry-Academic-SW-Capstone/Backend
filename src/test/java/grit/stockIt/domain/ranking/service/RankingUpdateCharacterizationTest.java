@@ -1,11 +1,11 @@
 package grit.stockIt.domain.ranking.service;
 
+import grit.stockIt.contract.MarketPriceCache;
 import grit.stockIt.domain.account.entity.Account;
 import grit.stockIt.domain.account.repository.AccountRepository;
 import grit.stockIt.domain.account.repository.AccountStockRepository;
 import grit.stockIt.domain.contest.entity.Contest;
 import grit.stockIt.domain.contest.repository.ContestRepository;
-import grit.stockIt.domain.matching.repository.RedisMarketDataRepository;
 import grit.stockIt.domain.member.entity.AuthProvider;
 import grit.stockIt.domain.member.entity.Member;
 import grit.stockIt.domain.member.repository.MemberRepository;
@@ -104,7 +104,7 @@ class RankingUpdateCharacterizationTest extends IntegrationTestSupport {
     private AccountStockRepository accountStockRepository;
 
     @SpyBean
-    private RedisMarketDataRepository redisMarketDataRepository;
+    private MarketPriceCache marketPriceCache;
 
     @MockBean
     private StockDetailService stockDetailService;
@@ -114,7 +114,7 @@ class RankingUpdateCharacterizationTest extends IntegrationTestSupport {
     void setUp() {
         // @SpyBean/@MockBean은 캐시된 컨텍스트에서 테스트 간 공유되므로, 각 테스트 시작 시
         // 호출기록·스텁을 초기화한다(격리).
-        reset(accountRepository, contestRepository, accountStockRepository, redisMarketDataRepository);
+        reset(accountRepository, contestRepository, accountStockRepository, marketPriceCache);
         outboxBaseline = jdbcTemplate.queryForObject("SELECT COALESCE(MAX(id), 0) FROM outbox_message", Long.class);
         // 컨테이너 DB에 형제 테스트가 남긴 보유종목이 있어도(캐시미스) 실패하지 않도록 기본 스텁.
         when(stockDetailService.getCurrentPrice(anyString()))
@@ -234,13 +234,13 @@ class RankingUpdateCharacterizationTest extends IntegrationTestSupport {
         assertThat(rankings.get("main:balance")).isNotNull();
 
         // 워밍 과정에서 발생한 호출기록을 초기화 후, 배치 조기리턴 시 추가 호출이 없음을 단언
-        reset(accountStockRepository, redisMarketDataRepository);
+        reset(accountStockRepository, marketPriceCache);
         outboxBaseline = jdbcTemplate.queryForObject("SELECT COALESCE(MAX(id), 0) FROM outbox_message", Long.class);
 
         assertThatCode(() -> rankingService.updateAllRankings()).doesNotThrowAnyException();
 
         verify(accountStockRepository, never()).findDistinctStockCodes();
-        verify(redisMarketDataRepository, never()).getLastPrice(anyString());
+        verify(marketPriceCache, never()).getLastPrice(anyString());
         assertThat(rankerMemberIds()).isEmpty();
 
         // @CacheEvict(allEntries=true, beforeInvocation=true)는 본문 실행 전에 발화하므로

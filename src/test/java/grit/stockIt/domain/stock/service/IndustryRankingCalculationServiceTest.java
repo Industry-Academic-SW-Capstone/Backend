@@ -1,5 +1,6 @@
 package grit.stockIt.domain.stock.service;
 
+import grit.stockIt.contract.PriceChangeSign;
 import grit.stockIt.domain.industry.entity.Industry;
 import grit.stockIt.domain.stock.dto.IndustryStockRankingResponse;
 import grit.stockIt.domain.stock.dto.StockRankingResponse;
@@ -30,13 +31,13 @@ class IndustryRankingCalculationServiceTest {
     private static StockRankingResponse stock(String code, long amount) {
         return new StockRankingResponse(
                 code, code + "종목", 0L, amount, "UNKNOWN",
-                0, 0, "0.0", StockRankingResponse.PriceChangeSign.STEADY);
+                0, 0, "0.0", PriceChangeSign.STEADY);
     }
 
     private static StockRankingResponse stock(String code, long amount, long volume) {
         return new StockRankingResponse(
                 code, code + "종목", volume, amount, "UNKNOWN",
-                0, 0, "0.0", StockRankingResponse.PriceChangeSign.STEADY);
+                0, 0, "0.0", PriceChangeSign.STEADY);
     }
 
     /** industryCode만 의미 있는 Stock 스텁. 리플렉션 대신 빌더로 만든다. */
