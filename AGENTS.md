@@ -115,7 +115,7 @@ docker-compose --profile load-test run --rm k6 run /scripts/matching-engine-test
 
 ## 데이터베이스 마이그레이션
 
-Flyway SQL 스크립트는 `common/src/main/resources/db/migration/`에 있습니다(V2, V6–V9). Flyway 자동 실행은 비활성화돼 있으며, 초기화는 `FlywayConfig.java`가 담당합니다.
+Flyway SQL 스크립트는 `common/src/main/resources/db/migration/`에 있습니다(V2, V6–V20). V20 부터 서비스마다 schema(`market`·`exchange`·`broker`·`extra`)가 나뉩니다(`docs/development.md`). Flyway 자동 실행은 비활성화돼 있으며, 초기화는 `FlywayConfig.java`가 담당합니다.
 
 ## CI/CD
 

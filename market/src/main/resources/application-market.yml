@@ -2,6 +2,18 @@
 spring:
   application:
     name: stockit-market
+  jpa:
+    properties:
+      hibernate:
+        # 엔티티 표를 이 schema 에서 찾는다(ddl-auto validate/update 포함). 이름만 쓴 SQL 은 search_path 로 같은 곳에 간다.
+        default_schema: market
 server:
   port: ${SERVER_PORT:8091}
 # 시세는 다른 서비스의 조회에 답하지 않는다(내부 API 없음).
+stockit:
+  db:
+    search-path: market
+# 시세는 아웃박스에 쓰지 않는다. 표는 공통 엔티티 때문에 있지만 릴레이는 돌리지 않는다.
+outbox:
+  relay:
+    enabled: false

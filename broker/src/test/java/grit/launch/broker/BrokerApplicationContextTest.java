@@ -31,4 +31,10 @@ class BrokerApplicationContextTest extends ServiceContextTestSupport {
         assertThat(context.containsBean("missionEventConsumer")).isFalse();
         assertThat(context.containsBean("matchingCommandConsumer")).isFalse();
     }
+
+    @Test
+    @DisplayName("자기 schema(broker)의 표만 본다")
+    void usesOwnSchema() {
+        assertUsesOwnSchema("broker", "member");
+    }
 }

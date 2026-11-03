@@ -27,4 +27,10 @@ class ExchangeApplicationContextTest extends ServiceContextTestSupport {
         assertThat(context.containsBean("kafkaFillCommandPublisher")).isFalse();
         assertThat(context.containsBean("executionReportConsumer")).isFalse();
     }
+
+    @Test
+    @DisplayName("자기 schema(exchange)의 표만 본다")
+    void usesOwnSchema() {
+        assertUsesOwnSchema("exchange", "exchange_order");
+    }
 }

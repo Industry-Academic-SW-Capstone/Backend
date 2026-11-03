@@ -3,6 +3,11 @@ spring:
   jpa:
     hibernate:
       ddl-auto: update
+    properties:
+      hibernate:
+        # 서비스 프로필이 정한 schema(market·exchange·broker·extra)를 없으면 만든다 — 운영에서는 V20 이 만든다.
+        hbm2ddl:
+          create_namespaces: true
   flyway:
     enabled: false
   task:

@@ -29,4 +29,10 @@ class ExtraApplicationContextTest extends ServiceContextTestSupport {
         assertThat(context.containsBean("executionReportConsumer")).isFalse();
         assertThat(context.containsBean("matchingCommandConsumer")).isFalse();
     }
+
+    @Test
+    @DisplayName("자기 schema(extra)의 표만 본다")
+    void usesOwnSchema() {
+        assertUsesOwnSchema("extra", "mission_progress");
+    }
 }

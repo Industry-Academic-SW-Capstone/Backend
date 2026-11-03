@@ -86,9 +86,13 @@ SPRING_PROFILES_ACTIVE=local
 
 ## 데이터베이스 마이그레이션
 
-- Flyway SQL: `common/src/main/resources/db/migration/` (현재 `V2`, `V6`~`V9`).
+- Flyway SQL: `common/src/main/resources/db/migration/` (현재 `V2`, `V6`~`V20`).
 - Flyway **자동 실행은 비활성화**되어 있으며 초기화는 `global/config/FlywayConfig.java`가 담당합니다.
 - 새 마이그레이션 추가 시 다음 버전 번호로 `V{n}__{설명}.sql` 파일을 생성합니다.
+- **서비스별 schema**(`V20`): 같은 database 안에서 `market`·`exchange`·`broker`·`extra` schema 로 나뉜다. 테이블 이름만 쓴 SQL 은
+  커넥션의 search_path(`stockit.db.search-path`, 서비스 프로필이 자기 schema 로 정함)로, JPA 는 `hibernate.default_schema` 로 자기 schema 에 간다.
+  서비스별 계정은 `db/service-roles.sql`(관리자로 한 번 실행, 비밀번호는 psql 변수). 테스트와 로컬 app 실행은 public 그대로다.
+- 미션·보상·칭호 시드(`extra` 의 `data.sql`)는 부가의 관리자 API `POST /api/admin/missions/seed` 로 반영한다(upsert).
 
 ## 코드 컨벤션
 

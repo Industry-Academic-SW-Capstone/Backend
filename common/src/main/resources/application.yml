@@ -101,6 +101,9 @@ management:
 # 서비스 사이 동기 조회. 서비스별로 띄울 때 답하는 쪽은 내부 API 를 켜고(application-<서비스>.yml), 묻는 쪽은 이 주소로 부른다.
 # 한 프로세스(app)로 띄우면 내부 API 는 꺼져 있고 같은 프로세스의 구현을 바로 쓴다.
 stockit:
+  db:
+    # 커넥션의 search_path. 비우면 서버 기본값(public). 서비스별 프로필이 자기 schema 를 정한다(SearchPathConfig).
+    search-path: ${DB_SEARCH_PATH:}
   internal-api:
     enabled: false
   services:

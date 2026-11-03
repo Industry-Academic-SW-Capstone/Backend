@@ -46,7 +46,7 @@ push → CI (모든 브랜치)                CD (main 브랜치만)
 |------|--------|
 | Docker Hub | `DOCKER_USERNAME`, `DOCKER_PASSWORD` |
 | 서버 접속 | `SERVER_HOST`, `SERVER_USERNAME`, `SERVER_SSH_KEY` |
-| DB | `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_URL` |
+| DB | `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_URL` — 서비스별로 띄우면 서비스마다 자기 계정(`stockit_<서비스>`, `db/service-roles.sql`)과 `DB_SEARCH_PATH` 없이 프로필의 schema 를 쓴다. V20 뒤 app 하나로 띄우면 `DB_SEARCH_PATH=broker,exchange,extra` |
 | Redis | `SPRING_REDIS_HOST`, `SPRING_REDIS_PORT` |
 | KIS | `KIS_API_APPKEY`, `KIS_API_APPSECRET` |
 | Kakao | `KAKAO_REST_API_KEY`, `KAKAO_CLIENT_SECRET`, `KAKAO_REDIRECT_URI` |

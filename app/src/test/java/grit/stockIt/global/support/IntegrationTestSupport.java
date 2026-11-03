@@ -38,6 +38,8 @@ public abstract class IntegrationTestSupport {
             .withDatabaseName("test_database")
             .withUsername("test_user")
             .withPassword("test_password")
+            // 테스트 JVM 이 캐시한 스프링 컨텍스트마다 커넥션 풀을 잡고 있어 기본 100 으로는 모자란다(too many clients).
+            .withCommand("postgres", "-c", "max_connections=300")
             .withReuse(true);
 
     static final GenericContainer<?> REDIS = new GenericContainer<>(DockerImageName.parse("redis:7"))

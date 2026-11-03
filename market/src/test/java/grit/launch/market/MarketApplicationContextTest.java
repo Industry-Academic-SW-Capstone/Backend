@@ -29,4 +29,10 @@ class MarketApplicationContextTest extends ServiceContextTestSupport {
         assertThat(context.containsBean("executionReportConsumer")).isFalse();
         assertThat(context.containsBean("missionEventConsumer")).isFalse();
     }
+
+    @Test
+    @DisplayName("자기 schema(market)의 표만 본다")
+    void usesOwnSchema() {
+        assertUsesOwnSchema("market", "outbox_message");
+    }
 }
