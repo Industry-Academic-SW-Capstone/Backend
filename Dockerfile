@@ -21,12 +21,16 @@ COPY extra/build.gradle extra/
 COPY app/build.gradle app/
 RUN chmod +x ./gradlew && ./gradlew :app:dependencies
 
-# 소스 코드를 복사하고 실행 모듈(app)의 jar 를 만든다
+# 소스 코드를 복사하고 실행 jar 를 모두 만든다(app·market·exchange·broker·extra).
+# 이 단계에는 MODULE 을 쓰지 않는다 — 서비스 이미지 넷과 app 이미지가 이 단계를 캐시로 함께 쓴다.
 COPY . .
-RUN ./gradlew :app:bootJar
+RUN ./gradlew bootJar
 
 FROM ${RUNTIME_IMAGE}
 WORKDIR /app
+
+# 어느 실행 jar 를 담을지. app(넷을 한 프로세스로, 기본) 또는 market·exchange·broker·extra.
+ARG MODULE=app
 
 # 보안을 위해 non-root 유저 생성 및 사용
 RUN addgroup --system stockit && adduser --system --ingroup stockit stockit
@@ -38,7 +42,7 @@ RUN apk add --no-cache tzdata && \
   echo "Asia/Seoul" > /etc/timezone
 
 # 빌드 스테이지에서 JAR 파일만 복사 (구체적인 파일명 사용)
-COPY --from=build /app/app/build/libs/stockIt.jar app.jar
+COPY --from=build /app/${MODULE}/build/libs/stockit-${MODULE}.jar app.jar
 
 # 파일 소유권 변경
 RUN chown stockit:stockit app.jar

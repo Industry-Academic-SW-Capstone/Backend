@@ -49,7 +49,7 @@ jacocoTestReport {
 }
 
 bootJar {
-	archiveFileName = 'stockIt.jar'
+	archiveFileName = 'stockit-app.jar'
 }
 
 jar {

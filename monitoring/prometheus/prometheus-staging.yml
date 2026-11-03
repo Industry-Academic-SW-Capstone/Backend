@@ -23,9 +23,18 @@ scrape_configs:
   - job_name: 'spring-boot'
     scrape_interval: 5s
     metrics_path: '/actuator/prometheus'
+    # 8080 이 아니라 관리 포트다. 부하가 톰캣 워커를 다 써도 스크레이프가 굶지 않는다.
+    # 서비스마다 관리 포트가 따로다 — docker-compose.staging-app.yml 의 9091~9094. service 라벨로 서비스별로 나눠 본다.
+    # 대시보드의 job="spring-boot" 합계는 네 서비스를 더한 값이라 예전(단일 backend)과 같은 모양이다.
     static_configs:
-      # 8080 이 아니라 관리 포트다. 부하가 톰캣 워커를 다 써도 스크레이프가 굶지 않는다.
-      - targets: ['<APP_HOST>:8081']
+      - targets: ['<APP_HOST>:9091']
+        labels: {service: market}
+      - targets: ['<APP_HOST>:9092']
+        labels: {service: exchange}
+      - targets: ['<APP_HOST>:9093']
+        labels: {service: broker}
+      - targets: ['<APP_HOST>:9094']
+        labels: {service: extra}
 
   # 앱 서버 호스트 지표. "부하 생성기가 병목이 아니었다"를 증명하는 근거.
   - job_name: 'node-exporter'

@@ -1,0 +1,51 @@
+# 스테이징 게이트웨이 경로 (docker-compose.staging-app.yml 의 gateway)
+#
+# 길이가 긴 규칙이 먼저 맞는다(Traefik 기본 우선순위). 어디에도 맞지 않는 /api/** 는 증권사로 간다.
+# /internal/** 은 라우터가 없어 404 다 — 서비스 사이 동기 조회는 compose 네트워크 안에서만 오간다.
+http:
+  routers:
+    market:
+      entryPoints: [web]
+      rule: "PathPrefix(`/ws`) || Path(`/api/test/mock-execution`)"
+      service: market
+
+    extra:
+      entryPoints: [web]
+      rule: >-
+        PathPrefix(`/api/missions`) || PathPrefix(`/api/notifications`)
+        || PathPrefix(`/api/admin/missions`) || PathPrefix(`/api/admin/notifications`)
+        || PathPrefix(`/api/test/notifications`)
+        || Path(`/api/members/fcm-token`) || Path(`/api/members/notification-settings`)
+      service: extra
+
+    internal-blocked:
+      entryPoints: [web]
+      rule: "PathPrefix(`/internal`)"
+      service: noop@internal
+      middlewares: [deny]
+      priority: 1000
+
+    broker:
+      entryPoints: [web]
+      rule: "PathPrefix(`/`)"
+      service: broker
+      priority: 1
+
+  middlewares:
+    deny:
+      ipAllowList:
+        sourceRange: ["127.0.0.255/32"]
+
+  services:
+    market:
+      loadBalancer:
+        servers:
+          - url: "http://market:8080"
+    broker:
+      loadBalancer:
+        servers:
+          - url: "http://broker:8080"
+    extra:
+      loadBalancer:
+        servers:
+          - url: "http://extra:8080"
