@@ -54,6 +54,10 @@ docker-compose --profile load-test run --rm k6 run /scripts/matching-engine-test
 
 **Java 21 / Spring Boot 3.5.6 / Gradle**, PostgreSQL 17(운영은 아직 15), Redis 7, Kafka 3.9(KRaft), Flyway 마이그레이션 사용.
 
+### Gradle 모듈
+
+한 저장소 멀티 모듈입니다: `contract`(서비스 사이 계약) · `common`(공통 인프라) · `market`(시세) · `exchange`(거래소) · `broker`(증권사) · `extra`(부가) · `app`(넷을 한 프로세스로 띄우는 실행 모듈, 리소스와 **모든 테스트**). 서비스 모듈끼리는 의존할 수 없습니다(빌드 실패). 패키지 이름은 모듈과 무관하게 `grit.stockIt.…` 그대로입니다. 자세한 배치는 `docs/architecture.md`.
+
 ### 패키지 구조 (`grit.stockIt`)
 
 - **`domain/`** — 비즈니스 모듈. 각 모듈은 controller/service/repository/dto/entity 계층으로 구성:
@@ -107,7 +111,7 @@ docker-compose --profile load-test run --rm k6 run /scripts/matching-engine-test
 
 ## 데이터베이스 마이그레이션
 
-Flyway SQL 스크립트는 `src/main/resources/db/migration/`에 있습니다(V2, V6–V9). Flyway 자동 실행은 비활성화돼 있으며, 초기화는 `FlywayConfig.java`가 담당합니다.
+Flyway SQL 스크립트는 `app/src/main/resources/db/migration/`에 있습니다(V2, V6–V9). Flyway 자동 실행은 비활성화돼 있으며, 초기화는 `FlywayConfig.java`가 담당합니다.
 
 ## CI/CD
 
@@ -124,4 +128,4 @@ GitHub Actions(`.github/workflows/ci-cd.yml`): JDK 21 Temurin으로 빌드하고
 - **주석**: 코드로 표현할 수 없는 제약만 `//` 한 줄로. 클래스·메서드 위 설명 블록과 javadoc 형식(`@param`, `{@link}`, `<p>`) 금지 — 배경·트레이드오프는 PR 본문에
 - **검증**: 요청 바디에 JSR-303 `@Valid`
 - **API 문서**: SpringDoc OpenAPI 애노테이션(`@Operation`, `@Tag`) — Swagger UI는 `/swagger-ui/`
-- **Baseline**: 기존 위반은 억제돼 있습니다(`config/checkstyle/suppressions.xml`, `src/test/resources/archunit_store/`) — 여기에 신규 항목을 절대 추가하지 마세요
+- **Baseline**: 기존 위반은 억제돼 있습니다(`config/checkstyle/suppressions.xml`, `app/src/test/resources/archunit_store/`) — 여기에 신규 항목을 절대 추가하지 마세요

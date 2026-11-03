@@ -55,6 +55,9 @@ global/   # 횡단 관심사 (config, jwt, exception, websocket)
 job/      # 배치
 ```
 
+패키지는 Gradle 모듈과 별개입니다. 새 클래스는 그 일을 하는 서비스의 모듈(`market`·`exchange`·`broker`·`extra`)에,
+서비스 사이를 오가는 메시지·인터페이스는 `contract` 에, 서비스가 함께 쓰는 인프라는 `common` 에 둡니다. 테스트는 `app` 에 둡니다.
+
 - 컨트롤러는 리포지토리를 직접 참조하지 않습니다 (반드시 서비스를 경유).
 - `dto` 패키지의 최상위 클래스는 `Request`/`Response`/`Event`로 끝나야 합니다.
 
@@ -90,10 +93,10 @@ job/      # 배치
 |------|------|------|
 | Checkstyle | 네이밍·import 규칙 (길이 규칙 없음) | `./gradlew checkstyleMain checkstyleTest` (build에 포함) |
 | ArchUnit | 패키지 의존·DTO 네이밍 규칙 | `./gradlew test --tests "ArchitectureTest"` |
-| JaCoCo | 커버리지 측정 (게이트 없음) | `./gradlew test jacocoTestReport` → `build/reports/jacoco/test/html/index.html` |
+| JaCoCo | 커버리지 측정 (게이트 없음) | `./gradlew test jacocoTestReport` → `app/build/reports/jacoco/test/html/index.html` (테스트가 app 모듈에 모여 모든 모듈을 함께 잰다) |
 
 - Checkstyle baseline: `config/checkstyle/suppressions.xml` — 기존 위반 억제용.
   **새 항목을 추가하지 않는 것이 원칙**이며, 해당 코드를 정리하면 항목을 제거합니다.
-- ArchUnit freeze store: `src/test/resources/archunit_store/` — 기존 위반이
+- ArchUnit freeze store: `app/src/test/resources/archunit_store/` — 기존 위반이
   기록되어 있으며, 위반을 해소하면 store에서 자동 정리됩니다. **새 위반은
   테스트 실패**로 나타납니다.

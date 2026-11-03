@@ -1,0 +1,4 @@
+// 거래소: 오더북, 체결·취소·만료(종목 파티션 단일 작성자), 결과 통보.
+dependencies {
+	api project(':common')
+}

@@ -1,0 +1,7 @@
+// 증권사: 회원·인증, 계좌, 주문 접수, 정산, 대회, 랭킹, 종목 조회(KIS REST), AI 분석, 마스터 배치.
+dependencies {
+	api project(':common')
+	api 'com.github.ben-manes.caffeine:caffeine:3.1.8'
+	api 'com.google.guava:guava:33.0.0-jre'
+	api 'com.google.cloud:google-cloud-vertexai:1.0.0'
+}

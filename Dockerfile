@@ -8,16 +8,22 @@ ARG RUNTIME_IMAGE=eclipse-temurin:21-jre-alpine
 FROM eclipse-temurin:21-jdk AS build
 WORKDIR /app
 
-# Gradle 파일들을 먼저 복사하여 의존성 캐시
+# Gradle 파일들을 먼저 복사하여 의존성 캐시 (모듈마다 build.gradle 이 있다)
 COPY gradlew .
 COPY gradle gradle
-COPY build.gradle .
-COPY settings.gradle .
-RUN chmod +x ./gradlew && ./gradlew dependencies
+COPY build.gradle settings.gradle ./
+COPY contract/build.gradle contract/
+COPY common/build.gradle common/
+COPY market/build.gradle market/
+COPY exchange/build.gradle exchange/
+COPY broker/build.gradle broker/
+COPY extra/build.gradle extra/
+COPY app/build.gradle app/
+RUN chmod +x ./gradlew && ./gradlew :app:dependencies
 
-# 소스 코드를 복사하고 애플리케이션 빌드
+# 소스 코드를 복사하고 실행 모듈(app)의 jar 를 만든다
 COPY . .
-RUN ./gradlew build -x test
+RUN ./gradlew :app:bootJar
 
 FROM ${RUNTIME_IMAGE}
 WORKDIR /app
@@ -32,7 +38,7 @@ RUN apk add --no-cache tzdata && \
   echo "Asia/Seoul" > /etc/timezone
 
 # 빌드 스테이지에서 JAR 파일만 복사 (구체적인 파일명 사용)
-COPY --from=build /app/build/libs/stockIt-*.jar app.jar
+COPY --from=build /app/app/build/libs/stockIt.jar app.jar
 
 # 파일 소유권 변경
 RUN chown stockit:stockit app.jar

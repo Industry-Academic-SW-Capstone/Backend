@@ -1,1 +1,5 @@
 rootProject.name = 'stockIt'
+
+// 계약(contract)과 공통 인프라(common) 위에 네 서비스가 있다. 서비스끼리는 의존하지 않는다 — 빌드가 막는다.
+// app 은 넷을 한 프로세스로 띄우는 과도기 실행 모듈이다(로컬 개발, 서비스를 넘나드는 흐름 테스트).
+include 'contract', 'common', 'market', 'exchange', 'broker', 'extra', 'app'

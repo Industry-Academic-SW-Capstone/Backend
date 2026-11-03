@@ -1,0 +1,6 @@
+// 시세: KIS 웹소켓, 프론트 STOMP 브로드캐스트, 체결 틱 → FILL 명령, 현재가 캐시, 열린 주문에 따른 구독.
+dependencies {
+	api project(':common')
+	api 'org.springframework.boot:spring-boot-starter-websocket'
+	api 'org.springframework:spring-messaging'
+}

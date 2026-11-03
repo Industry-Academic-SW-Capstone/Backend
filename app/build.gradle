@@ -1,0 +1,57 @@
+apply plugin: 'org.springframework.boot'
+apply plugin: 'jacoco'
+
+// 네 서비스를 한 프로세스로 띄운다. 서비스를 넘나드는 흐름 테스트와 아키텍처 테스트도 여기 있다.
+dependencies {
+	implementation project(':market')
+	implementation project(':exchange')
+	implementation project(':broker')
+	implementation project(':extra')
+
+	runtimeOnly 'com.h2database:h2'
+	runtimeOnly 'org.postgresql:postgresql'
+
+	testImplementation 'org.springframework.boot:spring-boot-starter-test'
+	testImplementation 'org.springframework.security:spring-security-test'
+	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+	testRuntimeOnly 'com.h2database:h2'
+	testImplementation 'com.squareup.okhttp3:mockwebserver:4.12.0'
+
+	testImplementation platform('org.testcontainers:testcontainers-bom:1.19.8')
+	testImplementation 'org.testcontainers:testcontainers'
+	testImplementation 'org.testcontainers:junit-jupiter'
+	testImplementation 'org.testcontainers:postgresql'
+	testImplementation 'org.testcontainers:kafka'
+
+	testImplementation 'com.tngtech.archunit:archunit-junit5:1.3.0'
+}
+
+tasks.named('test') {
+	useJUnitPlatform()
+	finalizedBy jacocoTestReport
+}
+
+// 커버리지 측정 전용 — 커버리지 게이트(verification)는 두지 않는다. 테스트가 여기 모여 있어 모든 모듈의 코드를 함께 잰다.
+jacoco {
+	toolVersion = '0.8.12'
+}
+
+def measuredModules = [':contract', ':common', ':market', ':exchange', ':broker', ':extra']
+
+jacocoTestReport {
+	dependsOn test
+	sourceDirectories.from(measuredModules.collect { project(it).sourceSets.main.allSource.srcDirs })
+	classDirectories.from(measuredModules.collect { project(it).sourceSets.main.output })
+	reports {
+		xml.required = true
+		html.required = true
+	}
+}
+
+bootJar {
+	archiveFileName = 'stockIt.jar'
+}
+
+jar {
+	enabled = false
+}

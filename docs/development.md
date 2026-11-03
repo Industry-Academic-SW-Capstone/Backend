@@ -76,7 +76,7 @@ SPRING_PROFILES_ACTIVE=local
 
 ## 데이터베이스 마이그레이션
 
-- Flyway SQL: `src/main/resources/db/migration/` (현재 `V2`, `V6`~`V9`).
+- Flyway SQL: `app/src/main/resources/db/migration/` (현재 `V2`, `V6`~`V9`).
 - Flyway **자동 실행은 비활성화**되어 있으며 초기화는 `global/config/FlywayConfig.java`가 담당합니다.
 - 새 마이그레이션 추가 시 다음 버전 번호로 `V{n}__{설명}.sql` 파일을 생성합니다.
 
