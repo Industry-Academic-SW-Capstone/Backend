@@ -1,3 +1,5 @@
+apply plugin: 'java-test-fixtures'
+
 // 서비스가 함께 쓰는 인프라: 아웃박스·인박스, JWT 인증, 예외 처리, Kafka 실패 처리, DLT 재처리, KIS 토큰.
 dependencies {
 	api project(':contract')
@@ -20,4 +22,11 @@ dependencies {
 	api 'io.jsonwebtoken:jjwt-api:0.12.3'
 	runtimeOnly 'io.jsonwebtoken:jjwt-impl:0.12.3'
 	runtimeOnly 'io.jsonwebtoken:jjwt-jackson:0.12.3'
+
+	// 서비스 모듈이 "혼자 뜨는가"를 확인하는 테스트의 공통 기반(컨테이너·설정)
+	testFixturesApi 'org.springframework.boot:spring-boot-starter-test'
+	testFixturesApi platform('org.testcontainers:testcontainers-bom:1.19.8')
+	testFixturesApi 'org.testcontainers:testcontainers'
+	testFixturesApi 'org.testcontainers:postgresql'
+	testFixturesRuntimeOnly 'org.postgresql:postgresql'
 }

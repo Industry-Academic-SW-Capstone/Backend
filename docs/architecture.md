@@ -8,14 +8,21 @@ stockIt의 패키지 구조, 도메인 책임, 이벤트 흐름, 캐싱 전략�
 | 모듈 | 담는 것 | 의존 |
 |------|---------|------|
 | `contract` | 서비스 사이 메시지(`ExecutionReport`·`MatchingCommand`·`MemberEvent`·`ExtraEvent`), 동기 조회 인터페이스(`*QueryClient`, `MarketPriceCache`), 함께 쓰는 값(`OrderMethod`·`OrderType`·`PriceChangeSign`) | 없음 |
-| `common` | `global/` 공통 인프라 — 아웃박스·인박스, JWT·보안, 예외, Kafka 실패 처리, DLT 재처리, KIS 토큰, Redis·JPA·Flyway 설정 | `contract` |
-| `market` | 시세 — `global/websocket/`, KIS 체결 틱 → FILL 명령(`domain/matching` 의 일부), 현재가 캐시, 부하 진입점 | `common` |
+| `common` | `global/` 공통 인프라 — 아웃박스·인박스, JWT·보안, 예외, Kafka 실패 처리, DLT 재처리, KIS 토큰, Redis·JPA·Flyway 설정, 현재가 캐시 Redis 구현, 내부 HTTP 클라이언트 생성. 설정 리소스(application*.yml·kafka.yml)와 마이그레이션 | `contract` |
+| `market` | 시세 — `global/websocket/`, KIS 체결 틱 → FILL 명령(`domain/matching` 의 일부), 열린 주문에 따른 구독, 부하 진입점 | `common` |
 | `exchange` | 거래소 — `domain/matching/` (오더북·체결·취소·만료) | `common` |
 | `broker` | 증권사 — `domain/` 의 order·settlement·execution·account·member·auth·contest·ranking·stock·llm·industry, `job/` | `common` |
 | `extra` | 부가 — `domain/` 의 mission·notification·title | `common` |
-| `app` | 넷을 한 프로세스로 띄우는 실행 모듈(`StockItApplication`), 설정·마이그레이션 리소스, **모든 테스트** | 네 서비스 |
+| `app` | 넷을 한 프로세스로 띄우는 실행 모듈(`StockItApplication`), 서비스를 넘나드는 흐름 테스트 | 네 서비스 |
 
-서비스 모듈끼리는 의존하지 않는다 — Gradle 이 막는다. 패키지 이름은 모듈과 상관없이 `grit.stockIt.…` 그대로라
+서비스 모듈끼리는 의존하지 않는다 — Gradle 이 막는다.
+
+**서비스별 실행**: 네 서비스는 각자 실행 클래스 `grit.launch.<서비스>.<서비스>Application`(실행 jar `stockit-<서비스>.jar`)이 있다.
+`grit.stockIt` 밖에 두는 이유는 app 의 `StockItApplication` 이 `grit.stockIt` 전체를 훑기 때문이다. 실행 클래스는 프로필 `<서비스>` 를 더해
+`application-<서비스>.yml`(이름·포트·내부 API)을 읽는다. 서비스 사이 동기 조회는 같은 프로세스에 구현이 있으면 그것을, 없으면
+자동 설정이 만드는 HTTP 클라이언트(`Http*QueryClient`)를 쓴다. 경로와 본문은 `contract` 의 `*QueryApi` 에 있고,
+답하는 쪽의 `/internal/**` 컨트롤러는 `stockit.internal-api.enabled=true` 일 때만 켜진다(게이트웨이에 열지 않는다).
+ 패키지 이름은 모듈과 상관없이 `grit.stockIt.…` 그대로라
 같은 패키지가 여러 모듈에 나뉘어 있을 수 있다(예: `domain.matching` 은 거래소와 시세). 새 코드는 그 일을 하는 서비스의 모듈에 둔다.
 
 ## 패키지 구조 (`grit.stockIt`)

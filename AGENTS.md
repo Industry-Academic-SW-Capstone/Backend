@@ -36,6 +36,10 @@ stockIt은 Spring Boot로 구축된 한국 주식 거래 시뮬레이션 플랫�
 ./gradlew build -x test      # 테스트 제외 빌드
 ./gradlew clean build        # 클린 빌드
 
+# 실행
+./gradlew :app:bootRun       # 네 서비스를 한 프로세스로
+./gradlew :broker:bootRun    # 서비스 하나만 (market·exchange·broker·extra, docs/development.md)
+
 # 테스트
 ./gradlew test                                    # 전체 테스트 실행
 ./gradlew test --tests "ClassName"                 # 특정 테스트 클래스 실행
@@ -56,7 +60,7 @@ docker-compose --profile load-test run --rm k6 run /scripts/matching-engine-test
 
 ### Gradle 모듈
 
-한 저장소 멀티 모듈입니다: `contract`(서비스 사이 계약) · `common`(공통 인프라) · `market`(시세) · `exchange`(거래소) · `broker`(증권사) · `extra`(부가) · `app`(넷을 한 프로세스로 띄우는 실행 모듈, 리소스와 **모든 테스트**). 서비스 모듈끼리는 의존할 수 없습니다(빌드 실패). 패키지 이름은 모듈과 무관하게 `grit.stockIt.…` 그대로입니다. 자세한 배치는 `docs/architecture.md`.
+한 저장소 멀티 모듈입니다: `contract`(서비스 사이 계약) · `common`(공통 인프라·설정 리소스·마이그레이션) · `market`(시세) · `exchange`(거래소) · `broker`(증권사) · `extra`(부가) · `app`(넷을 한 프로세스로 띄우는 실행 모듈, 서비스를 넘나드는 테스트). 네 서비스는 각자 실행 클래스(`grit.launch.<서비스>`)와 실행 jar 가 있고, 각 모듈 테스트는 그 서비스가 혼자 뜨는지 확인합니다. 서비스 모듈끼리는 의존할 수 없습니다(빌드 실패). 패키지 이름은 모듈과 무관하게 `grit.stockIt.…` 그대로입니다. 자세한 배치는 `docs/architecture.md`.
 
 ### 패키지 구조 (`grit.stockIt`)
 
@@ -111,7 +115,7 @@ docker-compose --profile load-test run --rm k6 run /scripts/matching-engine-test
 
 ## 데이터베이스 마이그레이션
 
-Flyway SQL 스크립트는 `app/src/main/resources/db/migration/`에 있습니다(V2, V6–V9). Flyway 자동 실행은 비활성화돼 있으며, 초기화는 `FlywayConfig.java`가 담당합니다.
+Flyway SQL 스크립트는 `common/src/main/resources/db/migration/`에 있습니다(V2, V6–V9). Flyway 자동 실행은 비활성화돼 있으며, 초기화는 `FlywayConfig.java`가 담당합니다.
 
 ## CI/CD
 

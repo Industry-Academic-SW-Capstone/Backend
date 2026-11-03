@@ -14,8 +14,18 @@
 ./gradlew build              # 전체 빌드 (테스트 포함)
 ./gradlew build -x test      # 테스트 제외 빌드
 ./gradlew clean build        # 클린 빌드
-./gradlew bootRun            # 실행
+./gradlew :app:bootRun       # 네 서비스를 한 프로세스로 실행 (포트 8080)
+
+# 서비스별로 따로 실행 — 각자 프로필 <서비스> 가 더해진다(application-<서비스>.yml)
+./gradlew :market:bootRun    # 시세   8091
+./gradlew :exchange:bootRun  # 거래소 8092 (내부 API 켬)
+./gradlew :broker:bootRun    # 증권사 8093 (내부 API 켬)
+./gradlew :extra:bootRun     # 부가   8094 (내부 API 켬)
 ```
+
+서비스별로 띄우면 서비스 사이 동기 조회(`*QueryClient`)가 HTTP 로 간다. 묻는 쪽은 `stockit.services.*-url`
+(환경변수 `MARKET_URL`·`EXCHANGE_URL`·`BROKER_URL`·`EXTRA_URL`, 기본 localhost 위 포트)로 부르고, 답하는 쪽은
+`stockit.internal-api.enabled=true` 일 때만 `/internal/**` 를 연다. 한 프로세스(app)에서는 내부 API 가 꺼져 있고 같은 프로세스 구현을 바로 쓴다.
 
 Docker Compose:
 
@@ -76,7 +86,7 @@ SPRING_PROFILES_ACTIVE=local
 
 ## 데이터베이스 마이그레이션
 
-- Flyway SQL: `app/src/main/resources/db/migration/` (현재 `V2`, `V6`~`V9`).
+- Flyway SQL: `common/src/main/resources/db/migration/` (현재 `V2`, `V6`~`V9`).
 - Flyway **자동 실행은 비활성화**되어 있으며 초기화는 `global/config/FlywayConfig.java`가 담당합니다.
 - 새 마이그레이션 추가 시 다음 버전 번호로 `V{n}__{설명}.sql` 파일을 생성합니다.
 

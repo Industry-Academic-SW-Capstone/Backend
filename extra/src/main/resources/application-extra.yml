@@ -1,0 +1,9 @@
+# 부가 서비스로 따로 띄울 때 더해지는 설정(ExtraApplication 이 프로필 extra 을 켠다).
+spring:
+  application:
+    name: stockit-extra
+server:
+  port: ${SERVER_PORT:8094}
+stockit:
+  internal-api:
+    enabled: true

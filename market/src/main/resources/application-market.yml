@@ -1,0 +1,7 @@
+# 시세 서비스로 따로 띄울 때 더해지는 설정(MarketApplication 이 프로필 market 을 켠다).
+spring:
+  application:
+    name: stockit-market
+server:
+  port: ${SERVER_PORT:8091}
+# 시세는 다른 서비스의 조회에 답하지 않는다(내부 API 없음).

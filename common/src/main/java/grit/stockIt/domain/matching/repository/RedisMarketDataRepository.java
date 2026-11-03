@@ -13,6 +13,8 @@ import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.util.Optional;
 
+// 시세가 주인인 현재가 캐시의 Redis 구현. 시세(틱으로 갱신)와 증권사(랭킹·종목 상세가 읽고 KIS REST 값으로 채움)가
+// 같은 Redis 를 직접 읽고 쓰므로 두 서비스가 함께 쓰는 공통 모듈에 둔다. 키 형식은 여기만 안다.
 @Slf4j
 @Repository
 @RequiredArgsConstructor

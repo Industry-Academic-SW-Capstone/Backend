@@ -1,0 +1,9 @@
+# 증권사 서비스로 따로 띄울 때 더해지는 설정(BrokerApplication 이 프로필 broker 을 켠다).
+spring:
+  application:
+    name: stockit-broker
+server:
+  port: ${SERVER_PORT:8093}
+stockit:
+  internal-api:
+    enabled: true

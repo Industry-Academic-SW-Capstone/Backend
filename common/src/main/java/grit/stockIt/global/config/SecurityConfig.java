@@ -62,7 +62,10 @@ public class SecurityConfig {
             "/swagger-ui/**",
             "/swagger-ui.html",
             "/",
-            "/error"
+            "/error",
+            // 서비스 사이 동기 조회. 내부망 전용이라 게이트웨이에 열지 않고, 서비스별로 띄울 때만 컨트롤러가 켜진다
+            // (stockit.internal-api.enabled). 사용자 토큰이 없는 서비스 간 호출이다.
+            "/internal/**"
     };
 
     /**

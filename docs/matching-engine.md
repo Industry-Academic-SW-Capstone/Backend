@@ -225,5 +225,5 @@ lag 과 DLT 적재 수는 kafka-exporter 로 본다. 대시보드는 `monitoring
 - `global/outbox/` — 아웃박스 기록·릴레이
 - `global/config/KafkaConfig.java` — 실패 처리·DLT
 - `global/dlt/DeadLetterService.java` — DLT 조회·재전송·건너뜀
-- `app/src/main/resources/kafka.yml` — 프로듀서·컨슈머 설정
+- `common/src/main/resources/kafka.yml` — 프로듀서·컨슈머 설정
 - `docker-compose.yml`(로컬) / `docker-compose.staging-kafka.yml`(스테이징) — 브로커와 토픽

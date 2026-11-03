@@ -1,5 +1,21 @@
+apply plugin: 'org.springframework.boot'
+
 // 부가: 미션, 알림(FCM), 칭호.
 dependencies {
 	api project(':common')
 	api 'com.google.firebase:firebase-admin:9.3.0'
+
+	runtimeOnly 'org.postgresql:postgresql'
+
+	testImplementation testFixtures(project(':common'))
+	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+tasks.named('test') {
+	useJUnitPlatform()
+}
+
+// 부가 서비스만 담은 실행 jar. app 은 이 모듈의 일반 jar(-plain)를 라이브러리로 쓴다.
+bootJar {
+	archiveFileName = 'stockit-extra.jar'
 }

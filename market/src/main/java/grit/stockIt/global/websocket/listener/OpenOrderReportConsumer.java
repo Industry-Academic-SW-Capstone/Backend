@@ -14,6 +14,7 @@ import org.springframework.kafka.config.KafkaListenerEndpointRegistry;
 import org.springframework.kafka.listener.MessageListenerContainer;
 import org.springframework.stereotype.Component;
 
+import java.time.Duration;
 import java.util.List;
 
 // 시세 워커. 거래소 결과 통보로 오더북에 열린 주문을 따라가 그 종목의 실시간 구독을 유지한다.
@@ -24,6 +25,8 @@ import java.util.List;
 public class OpenOrderReportConsumer {
 
     static final String CONSUMER = "market";
+    private static final int RESTORE_ATTEMPTS = 10;
+    private static final Duration RESTORE_RETRY_DELAY = Duration.ofSeconds(3);
 
     private final OrderSubscriptionCoordinator orderSubscriptionCoordinator;
     private final ExchangeQueryClient exchangeQueryClient;
@@ -78,10 +81,30 @@ public class OpenOrderReportConsumer {
         }
     }
 
+    // 거래소가 아직 뜨지 않았을 수 있어(서비스별 실행) 몇 번 다시 묻는다. 끝내 실패하면 통보는 받기 시작한다 —
+    // 그 전에 열린 주문은 구독되지 않으니 오류로 남긴다(누가 그 종목 화면을 열거나 시세를 다시 띄우면 회복).
     void restore() {
-        List<ExchangeQueryClient.OpenOrder> openOrders = exchangeQueryClient.openOrders();
-        openOrders.forEach(order -> orderSubscriptionCoordinator.orderOpened(order.stockCode(), order.orderId()));
-        log.info("열린 주문 {}건으로 실시간 구독을 되살렸습니다.", openOrders.size());
+        for (int attempt = 1; attempt <= RESTORE_ATTEMPTS; attempt++) {
+            try {
+                List<ExchangeQueryClient.OpenOrder> openOrders = exchangeQueryClient.openOrders();
+                openOrders.forEach(order -> orderSubscriptionCoordinator.orderOpened(order.stockCode(), order.orderId()));
+                log.info("열린 주문 {}건으로 실시간 구독을 되살렸습니다.", openOrders.size());
+                return;
+            } catch (RuntimeException e) {
+                log.warn("열린 주문 조회 실패 ({}/{}). {}초 뒤 다시 묻습니다.", attempt, RESTORE_ATTEMPTS,
+                        RESTORE_RETRY_DELAY.toSeconds(), e);
+                sleep(RESTORE_RETRY_DELAY);
+            }
+        }
+        log.error("열린 주문을 되살리지 못한 채 통보를 받기 시작합니다. 기동 전에 열린 주문의 종목은 구독되지 않았을 수 있습니다.");
+    }
+
+    private void sleep(Duration duration) {
+        try {
+            Thread.sleep(duration.toMillis());
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
     }
 
     private static boolean closesOrder(ExecutionReport report) {

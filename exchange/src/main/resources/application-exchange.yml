@@ -1,0 +1,9 @@
+# 거래소 서비스로 따로 띄울 때 더해지는 설정(ExchangeApplication 이 프로필 exchange 을 켠다).
+spring:
+  application:
+    name: stockit-exchange
+server:
+  port: ${SERVER_PORT:8092}
+stockit:
+  internal-api:
+    enabled: true
