@@ -46,7 +46,7 @@ push → CI (모든 브랜치)                CD (main 브랜치만)
 |------|--------|
 | Docker Hub | `DOCKER_USERNAME`, `DOCKER_PASSWORD` |
 | 서버 접속 | `SERVER_HOST`, `SERVER_USERNAME`, `SERVER_SSH_KEY` |
-| DB | `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_URL` — 서비스별로 띄우면 서비스마다 자기 계정(`stockit_<서비스>`, `db/service-roles.sql`)과 `DB_SEARCH_PATH` 없이 프로필의 schema 를 쓴다. V20 뒤 app 하나로 띄우면 `DB_SEARCH_PATH=broker,exchange,extra` |
+| DB | `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_URL` — 서비스별로 띄우면 거래소·증권사·부가가 각자 자기 RDS 인스턴스와 계정(`stockit_<서비스>`, `db/service-role.sql`)을 받는다(`<서비스>_DB_URL`·`<서비스>_DB_PASSWORD`). 시세는 DB 가 없다 |
 | Redis | `SPRING_REDIS_HOST`, `SPRING_REDIS_PORT` |
 | KIS | `KIS_API_APPKEY`, `KIS_API_APPSECRET` |
 | Kakao | `KAKAO_REST_API_KEY`, `KAKAO_CLIENT_SECRET`, `KAKAO_REDIRECT_URI` |
@@ -72,7 +72,7 @@ push → CI (모든 브랜치)                CD (main 브랜치만)
 
 - 개발: `docker-compose.yml` — Traefik, PostgreSQL(`db`), Redis, Backend, k6, 모니터링(prometheus/grafana/exporters)
 - 스테이징: `docker-compose.staging.yml`
-- 스테이징 부하 측정(호스트 분리): `docker-compose.staging-app.yml`(측정 대상 — 시세·거래소·증권사·부가 네 컨테이너와 경로로 나눠 주는 게이트웨이, `traefik/staging-routes.yml`) · `docker-compose.staging-ops.yml`(k6·Prometheus·Grafana) · `docker-compose.staging-kafka.yml`(체결 큐 브로커 1대). 각 파일 머리 주석에 필요한 `.env` 와 보안 그룹이 있다
+- 스테이징 부하 측정(호스트 분리): `docker-compose.staging-app.yml`(측정 대상 — 시세·거래소·증권사·부가 네 컨테이너와 경로로 나눠 주는 게이트웨이, `traefik/staging-routes.yml`. DB 는 거래소·증권사·부가 RDS 인스턴스 셋) · `docker-compose.staging-ops.yml`(k6·Prometheus·Grafana) · `docker-compose.staging-kafka.yml`(체결 큐 브로커 1대). 각 파일 머리 주석에 필요한 `.env` 와 보안 그룹이 있다
 - 운영: `docker-compose.prod.yml`
 
 ## 모니터링

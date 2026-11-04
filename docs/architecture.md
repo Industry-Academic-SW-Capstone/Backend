@@ -17,9 +17,10 @@ stockIt의 패키지 구조, 도메인 책임, 이벤트 흐름, 캐싱 전략�
 
 서비스 모듈끼리는 의존하지 않는다 — Gradle 이 막는다.
 
-**서비스별 DB**: 같은 database 안에서 서비스마다 schema(`market`·`exchange`·`broker`·`extra`)와 전용 계정을 둔다(`V20`,
-`db/service-roles.sql`). 계정은 자기 schema 만 쓸 수 있고, 서비스를 넘는 외래키는 없다. 아웃박스(`outbox_message`)와 처리 기록(`processed_event`)도
-서비스마다 하나씩이라 릴레이는 자기 아웃박스만 보낸다(시세는 릴레이를 끈다). 테스트와 로컬 app 실행은 public 하나를 쓴다.
+**서비스별 DB**: 거래소·증권사·부가는 각자 자기 DB 인스턴스를 쓴다(서비스 계정 `stockit_<서비스>`, 그 이름의 schema,
+`db/service-role.sql`). 시세는 자기 데이터가 없어 DB 를 붙이지 않는다(`stockit.db.enabled=false`, DB 자동 설정 제외). 서비스를 넘는
+외래키·조인은 없고, 아웃박스(`outbox_message`)와 처리 기록(`processed_event`)도 서비스마다 하나다. 옛 단일 DB 는 `V20` 으로 schema 를 나눈 뒤
+schema 하나씩 그 서비스의 인스턴스로 옮긴다. 테스트와 로컬 app 실행은 DB 하나(public)를 쓴다.
 
 **서비스별 실행**: 네 서비스는 각자 실행 클래스 `grit.launch.<서비스>.<서비스>Application`(실행 jar `stockit-<서비스>.jar`)이 있다.
 `grit.stockIt` 밖에 두는 이유는 app 의 `StockItApplication` 이 `grit.stockIt` 전체를 훑기 때문이다. 실행 클래스는 프로필 `<서비스>` 를 더해

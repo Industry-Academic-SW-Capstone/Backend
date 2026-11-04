@@ -1,5 +1,6 @@
 package grit.stockIt.global.outbox;
 
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.persistence.EntityManager;
@@ -14,6 +15,7 @@ import java.util.List;
 // 보낼 메시지를 업무 변경과 같은 트랜잭션에 적는다. 함께 커밋되거나 함께 롤백되므로 "커밋됐는데 안 보냄"도
 // "보냈는데 롤백됨"도 없다. 실제 전송은 OutboxRelay 가 한다. 호출하는 쪽에 트랜잭션이 열려 있어야 한다.
 @Repository
+@ConditionalOnProperty(name = "stockit.db.enabled", havingValue = "true", matchIfMissing = true)
 @RequiredArgsConstructor
 public class OutboxWriter {
 

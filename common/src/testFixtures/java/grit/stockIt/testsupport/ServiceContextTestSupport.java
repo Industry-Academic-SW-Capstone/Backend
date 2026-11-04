@@ -1,5 +1,6 @@
 package grit.stockIt.testsupport;
 
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
@@ -43,13 +44,14 @@ public abstract class ServiceContextTestSupport {
         registry.add("spring.data.redis.port", REDIS::getFirstMappedPort);
     }
 
+    // DB 없이 뜨는 서비스(시세)도 이 기반을 쓰므로 있을 때만 꺼낸다.
     @Autowired
-    private JdbcTemplate jdbcTemplate;
+    private ObjectProvider<JdbcTemplate> jdbcTemplate;
 
     // 커넥션이 그 서비스의 schema 를 보고(search_path), 엔티티 표가 그 schema 에 만들어졌는지 확인한다.
     protected void assertUsesOwnSchema(String schema, String ownTable) {
-        assertThat(jdbcTemplate.queryForObject("SELECT current_schema()", String.class)).isEqualTo(schema);
-        assertThat(jdbcTemplate.queryForObject("SELECT to_regclass(?) IS NOT NULL", Boolean.class,
+        assertThat(jdbcTemplate.getObject().queryForObject("SELECT current_schema()", String.class)).isEqualTo(schema);
+        assertThat(jdbcTemplate.getObject().queryForObject("SELECT to_regclass(?) IS NOT NULL", Boolean.class,
                 schema + "." + ownTable)).isTrue();
     }
 }

@@ -1,22 +1,19 @@
 # 시세 서비스로 따로 띄울 때 더해지는 설정(MarketApplication 이 프로필 market 을 켠다).
+# 시세는 자기 데이터가 없다(현재가는 Redis, 열린 주문은 메모리). DB 인스턴스를 두지 않고 DB 자동 설정을 모두 끈다.
 spring:
   application:
     name: stockit-market
-  jpa:
-    properties:
-      hibernate:
-        # 엔티티 표를 이 schema 에서 찾는다(ddl-auto validate/update 포함). 이름만 쓴 SQL 은 search_path 로 같은 곳에 간다.
-        default_schema: market
-        # ddl-auto update 환경(로컬·스테이징)에서 schema 가 없으면 만든다. 운영(validate)은 V20 이 만든다.
-        hbm2ddl:
-          create_namespaces: true
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration
+      - org.springframework.boot.autoconfigure.jdbc.DataSourceTransactionManagerAutoConfiguration
+      - org.springframework.boot.autoconfigure.jdbc.JdbcTemplateAutoConfiguration
+      - org.springframework.boot.autoconfigure.orm.jpa.HibernateJpaAutoConfiguration
+      - org.springframework.boot.autoconfigure.data.jpa.JpaRepositoriesAutoConfiguration
+      - org.springframework.boot.autoconfigure.flyway.FlywayAutoConfiguration
 server:
   port: ${SERVER_PORT:8091}
 # 시세는 다른 서비스의 조회에 답하지 않는다(내부 API 없음).
 stockit:
   db:
-    search-path: market
-# 시세는 아웃박스에 쓰지 않는다. 표는 공통 엔티티 때문에 있지만 릴레이는 돌리지 않는다.
-outbox:
-  relay:
     enabled: false

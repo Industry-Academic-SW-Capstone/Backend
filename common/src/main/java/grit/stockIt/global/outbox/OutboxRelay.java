@@ -1,5 +1,6 @@
 package grit.stockIt.global.outbox;
 
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import lombok.extern.slf4j.Slf4j;
@@ -26,6 +27,7 @@ import java.util.concurrent.TimeUnit;
 // 스케줄러가 아니라 전용 스레드다. 측정 환경은 스케줄링을 끄지만 통보는 멈추면 안 된다.
 @Slf4j
 @Component
+@ConditionalOnProperty(name = "stockit.db.enabled", havingValue = "true", matchIfMissing = true)
 public class OutboxRelay implements SmartLifecycle {
 
     // 여러 인스턴스가 떠도 한 곳만 보낸다. 둘이 나눠 보내면 같은 키의 순서가 섞인다.

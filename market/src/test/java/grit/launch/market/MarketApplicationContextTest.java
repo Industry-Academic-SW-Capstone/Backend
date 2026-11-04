@@ -10,6 +10,8 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.ApplicationContext;
 import org.springframework.test.context.ActiveProfiles;
 
+import javax.sql.DataSource;
+
 import static org.assertj.core.api.Assertions.assertThat;
 
 // 시세 서비스가 다른 서비스 없이 혼자 뜬다 — 빠진 빈이 있으면 컨텍스트가 뜨지 않아 여기서 실패한다.
@@ -31,8 +33,10 @@ class MarketApplicationContextTest extends ServiceContextTestSupport {
     }
 
     @Test
-    @DisplayName("자기 schema(market)의 표만 본다")
-    void usesOwnSchema() {
-        assertUsesOwnSchema("market", "outbox_message");
+    @DisplayName("DB 없이 뜬다 — 데이터소스도 아웃박스 릴레이도 없다")
+    void startsWithoutDatabase() {
+        assertThat(context.getBeanNamesForType(DataSource.class)).isEmpty();
+        assertThat(context.containsBean("outboxRelay")).isFalse();
+        assertThat(context.containsBean("outboxWriter")).isFalse();
     }
 }

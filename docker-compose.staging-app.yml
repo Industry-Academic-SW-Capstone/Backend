@@ -6,9 +6,9 @@
 # 실행: docker compose -f docker-compose.staging-app.yml up -d --build
 #
 # 필요한 환경변수 (.env)
-#   POSTGRES_URL              jdbc:postgresql://<RDS 엔드포인트>:5432/<db>
-#   <서비스>_DB_PASSWORD      서비스별 DB 계정(stockit_<서비스>) 비밀번호 — db/service-roles.sql 로 만든 것
-#                             MARKET_DB_PASSWORD · EXCHANGE_DB_PASSWORD · BROKER_DB_PASSWORD · EXTRA_DB_PASSWORD
+#   <서비스>_DB_URL           서비스마다 자기 RDS 인스턴스 — jdbc:postgresql://<그 인스턴스 엔드포인트>:5432/<db>
+#                             EXCHANGE_DB_URL · BROKER_DB_URL · EXTRA_DB_URL (시세는 DB 가 없다)
+#   <서비스>_DB_PASSWORD      그 인스턴스의 서비스 계정(stockit_<서비스>) 비밀번호 — db/service-role.sql 로 만든 것
 #   SPRING_REDIS_HOST         Redis 사설 IP
 #   KAFKA_BOOTSTRAP_SERVERS   <Kafka 사설 IP>:9092 (docker-compose.staging-kafka.yml)
 #   APP_CORS_ALLOWED_ORIGINS  비면 기동 실패(fail-fast)
@@ -30,8 +30,6 @@ x-service-env: &service-env
   # staging 프로파일: 접속 대상을 환경변수로 받고 부하 진입점(LoadTestController, prod 제외)을 살린다.
   SPRING_PROFILES_ACTIVE: staging
   SERVER_PORT: "8080"
-  POSTGRES_DB: ${POSTGRES_DB}
-  POSTGRES_URL: ${POSTGRES_URL}
   SPRING_REDIS_HOST: ${SPRING_REDIS_HOST}
   SPRING_REDIS_PORT: ${SPRING_REDIS_PORT:-6379}
   KIS_API_APPKEY: ${KIS_API_APPKEY}
@@ -59,7 +57,7 @@ x-logging: &logging
     max-file: "5"
 
 services:
-  # 시세 — KIS 웹소켓 연결 수 제한 때문에 하나만 띄운다.
+  # 시세 — KIS 웹소켓 연결 수 제한 때문에 하나만 띄운다. 자기 데이터가 없어 DB 를 붙이지 않는다.
   market:
     build:
       <<: *service-build
@@ -73,9 +71,6 @@ services:
     mem_limit: ${MARKET_MEM_LIMIT:-1g}
     environment:
       <<: *service-env
-      POSTGRES_USER: stockit_market
-      POSTGRES_PASSWORD: ${MARKET_DB_PASSWORD}
-      DB_POOL_SIZE: ${MARKET_DB_POOL_SIZE:-5}
     logging: *logging
 
   exchange:
@@ -91,6 +86,7 @@ services:
     mem_limit: ${EXCHANGE_MEM_LIMIT:-1536m}
     environment:
       <<: *service-env
+      POSTGRES_URL: ${EXCHANGE_DB_URL}
       POSTGRES_USER: stockit_exchange
       POSTGRES_PASSWORD: ${EXCHANGE_DB_PASSWORD}
       DB_POOL_SIZE: ${EXCHANGE_DB_POOL_SIZE:-30}
@@ -112,6 +108,7 @@ services:
     mem_limit: ${BROKER_MEM_LIMIT:-2g}
     environment:
       <<: *service-env
+      POSTGRES_URL: ${BROKER_DB_URL}
       POSTGRES_USER: stockit_broker
       POSTGRES_PASSWORD: ${BROKER_DB_PASSWORD}
       DB_POOL_SIZE: ${BROKER_DB_POOL_SIZE:-30}
@@ -131,6 +128,7 @@ services:
     mem_limit: ${EXTRA_MEM_LIMIT:-1g}
     environment:
       <<: *service-env
+      POSTGRES_URL: ${EXTRA_DB_URL}
       POSTGRES_USER: stockit_extra
       POSTGRES_PASSWORD: ${EXTRA_DB_PASSWORD}
       DB_POOL_SIZE: ${EXTRA_DB_POOL_SIZE:-10}
