@@ -1,25 +1,42 @@
 # 스테이징 — 앱 서버 (측정 대상 호스트)
 #
-# 시세·거래소·증권사·부가 네 서비스를 각자 컨테이너로 띄우고, 앞에 경로로 나눠 주는 게이트웨이(Traefik)를 둔다.
+# 시세·거래소·증권사·부가 네 서비스를 각자 컨테이너로 띄운다. 두 가지로 쓴다.
+#
+# ① 서버마다 서비스 하나 (9단계 측정, M1·M2)
+#      docker compose -f docker-compose.staging-app.yml pull broker
+#      docker compose -f docker-compose.staging-app.yml up -d --no-build broker node-exporter
+#    서비스 사이 주소(MARKET_URL 등)를 다른 서버의 사설 IP 로 .env 에 준다. 게이트웨이는 띄우지 않는다(k6 가 서비스에 바로).
+#    이미지는 한 번 빌드해 Docker Hub 로 나눈다 — 서버마다 Gradle 빌드를 돌리지 않는다.
+#      빌드(Mac 이면 플랫폼 지정 — 서버는 x86):
+#        IMAGE_REPO=<도커허브 계정> IMAGE_TAG=msa-$(git rev-parse --short HEAD) DOCKER_DEFAULT_PLATFORM=linux/amd64 \
+#          docker compose -f docker-compose.staging-app.yml build market exchange broker extra
+#        IMAGE_REPO=… IMAGE_TAG=… docker compose -f docker-compose.staging-app.yml push market exchange broker extra
+#      서버 .env 에 같은 IMAGE_REPO · IMAGE_TAG 를 두고 위 pull · up.
+#
+# ② 한 서버에 넷 + 게이트웨이 (8단계 동작 확인)
+#      docker compose -f docker-compose.staging-app.yml up -d --build
+#    서비스 사이 주소는 기본값(같은 compose 네트워크의 서비스 이름)이라 비워 둔다.
+#
 # 부하 생성기(k6)와 모니터링 백엔드(Prometheus/Grafana)는 별도 호스트다 — docker-compose.staging-ops.yml 참고.
 #
-# 실행: docker compose -f docker-compose.staging-app.yml up -d --build
-#
-# 필요한 환경변수 (.env)
+# 필요한 환경변수 (.env) — ① 이면 그 서버의 서비스 것만 있으면 된다
 #   <서비스>_DB_URL           서비스마다 자기 RDS 인스턴스 — jdbc:postgresql://<그 인스턴스 엔드포인트>:5432/<db>
 #                             EXCHANGE_DB_URL · BROKER_DB_URL · EXTRA_DB_URL (시세는 DB 가 없다)
 #   <서비스>_DB_PASSWORD      그 인스턴스의 서비스 계정(stockit_<서비스>) 비밀번호 — db/service-role.sql 로 만든 것
+#   MARKET_URL · EXCHANGE_URL · BROKER_URL · EXTRA_URL
+#                             ① 에서 다른 서비스 주소 — http://<그 서버 사설 IP>:<그 서비스 포트 8091~8094>
+#   IMAGE_REPO · IMAGE_TAG    ① 에서 받을 이미지(<IMAGE_REPO>/stockit-<서비스>:<IMAGE_TAG>)
 #   SPRING_REDIS_HOST         Redis 사설 IP
 #   KAFKA_BOOTSTRAP_SERVERS   <Kafka 사설 IP>:9092 (docker-compose.staging-kafka.yml)
 #   APP_CORS_ALLOWED_ORIGINS  비면 기동 실패(fail-fast)
 #   APP_ADMIN_EMAILS, KIS_API_APPKEY / _APPSECRET, JWT_SECRET, FIREBASE_CREDENTIALS_BASE64(부가 필수) 등
 #
 # 포트 (호스트)
-#   8080        게이트웨이 — 프론트·k6 의 입구. 경로로 서비스를 고른다(traefik/staging-routes.yml)
-#   8091~8094   시세·거래소·증권사·부가에 바로 붙는 입구(게이트웨이 비용 없이 잴 때)
+#   8091~8094   시세·거래소·증권사·부가의 입구. k6 와 다른 서버의 서비스(내부 조회)가 여기로 붙는다
 #   9091~9094   서비스별 관리 포트(액추에이터) — 모니터링 호스트가 스크레이프한다
+#   8080        게이트웨이(② 에서만) — 경로로 서비스를 고른다(traefik/staging-routes.yml)
 #
-# 메모리: 예전 단일 backend 는 4g 였다. 네 서비스 합(기본 5.5g)이 그보다 크므로 9단계 비교 때 합을 맞추거나 차이를 밝힌다.
+# 메모리: 예전 단일 backend 는 4g 였다. ① 은 서버(8 GiB)마다 서비스 하나라 *_MEM_LIMIT 으로 키울 수 있다.
 
 x-service-image: &service-build
   context: .
@@ -44,11 +61,12 @@ x-service-env: &service-env
   APP_ADMIN_EMAILS: ${APP_ADMIN_EMAILS:-}
   DB_CONNECTION_TIMEOUT: ${DB_CONNECTION_TIMEOUT:-1000}
   KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS:-localhost:9092}
-  # 서비스 사이 동기 조회(내부 API). 같은 compose 네트워크의 서비스 이름으로 부른다.
-  MARKET_URL: http://market:8080
-  EXCHANGE_URL: http://exchange:8080
-  BROKER_URL: http://broker:8080
-  EXTRA_URL: http://extra:8080
+  # 서비스 사이 동기 조회(내부 API). 기본은 같은 compose 네트워크의 서비스 이름(②).
+  # 서버마다 서비스 하나(①)면 .env 에 다른 서버의 사설 IP 와 호스트 포트(8091~8094)를 준다.
+  MARKET_URL: ${MARKET_URL:-http://market:8080}
+  EXCHANGE_URL: ${EXCHANGE_URL:-http://exchange:8080}
+  BROKER_URL: ${BROKER_URL:-http://broker:8080}
+  EXTRA_URL: ${EXTRA_URL:-http://extra:8080}
 
 x-logging: &logging
   driver: "json-file"
@@ -59,6 +77,7 @@ x-logging: &logging
 services:
   # 시세 — KIS 웹소켓 연결 수 제한 때문에 하나만 띄운다. 자기 데이터가 없어 DB 를 붙이지 않는다.
   market:
+    image: ${IMAGE_REPO:-local}/stockit-market:${IMAGE_TAG:-latest}
     build:
       <<: *service-build
       args:
@@ -74,6 +93,7 @@ services:
     logging: *logging
 
   exchange:
+    image: ${IMAGE_REPO:-local}/stockit-exchange:${IMAGE_TAG:-latest}
     build:
       <<: *service-build
       args:
@@ -86,9 +106,9 @@ services:
     mem_limit: ${EXCHANGE_MEM_LIMIT:-1536m}
     environment:
       <<: *service-env
-      POSTGRES_URL: ${EXCHANGE_DB_URL}
+      POSTGRES_URL: ${EXCHANGE_DB_URL:-}
       POSTGRES_USER: stockit_exchange
-      POSTGRES_PASSWORD: ${EXCHANGE_DB_PASSWORD}
+      POSTGRES_PASSWORD: ${EXCHANGE_DB_PASSWORD:-}
       DB_POOL_SIZE: ${EXCHANGE_DB_POOL_SIZE:-30}
       MATCHING_LIMIT_ORDER_FETCH_SIZE: ${MATCHING_LIMIT_ORDER_FETCH_SIZE:-100}
       MATCHING_QUEUE_ACK_TIMEOUT: ${MATCHING_QUEUE_ACK_TIMEOUT:-1s}
@@ -96,6 +116,7 @@ services:
     logging: *logging
 
   broker:
+    image: ${IMAGE_REPO:-local}/stockit-broker:${IMAGE_TAG:-latest}
     build:
       <<: *service-build
       args:
@@ -108,14 +129,15 @@ services:
     mem_limit: ${BROKER_MEM_LIMIT:-2g}
     environment:
       <<: *service-env
-      POSTGRES_URL: ${BROKER_DB_URL}
+      POSTGRES_URL: ${BROKER_DB_URL:-}
       POSTGRES_USER: stockit_broker
-      POSTGRES_PASSWORD: ${BROKER_DB_PASSWORD}
+      POSTGRES_PASSWORD: ${BROKER_DB_PASSWORD:-}
       DB_POOL_SIZE: ${BROKER_DB_POOL_SIZE:-30}
       SETTLEMENT_QUEUE_CONCURRENCY: ${SETTLEMENT_QUEUE_CONCURRENCY:-8}
     logging: *logging
 
   extra:
+    image: ${IMAGE_REPO:-local}/stockit-extra:${IMAGE_TAG:-latest}
     build:
       <<: *service-build
       args:
@@ -128,14 +150,15 @@ services:
     mem_limit: ${EXTRA_MEM_LIMIT:-1g}
     environment:
       <<: *service-env
-      POSTGRES_URL: ${EXTRA_DB_URL}
+      POSTGRES_URL: ${EXTRA_DB_URL:-}
       POSTGRES_USER: stockit_extra
-      POSTGRES_PASSWORD: ${EXTRA_DB_PASSWORD}
+      POSTGRES_PASSWORD: ${EXTRA_DB_PASSWORD:-}
       DB_POOL_SIZE: ${EXTRA_DB_POOL_SIZE:-10}
-      FIREBASE_CREDENTIALS_BASE64: ${FIREBASE_CREDENTIALS_BASE64}
+      FIREBASE_CREDENTIALS_BASE64: ${FIREBASE_CREDENTIALS_BASE64:-}
     logging: *logging
 
   # 게이트웨이 — 경로로 서비스를 고른다. /internal/** 은 어느 서비스로도 보내지 않는다(내부망 전용).
+  # 한 서버에 넷을 띄울 때(②)만. 서버마다 서비스 하나(①)면 서비스 이름을 주고 up 하므로 뜨지 않는다.
   gateway:
     image: traefik:v2.11
     container_name: gateway
@@ -156,7 +179,7 @@ services:
       - extra
     logging: *logging
 
-  # 호스트 지표는 그 호스트 위에서만 수집할 수 있으므로 여기 남긴다.
+  # 호스트 지표는 그 호스트 위에서만 수집할 수 있으므로 여기 남긴다. ① 이면 서버마다 서비스와 함께 띄운다.
   # 부하 생성기가 병목이 아니었음을 증명하는 근거가 된다(앱 서버 CPU 여유).
   node-exporter:
     image: prom/node-exporter:latest

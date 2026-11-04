@@ -8,7 +8,7 @@
 #
 # 실행: docker compose -f docker-compose.staging-ops.yml up -d
 #       docker compose -f docker-compose.staging-ops.yml --profile load-test run --rm k6 \
-#           run /scripts/matching-engine-test.js --env MARKET_URL=http://${MARKET_HOST}:8080 --env BROKER_URL=http://${BROKER_HOST}:8080
+#           run /scripts/matching-engine-test.js --env MARKET_URL=http://${MARKET_HOST}:8091 --env BROKER_URL=http://${BROKER_HOST}:8093
 #
 # 필요한 환경변수 (.env)
 #   MARKET_HOST · EXCHANGE_HOST · BROKER_HOST · EXTRA_HOST   앱 서버 사설 IP(서버마다 서비스 하나)
