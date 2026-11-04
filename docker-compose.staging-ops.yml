@@ -8,13 +8,15 @@
 #
 # 실행: docker compose -f docker-compose.staging-ops.yml up -d
 #       docker compose -f docker-compose.staging-ops.yml --profile load-test run --rm k6 \
-#           run /scripts/matching-engine-test.js --env BASE_URL=http://${APP_HOST}:8080
+#           run /scripts/matching-engine-test.js --env MARKET_URL=http://${MARKET_HOST}:8080 --env BROKER_URL=http://${BROKER_HOST}:8080
 #
 # 필요한 환경변수 (.env)
-#   APP_HOST        앱 서버 사설 IP
-#   RDS_HOST        RDS 엔드포인트
-#   REDIS_HOST      Redis 인스턴스 사설 IP
-#   POSTGRES_USER / _PASSWORD / _DB
+#   MARKET_HOST · EXCHANGE_HOST · BROKER_HOST · EXTRA_HOST   앱 서버 사설 IP(서버마다 서비스 하나)
+#   EXCHANGE_DB_HOST · BROKER_DB_HOST · EXTRA_DB_HOST        서비스별 RDS 엔드포인트
+#   EXCHANGE_DB_PASSWORD · BROKER_DB_PASSWORD · EXTRA_DB_PASSWORD   서비스 계정(stockit_<서비스>) 비밀번호
+#   POSTGRES_DB     database 이름(셋이 같다)
+#   REDIS_HOST      Redis 사설 IP(Kafka 서버)
+# benchmark/ 스크립트(reset·seed·verify·check)도 같은 .env 를 읽는다(benchmark/lib.sh).
 
 services:
   k6:
@@ -34,24 +36,38 @@ services:
     profiles:
       - load-test
 
-  # RDS에 원격 접속한다. sslmode는 RDS 기본이 require이므로 disable로 두면 접속이 거부된다.
-  # pg_stat_statements를 쓰려면 RDS 파라미터 그룹에서
-  # shared_preload_libraries에 추가하고 재부팅해야 한다.
-  postgres-exporter:
-    image: quay.io/prometheuscommunity/postgres-exporter:latest
-    container_name: postgres-exporter
+  # RDS 마다 하나. 원격 접속이고 sslmode는 RDS 기본이 require이므로 disable로 두면 접속이 거부된다.
+  # 서비스 계정으로 붙는다 — 자기 schema 표 통계(pg_stat_user_tables)와 database 통계는 이 권한으로 보인다.
+  # pg_stat_statements를 쓰려면 RDS 파라미터 그룹에서 shared_preload_libraries에 추가하고(생성 때 붙이면 재부팅 없음)
+  # 그 인스턴스에 CREATE EXTENSION pg_stat_statements 를 해 둔다. 다른 계정의 쿼리 문장까지 보려면 pg_read_all_stats 를 준다.
+  postgres-exporter-exchange:
+    <<: &postgres-exporter
+      image: quay.io/prometheuscommunity/postgres-exporter:latest
+      command:
+        - "--collector.stat_statements"
+      networks:
+        - staging
+      restart: unless-stopped
+      logging:
+        driver: "json-file"
+        options:
+          max-size: "10m"
+          max-file: "3"
+    container_name: postgres-exporter-exchange
     environment:
-      DATA_SOURCE_NAME: "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${RDS_HOST}:5432/${POSTGRES_DB}?sslmode=require"
-    command:
-      - "--collector.stat_statements"
-    networks:
-      - staging
-    restart: unless-stopped
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
+      DATA_SOURCE_NAME: "postgresql://stockit_exchange:${EXCHANGE_DB_PASSWORD}@${EXCHANGE_DB_HOST}:5432/${POSTGRES_DB}?sslmode=require"
+
+  postgres-exporter-broker:
+    <<: *postgres-exporter
+    container_name: postgres-exporter-broker
+    environment:
+      DATA_SOURCE_NAME: "postgresql://stockit_broker:${BROKER_DB_PASSWORD}@${BROKER_DB_HOST}:5432/${POSTGRES_DB}?sslmode=require"
+
+  postgres-exporter-extra:
+    <<: *postgres-exporter
+    container_name: postgres-exporter-extra
+    environment:
+      DATA_SOURCE_NAME: "postgresql://stockit_extra:${EXTRA_DB_PASSWORD}@${EXTRA_DB_HOST}:5432/${POSTGRES_DB}?sslmode=require"
 
   redis-exporter:
     image: oliver006/redis_exporter:latest

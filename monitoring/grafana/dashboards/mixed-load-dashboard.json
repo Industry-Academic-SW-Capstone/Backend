@@ -2,7 +2,7 @@
   "title": "Mixed Load — Matching vs Assets API",
   "uid": "mixed-load",
   "schemaVersion": 39,
-  "version": 4,
+  "version": 5,
   "editable": true,
   "time": {
     "from": "now-30m",
@@ -20,13 +20,574 @@
   },
   "panels": [
     {
+      "id": 34,
+      "type": "row",
+      "title": "서비스별 — CPU · 큐 · 아웃박스 · DB (9단계)",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
+    },
+    {
+      "id": 35,
+      "type": "timeseries",
+      "title": "Host CPU by Service",
+      "description": "서버마다 서비스 하나(9단계 M1). 서버 CPU 사용률 — 어느 서비스가 먼저 CPU 천장에 닿는지 본다.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 1,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 0,
+            "spanNulls": true
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "max",
+            "mean"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "refId": "A",
+          "expr": "1 - avg by (service) (rate(node_cpu_seconds_total{job=\"node-exporter\",mode=\"idle\"}[1m]))",
+          "legendFormat": "{{service}}"
+        }
+      ]
+    },
+    {
+      "id": 36,
+      "type": "timeseries",
+      "title": "JVM CPU by Service (cores)",
+      "description": "프로세스가 쓴 코어 수. 7회차 천장(입구 0.61·체결 1.19·정산 1.05·부가 0.53 코어)과 바로 비교한다.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 1,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 0,
+            "spanNulls": true
+          },
+          "decimals": 2
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "max",
+            "mean"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "refId": "A",
+          "expr": "sum by (service) (process_cpu_usage{job=\"spring-boot\"} * system_cpu_count{job=\"spring-boot\"})",
+          "legendFormat": "{{service}}"
+        }
+      ]
+    },
+    {
+      "id": 37,
+      "type": "timeseries",
+      "title": "Consumer Lag by Group",
+      "description": "소비자 그룹별 밀림. dlt-replay 는 DLT 를 재처리할 때만 움직여 뺀다.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 9,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 0,
+            "spanNulls": true
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "max",
+            "mean"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "refId": "A",
+          "expr": "sum by (consumergroup) (clamp_min(kafka_consumergroup_lag{consumergroup!=\"dlt-replay\"}, 0))",
+          "legendFormat": "{{consumergroup}}"
+        }
+      ]
+    },
+    {
+      "id": 38,
+      "type": "timeseries",
+      "title": "Listener Throughput by Group",
+      "description": "리스너별 처리/s(성공). 리스너 id 가 그룹 이름과 같다(matching-fill·settlement·market·mission·notification·broker).",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 9,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 0,
+            "spanNulls": true
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "max",
+            "mean"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "refId": "A",
+          "expr": "sum by (listener) (label_replace(rate(spring_kafka_listener_seconds_count{job=\"spring-boot\",result=\"success\"}[1m]), \"listener\", \"$1\", \"name\", \"(.+)-[0-9]+\"))",
+          "legendFormat": "{{listener}}"
+        }
+      ]
+    },
+    {
+      "id": 39,
+      "type": "timeseries",
+      "title": "Outbox Pending Rows",
+      "description": "아웃박스에서 보내기를 기다리는 행 수(5초마다). Kafka lag 에 안 보이는 릴레이 밀림 — 늘기만 하면 릴레이가 한계다.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 17,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 0,
+            "spanNulls": true
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "max",
+            "mean"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "refId": "A",
+          "expr": "max by (service) (outbox_pending_rows{job=\"spring-boot\"})",
+          "legendFormat": "{{service}}"
+        }
+      ]
+    },
+    {
+      "id": 40,
+      "type": "timeseries",
+      "title": "Outbox Oldest Pending Age",
+      "description": "보내지 못한 메시지 중 가장 오래 기다린 시간. 체결 → 정산 지연에 그대로 더해진다.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 17,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 0,
+            "spanNulls": true
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "max",
+            "mean"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "refId": "A",
+          "expr": "max by (service) (outbox_pending_oldest_age_seconds{job=\"spring-boot\"})",
+          "legendFormat": "{{service}}"
+        }
+      ]
+    },
+    {
+      "id": 41,
+      "type": "timeseries",
+      "title": "Outbox Relay Throughput · Failures",
+      "description": "릴레이가 Kafka 로 보낸 메시지/s 와 전송 실패/s.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 25,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 0,
+            "spanNulls": true
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "max",
+            "mean"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "refId": "A",
+          "expr": "sum by (service) (rate(outbox_relay_published_total{job=\"spring-boot\"}[1m]))",
+          "legendFormat": "{{service}} 보냄"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "refId": "B",
+          "expr": "sum by (service) (rate(outbox_relay_failures_total{job=\"spring-boot\"}[1m])) > 0",
+          "legendFormat": "{{service}} 실패"
+        }
+      ]
+    },
+    {
+      "id": 42,
+      "type": "timeseries",
+      "title": "Internal Query Latency (mean)",
+      "description": "서비스 사이 동기 조회(내부 API, http.client.requests) 평균. MSA 로 새로 생긴 왕복이다.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 25,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 0,
+            "spanNulls": true
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "max",
+            "mean"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "refId": "A",
+          "expr": "sum by (service, client_name) (rate(http_client_requests_seconds_sum{job=\"spring-boot\"}[1m])) / sum by (service, client_name) (rate(http_client_requests_seconds_count{job=\"spring-boot\"}[1m]))",
+          "legendFormat": "{{service}} → {{client_name}}"
+        }
+      ]
+    },
+    {
+      "id": 43,
+      "type": "timeseries",
+      "title": "DB Pool by Service",
+      "description": "서비스별 커넥션 풀. 시세는 DB 가 없어 안 나온다.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 33,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 0,
+            "spanNulls": true
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "max",
+            "mean"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "refId": "A",
+          "expr": "sum by (service) (hikaricp_connections_active{job=\"spring-boot\"})",
+          "legendFormat": "{{service}} active"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "refId": "B",
+          "expr": "sum by (service) (hikaricp_connections_pending{job=\"spring-boot\"})",
+          "legendFormat": "{{service}} pending"
+        }
+      ]
+    },
+    {
+      "id": 44,
+      "type": "timeseries",
+      "title": "RDS Commits · Active Sessions by Service",
+      "description": "서비스별 RDS(postgres-exporter 셋). 커밋/s 와 실행 중 세션 수.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 33,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 0,
+            "spanNulls": true
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "max",
+            "mean"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "refId": "A",
+          "expr": "sum by (service) (rate(pg_stat_database_xact_commit{job=\"postgres-exporter\",datname!~\"template.*|rdsadmin|postgres\"}[1m]))",
+          "legendFormat": "{{service}} commit/s"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "refId": "B",
+          "expr": "sum by (service) (pg_stat_activity_count{job=\"postgres-exporter\",state=\"active\"})",
+          "legendFormat": "{{service}} active"
+        }
+      ]
+    },
+    {
       "id": 1,
       "type": "row",
       "title": "Assets API — 사용자 영향",
       "collapsed": false,
       "gridPos": {
         "x": 0,
-        "y": 0,
+        "y": 41,
         "w": 24,
         "h": 1
       },
@@ -43,7 +604,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 1,
+        "y": 42,
         "w": 12,
         "h": 8
       },
@@ -133,7 +694,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 1,
+        "y": 42,
         "w": 12,
         "h": 8
       },
@@ -197,7 +758,7 @@
       "collapsed": false,
       "gridPos": {
         "x": 0,
-        "y": 9,
+        "y": 50,
         "w": 24,
         "h": 1
       },
@@ -214,7 +775,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 10,
+        "y": 51,
         "w": 12,
         "h": 8
       },
@@ -275,7 +836,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 10,
+        "y": 51,
         "w": 12,
         "h": 8
       },
@@ -337,7 +898,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 18,
+        "y": 59,
         "w": 12,
         "h": 8
       },
@@ -414,7 +975,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 18,
+        "y": 59,
         "w": 12,
         "h": 8
       },
@@ -466,7 +1027,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 26,
+        "y": 67,
         "w": 12,
         "h": 8
       },
@@ -518,7 +1079,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 26,
+        "y": 67,
         "w": 12,
         "h": 8
       },
@@ -597,7 +1158,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 34,
+        "y": 75,
         "w": 12,
         "h": 8
       },
@@ -659,7 +1220,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 34,
+        "y": 75,
         "w": 12,
         "h": 8
       },
@@ -717,7 +1278,7 @@
       "collapsed": false,
       "gridPos": {
         "x": 0,
-        "y": 42,
+        "y": 83,
         "w": 24,
         "h": 1
       },
@@ -734,7 +1295,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 43,
+        "y": 84,
         "w": 12,
         "h": 8
       },
@@ -771,7 +1332,7 @@
           },
           "refId": "A",
           "expr": "tomcat_threads_busy_threads{job=\"spring-boot\"}",
-          "legendFormat": "busy"
+          "legendFormat": "{{service}} busy"
         },
         {
           "datasource": {
@@ -780,7 +1341,7 @@
           },
           "refId": "B",
           "expr": "tomcat_threads_config_max_threads{job=\"spring-boot\"}",
-          "legendFormat": "max"
+          "legendFormat": "{{service}} max"
         }
       ]
     },
@@ -795,7 +1356,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 43,
+        "y": 84,
         "w": 12,
         "h": 8
       },
@@ -832,7 +1393,7 @@
           },
           "refId": "A",
           "expr": "hikaricp_connections_active{job=\"spring-boot\"}",
-          "legendFormat": "active"
+          "legendFormat": "{{service}} active"
         },
         {
           "datasource": {
@@ -841,7 +1402,7 @@
           },
           "refId": "B",
           "expr": "hikaricp_connections_pending{job=\"spring-boot\"}",
-          "legendFormat": "pending"
+          "legendFormat": "{{service}} pending"
         },
         {
           "datasource": {
@@ -850,7 +1411,7 @@
           },
           "refId": "C",
           "expr": "hikaricp_connections_max{job=\"spring-boot\"}",
-          "legendFormat": "max"
+          "legendFormat": "{{service}} max"
         }
       ]
     },
@@ -865,7 +1426,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 51,
+        "y": 92,
         "w": 12,
         "h": 8
       },
@@ -933,7 +1494,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 51,
+        "y": 92,
         "w": 12,
         "h": 8
       },
@@ -985,7 +1546,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 59,
+        "y": 100,
         "w": 12,
         "h": 8
       },
@@ -1063,7 +1624,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 59,
+        "y": 100,
         "w": 12,
         "h": 8
       },
@@ -1115,7 +1676,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 67,
+        "y": 108,
         "w": 12,
         "h": 8
       },
@@ -1159,7 +1720,7 @@
     {
       "id": 12,
       "type": "timeseries",
-      "title": "App CPU Usage",
+      "title": "App CPU Usage by Service",
       "description": "앱 프로세스 CPU 사용률. 높으면 CPU 가 병목, 낮은데 막혔다면 무언가를 기다리는 것.",
       "datasource": {
         "type": "prometheus",
@@ -1167,7 +1728,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 67,
+        "y": 108,
         "w": 12,
         "h": 8
       },
@@ -1220,7 +1781,7 @@
           },
           "refId": "A",
           "expr": "process_cpu_usage{job=\"spring-boot\"}",
-          "legendFormat": "app process"
+          "legendFormat": "{{service}}"
         }
       ]
     },
@@ -1235,7 +1796,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 75,
+        "y": 116,
         "w": 12,
         "h": 8
       },
@@ -1287,7 +1848,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 75,
+        "y": 116,
         "w": 12,
         "h": 8
       },
@@ -1339,7 +1900,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 83,
+        "y": 124,
         "w": 12,
         "h": 8
       },
@@ -1377,7 +1938,7 @@
           },
           "refId": "A",
           "expr": "rate(node_pressure_cpu_waiting_seconds_total{job=\"node-exporter\"}[1m])",
-          "legendFormat": "CPU 대기 비율"
+          "legendFormat": "{{service}} CPU 대기 비율"
         },
         {
           "datasource": {
@@ -1385,8 +1946,8 @@
             "uid": "prometheus"
           },
           "refId": "B",
-          "expr": "1 - avg(rate(node_cpu_seconds_total{job=\"node-exporter\",mode=\"idle\"}[1m]))",
-          "legendFormat": "CPU 사용률"
+          "expr": "1 - avg by (service) (rate(node_cpu_seconds_total{job=\"node-exporter\",mode=\"idle\"}[1m]))",
+          "legendFormat": "{{service}} CPU 사용률"
         }
       ]
     },
@@ -1401,7 +1962,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 83,
+        "y": 124,
         "w": 12,
         "h": 8
       },
@@ -1439,7 +2000,7 @@
           },
           "refId": "A",
           "expr": "avg_over_time(node_procs_running{job=\"node-exporter\"}[1m])",
-          "legendFormat": "실행 대기 스레드"
+          "legendFormat": "{{service}} 실행 대기 스레드"
         },
         {
           "datasource": {
@@ -1448,7 +2009,7 @@
           },
           "refId": "B",
           "expr": "node_load1{job=\"node-exporter\"}",
-          "legendFormat": "load1"
+          "legendFormat": "{{service}} load1"
         },
         {
           "datasource": {
@@ -1456,15 +2017,15 @@
             "uid": "prometheus"
           },
           "refId": "C",
-          "expr": "count(node_cpu_seconds_total{job=\"node-exporter\",mode=\"idle\"})",
-          "legendFormat": "코어 수"
+          "expr": "count by (service) (node_cpu_seconds_total{job=\"node-exporter\",mode=\"idle\"})",
+          "legendFormat": "{{service}} 코어 수"
         }
       ]
     },
     {
       "id": 29,
       "type": "timeseries",
-      "title": "Mission · Notification Queue",
+      "title": "Mission · Notification Backlog",
       "description": "미션·알림 전용 스레드 풀(각 2개)의 메모리 대기열에 쌓인 작업 수. 알림은 정산 한 건마다, 미션은 주문이 전부 체결될 때마다 생긴다. 체결이 늘면 함께 늘고, CPU 를 못 받으면 쌓인다. 대기열은 크기 제한 없는 메모리라 서버가 재시작되면 사라진다.",
       "datasource": {
         "type": "prometheus",
@@ -1472,7 +2033,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 91,
+        "y": 132,
         "w": 12,
         "h": 8
       },
@@ -1509,8 +2070,17 @@
             "uid": "prometheus"
           },
           "refId": "A",
-          "expr": "executor_queued_tasks{job=\"spring-boot\",name=\"missionExecutor\"}",
-          "legendFormat": "미션 대기"
+          "expr": "sum(clamp_min(kafka_consumergroup_lag{consumergroup=\"mission\"}, 0)) or vector(0)",
+          "legendFormat": "미션 lag"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "refId": "C",
+          "expr": "sum(clamp_min(kafka_consumergroup_lag{consumergroup=\"notification\"}, 0)) or vector(0)",
+          "legendFormat": "알림 lag"
         },
         {
           "datasource": {
@@ -1534,7 +2104,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 91,
+        "y": 132,
         "w": 12,
         "h": 8
       },
@@ -1571,7 +2141,7 @@
             "uid": "prometheus"
           },
           "refId": "A",
-          "expr": "rate(executor_completed_tasks_total{job=\"spring-boot\",name=\"missionExecutor\"}[1m])",
+          "expr": "sum(rate(spring_kafka_listener_seconds_count{job=\"spring-boot\",name=~\"mission-.*\",result=\"success\"}[1m]))",
           "legendFormat": "미션 처리/s"
         },
         {
@@ -1592,7 +2162,7 @@
       "collapsed": false,
       "gridPos": {
         "x": 0,
-        "y": 99,
+        "y": 140,
         "w": 24,
         "h": 1
       },
@@ -1609,7 +2179,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 100,
+        "y": 141,
         "w": 12,
         "h": 8
       },
@@ -1662,7 +2232,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 100,
+        "y": 141,
         "w": 12,
         "h": 8
       },
@@ -1715,7 +2285,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 108,
+        "y": 149,
         "w": 12,
         "h": 8
       },
@@ -1768,7 +2338,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 108,
+        "y": 149,
         "w": 12,
         "h": 8
       },
@@ -1821,7 +2391,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 116,
+        "y": 157,
         "w": 12,
         "h": 8
       },
