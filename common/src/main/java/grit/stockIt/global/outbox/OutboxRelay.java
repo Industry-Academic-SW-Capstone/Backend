@@ -2,6 +2,7 @@ package grit.stockIt.global.outbox;
 
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.producer.ProducerConfig;
@@ -21,6 +22,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
 
 // 아웃박스에 적힌 메시지를 적힌 순서(id)대로 Kafka 로 보내고, 브로커가 받은 뒤에 지운다.
 // 보내고 지우기 전에 죽으면 다음에 다시 보낸다 — 최소 한 번 전달이라 받는 쪽이 중복을 거른다.
@@ -35,12 +37,17 @@ public class OutboxRelay implements SmartLifecycle {
     private static final String SELECT_SQL =
             "SELECT id, topic, message_key, payload FROM outbox_message ORDER BY id LIMIT ?";
     private static final String DELETE_SQL = "DELETE FROM outbox_message WHERE id = ANY (?)";
+    // created_at 도 DB 의 now() 로 적으므로 같은 시계로 뺀다. 보낸 행은 바로 지워 표가 작다.
+    private static final String PENDING_SQL =
+            "SELECT count(*), COALESCE(EXTRACT(EPOCH FROM now() - min(created_at)) * 1000, 0) FROM outbox_message";
 
     private final JdbcTemplate jdbcTemplate;
     private final TransactionTemplate transactionTemplate;
     private final KafkaTemplate<String, byte[]> kafkaTemplate;
     private final Counter published;
     private final Counter failures;
+    private final AtomicLong pendingRows = new AtomicLong();
+    private final AtomicLong oldestPendingMillis = new AtomicLong();
 
     @Value("${outbox.relay.enabled:true}")
     private boolean enabled;
@@ -54,6 +61,11 @@ public class OutboxRelay implements SmartLifecycle {
 
     @Value("${outbox.relay.send-timeout:5s}")
     private Duration sendTimeout;
+
+    @Value("${outbox.relay.pending-sample-interval:5s}")
+    private Duration pendingSampleInterval;
+
+    private long lastPendingSampleNanos;
 
     private volatile boolean running;
     private Thread worker;
@@ -70,6 +82,33 @@ public class OutboxRelay implements SmartLifecycle {
                 .description("아웃박스에서 Kafka 로 보낸 메시지 수").register(registry);
         this.failures = Counter.builder("outbox.relay.failures")
                 .description("아웃박스 전송 실패 횟수 — 지우지 않고 다음에 다시 보낸다").register(registry);
+        // Kafka lag 는 브로커에 닿은 뒤만 보인다. 릴레이가 밀리면 여기서 먼저 보인다.
+        Gauge.builder("outbox.pending.rows", pendingRows, AtomicLong::get)
+                .description("아웃박스에서 보내기를 기다리는 메시지 수").register(registry);
+        Gauge.builder("outbox.pending.oldest.age", oldestPendingMillis, millis -> millis.get() / 1000.0)
+                .baseUnit("seconds")
+                .description("보내지 못한 메시지 중 가장 오래 기다린 시간").register(registry);
+    }
+
+    // 릴레이를 잡지 못한 인스턴스도 같은 표를 보므로 같은 값을 낸다.
+    public void samplePending() {
+        jdbcTemplate.query(PENDING_SQL, rs -> {
+            pendingRows.set(rs.getLong(1));
+            oldestPendingMillis.set(Math.round(rs.getDouble(2)));
+        });
+    }
+
+    private void samplePendingIfDue() {
+        long now = System.nanoTime();
+        if (now - lastPendingSampleNanos < pendingSampleInterval.toNanos()) {
+            return;
+        }
+        lastPendingSampleNanos = now;
+        try {
+            samplePending();
+        } catch (RuntimeException e) {
+            log.warn("아웃박스 대기 행을 세지 못했습니다.", e);
+        }
     }
 
     // 한 번에 batch-size 만큼 보낸다. 보낸 건수를 돌려준다. 하나라도 실패하면 아무것도 지우지 않는다.
@@ -117,6 +156,7 @@ public class OutboxRelay implements SmartLifecycle {
 
     private void loop() {
         while (running) {
+            samplePendingIfDue();
             try {
                 if (relayOnce() < batchSize) {
                     sleep(pollInterval);

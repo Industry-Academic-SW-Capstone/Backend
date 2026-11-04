@@ -196,6 +196,7 @@ ON CONFLICT (topic, partition_no) DO UPDATE
 | `matching.fill.duplicate` | 워터마크로 건너뛴 체결 명령 수(재전달) |
 | `settlement.e2e` | 체결 커밋 → 정산 커밋 (아웃박스 릴레이 시간 포함) |
 | `outbox.relay.published` / `outbox.relay.failures` | 아웃박스에서 보낸 수 / 전송 실패 횟수 |
+| `outbox.pending.rows` / `outbox.pending.oldest.age` | 아웃박스에서 보내기를 기다리는 행 수 / 가장 오래 기다린 시간(초). 5초마다 센다(`outbox.relay.pending-sample-interval`). Kafka lag 에 안 보이는 릴레이 밀림 |
 
 워커 처리 시간·횟수·실패는 `spring.kafka.listener`(리스너 id 가 `name` 태그), 전송 ack 는 `spring.kafka.template`,
 lag 과 DLT 적재 수는 kafka-exporter 로 본다. 대시보드는 `monitoring/grafana/dashboards/mixed-load-dashboard.json`.

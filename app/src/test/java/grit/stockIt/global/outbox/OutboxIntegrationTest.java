@@ -1,6 +1,7 @@
 package grit.stockIt.global.outbox;
 
 import grit.stockIt.global.support.IntegrationTestSupport;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -27,6 +28,7 @@ class OutboxIntegrationTest extends IntegrationTestSupport {
     @Autowired private OutboxRelay outboxRelay;
     @Autowired private TransactionTemplate transactionTemplate;
     @Autowired private JdbcTemplate jdbcTemplate;
+    @Autowired private MeterRegistry meterRegistry;
 
     @BeforeEach
     void clear() {
@@ -56,6 +58,24 @@ class OutboxIntegrationTest extends IntegrationTestSupport {
 
         assertThatThrownBy(outboxRelay::relayOnce).isInstanceOf(RuntimeException.class);
         assertThat(count()).isEqualTo(2);
+    }
+
+    @Test
+    @DisplayName("대기 지표는 보내지 못한 행 수와 가장 오래 기다린 시간을 낸다")
+    void pendingGauges_reportBacklog() {
+        jdbcTemplate.update("INSERT INTO outbox_message (topic, message_key, payload, created_at) "
+                + "VALUES (?, '1', '{}', now() - interval '30 seconds'), (?, '1', '{}', now())", TOPIC, TOPIC);
+
+        outboxRelay.samplePending();
+
+        assertThat(meterRegistry.get("outbox.pending.rows").gauge().value()).isEqualTo(2);
+        assertThat(meterRegistry.get("outbox.pending.oldest.age").gauge().value()).isBetween(30.0, 60.0);
+
+        jdbcTemplate.update("DELETE FROM outbox_message");
+        outboxRelay.samplePending();
+
+        assertThat(meterRegistry.get("outbox.pending.rows").gauge().value()).isZero();
+        assertThat(meterRegistry.get("outbox.pending.oldest.age").gauge().value()).isZero();
     }
 
     private int count() {
