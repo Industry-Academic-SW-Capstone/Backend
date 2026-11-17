@@ -1,0 +1,46 @@
+# 서비스별 기동 테스트(ServiceContextTestSupport). 메인 application.yml 위에 덮는다 — 외부 키는 더미, 브로커·스케줄은 끈다.
+spring:
+  jpa:
+    hibernate:
+      ddl-auto: update
+    properties:
+      hibernate:
+        # 서비스 프로필이 정한 schema(market·exchange·broker·extra)를 없으면 만든다 — 운영에서는 V20 이 만든다.
+        hbm2ddl:
+          create_namespaces: true
+  flyway:
+    enabled: false
+  task:
+    scheduling:
+      enabled: false
+  kafka:
+    listener:
+      auto-startup: false
+
+kis:
+  api:
+    url: "https://openapivts.koreainvestment.com:29443"
+    appkey: test_appkey
+    appsecret: test_appsecret
+
+python:
+  analysis:
+    url: http://localhost:8000
+
+gemini:
+  api:
+    api-key: test_gemini_key
+
+app:
+  cors:
+    allowed-origins: http://localhost:3000
+  admin:
+    emails: admin@stockit.test
+
+outbox:
+  relay:
+    enabled: false
+
+# FirebaseConfig 는 이 키가 있기만 하면(빈 값이어도) 켜지고 자격 증명이 없으면 기동을 멈춘다. "false" 만 끈다.
+firebase:
+  credentials-base64: "false"

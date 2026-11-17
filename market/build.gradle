@@ -1,0 +1,22 @@
+apply plugin: 'org.springframework.boot'
+
+// 시세: KIS 웹소켓, 프론트 STOMP 브로드캐스트, 체결 틱 → FILL 명령, 현재가 캐시, 열린 주문에 따른 구독.
+dependencies {
+	api project(':common')
+	api 'org.springframework.boot:spring-boot-starter-websocket'
+	api 'org.springframework:spring-messaging'
+
+	runtimeOnly 'org.postgresql:postgresql'
+
+	testImplementation testFixtures(project(':common'))
+	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+tasks.named('test') {
+	useJUnitPlatform()
+}
+
+// 시세 서비스만 담은 실행 jar. app 은 이 모듈의 일반 jar(-plain)를 라이브러리로 쓴다.
+bootJar {
+	archiveFileName = 'stockit-market.jar'
+}

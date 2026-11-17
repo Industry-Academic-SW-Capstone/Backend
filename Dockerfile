@@ -5,22 +5,34 @@
 #   그 스테이지에만 유효해서 뒤쪽 FROM 에서는 빈 값이 된다.
 ARG RUNTIME_IMAGE=eclipse-temurin:21-jre-alpine
 
-FROM eclipse-temurin:21-jdk AS build
+# 빌드 스테이지는 빌드하는 기계의 플랫폼으로 돈다. jar 는 플랫폼과 무관해서, Mac(arm64)에서 서버용(amd64) 이미지를
+# 만들 때 Gradle 이 에뮬레이션으로 느리게 도는 것을 피한다. 마지막 스테이지만 대상 플랫폼이다.
+FROM --platform=$BUILDPLATFORM eclipse-temurin:21-jdk AS build
 WORKDIR /app
 
-# Gradle 파일들을 먼저 복사하여 의존성 캐시
+# Gradle 파일들을 먼저 복사하여 의존성 캐시 (모듈마다 build.gradle 이 있다)
 COPY gradlew .
 COPY gradle gradle
-COPY build.gradle .
-COPY settings.gradle .
-RUN chmod +x ./gradlew && ./gradlew dependencies
+COPY build.gradle settings.gradle ./
+COPY contract/build.gradle contract/
+COPY common/build.gradle common/
+COPY market/build.gradle market/
+COPY exchange/build.gradle exchange/
+COPY broker/build.gradle broker/
+COPY extra/build.gradle extra/
+COPY app/build.gradle app/
+RUN chmod +x ./gradlew && ./gradlew :app:dependencies
 
-# 소스 코드를 복사하고 애플리케이션 빌드
+# 소스 코드를 복사하고 실행 jar 를 모두 만든다(app·market·exchange·broker·extra).
+# 이 단계에는 MODULE 을 쓰지 않는다 — 서비스 이미지 넷과 app 이미지가 이 단계를 캐시로 함께 쓴다.
 COPY . .
-RUN ./gradlew build -x test
+RUN ./gradlew bootJar
 
 FROM ${RUNTIME_IMAGE}
 WORKDIR /app
+
+# 어느 실행 jar 를 담을지. app(넷을 한 프로세스로, 기본) 또는 market·exchange·broker·extra.
+ARG MODULE=app
 
 # 보안을 위해 non-root 유저 생성 및 사용
 RUN addgroup --system stockit && adduser --system --ingroup stockit stockit
@@ -32,7 +44,7 @@ RUN apk add --no-cache tzdata && \
   echo "Asia/Seoul" > /etc/timezone
 
 # 빌드 스테이지에서 JAR 파일만 복사 (구체적인 파일명 사용)
-COPY --from=build /app/build/libs/stockIt-*.jar app.jar
+COPY --from=build /app/${MODULE}/build/libs/stockit-${MODULE}.jar app.jar
 
 # 파일 소유권 변경
 RUN chown stockit:stockit app.jar

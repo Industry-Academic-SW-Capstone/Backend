@@ -1,79 +1,185 @@
 # 스테이징 — 앱 서버 (측정 대상 호스트)
 #
-# 이 호스트에는 측정 대상과 호스트 지표 수집기만 둔다.
-# 부하 생성기(k6)와 모니터링 백엔드(Prometheus/Grafana)는 별도 호스트로 분리한다
-# — docker-compose.staging-ops.yml 참고.
+# 시세·거래소·증권사·부가 네 서비스를 각자 컨테이너로 띄운다. 두 가지로 쓴다.
 #
-# 실행: docker compose -f docker-compose.staging-app.yml up -d
+# ① 서버마다 서비스 하나 (9단계 측정, M1·M2)
+#      docker compose -f docker-compose.staging-app.yml pull broker
+#      docker compose -f docker-compose.staging-app.yml up -d --no-build broker node-exporter
+#    서비스 사이 주소(MARKET_URL 등)를 다른 서버의 사설 IP 로 .env 에 준다. 게이트웨이는 띄우지 않는다(k6 가 서비스에 바로).
+#    이미지는 한 번 빌드해 Docker Hub 로 나눈다 — 서버마다 Gradle 빌드를 돌리지 않는다.
+#      빌드(Mac 이면 플랫폼 지정 — 서버는 x86):
+#        IMAGE_REPO=<도커허브 계정> IMAGE_TAG=msa-$(git rev-parse --short HEAD) DOCKER_DEFAULT_PLATFORM=linux/amd64 \
+#          docker compose -f docker-compose.staging-app.yml build market exchange broker extra
+#        IMAGE_REPO=… IMAGE_TAG=… docker compose -f docker-compose.staging-app.yml push market exchange broker extra
+#      서버 .env 에 같은 IMAGE_REPO · IMAGE_TAG 를 두고 위 pull · up.
 #
-# 필요한 환경변수 (.env)
-#   POSTGRES_URL              jdbc:postgresql://<RDS 엔드포인트>:5432/<db>
-#   POSTGRES_USER / _PASSWORD / _DB
-#   SPRING_REDIS_HOST         Redis 인스턴스 사설 IP        ← 분리하면서 반드시 바뀜
-#   APP_CORS_ALLOWED_ORIGINS  비면 기동 실패(fail-fast)
-#   APP_ADMIN_EMAILS          비면 종목 마스터 적재 불가
-#   KIS_API_APPKEY / _APPSECRET, JWT_SECRET 등
+# ② 한 서버에 넷 + 게이트웨이 (8단계 동작 확인)
+#      docker compose -f docker-compose.staging-app.yml up -d --build
+#    서비스 사이 주소는 기본값(같은 compose 네트워크의 서비스 이름)이라 비워 둔다.
+#
+# 부하 생성기(k6)와 모니터링 백엔드(Prometheus/Grafana)는 별도 호스트다 — docker-compose.staging-ops.yml 참고.
+#
+# 필요한 환경변수 (.env) — ① 이면 그 서버의 서비스 것만 있으면 된다
+#   <서비스>_DB_URL           서비스마다 자기 RDS 인스턴스 — jdbc:postgresql://<그 인스턴스 엔드포인트>:5432/<db>
+#                             EXCHANGE_DB_URL · BROKER_DB_URL · EXTRA_DB_URL (시세는 DB 가 없다)
+#   <서비스>_DB_PASSWORD      그 인스턴스의 서비스 계정(stockit_<서비스>) 비밀번호 — db/service-role.sql 로 만든 것
+#   MARKET_URL · EXCHANGE_URL · BROKER_URL · EXTRA_URL
+#                             ① 에서 다른 서비스 주소 — http://<그 서버 사설 IP>:<그 서비스 포트 8091~8094>
+#   IMAGE_REPO · IMAGE_TAG    ① 에서 받을 이미지(<IMAGE_REPO>/stockit-<서비스>:<IMAGE_TAG>)
+#   SPRING_REDIS_HOST         Redis 사설 IP
 #   KAFKA_BOOTSTRAP_SERVERS   <Kafka 사설 IP>:9092 (docker-compose.staging-kafka.yml)
+#   APP_CORS_ALLOWED_ORIGINS  비면 기동 실패(fail-fast)
+#   APP_ADMIN_EMAILS, KIS_API_APPKEY / _APPSECRET, JWT_SECRET, FIREBASE_CREDENTIALS_BASE64(부가 필수) 등
+#
+# 포트 (호스트)
+#   8091~8094   시세·거래소·증권사·부가의 입구. k6 와 다른 서버의 서비스(내부 조회)가 여기로 붙는다
+#   9091~9094   서비스별 관리 포트(액추에이터) — 모니터링 호스트가 스크레이프한다
+#   8080        게이트웨이(② 에서만) — 경로로 서비스를 고른다(traefik/staging-routes.yml)
+#
+# 메모리: 예전 단일 backend 는 4g 였다. ① 은 서버(8 GiB)마다 서비스 하나라 *_MEM_LIMIT 으로 키울 수 있다.
+
+x-service-image: &service-build
+  context: .
+  dockerfile: Dockerfile
+
+# 네 서비스가 같이 쓰는 환경. 서비스마다 다른 것(DB 계정, 서비스 주소)은 아래에서 더한다.
+x-service-env: &service-env
+  # staging 프로파일: 접속 대상을 환경변수로 받고 부하 진입점(LoadTestController, prod 제외)을 살린다.
+  SPRING_PROFILES_ACTIVE: staging
+  SERVER_PORT: "8080"
+  SPRING_REDIS_HOST: ${SPRING_REDIS_HOST}
+  SPRING_REDIS_PORT: ${SPRING_REDIS_PORT:-6379}
+  KIS_API_APPKEY: ${KIS_API_APPKEY}
+  KIS_API_APPSECRET: ${KIS_API_APPSECRET}
+  KAKAO_CLIENT_SECRET: ${KAKAO_CLIENT_SECRET:-}
+  KAKAO_REDIRECT_URI: ${KAKAO_REDIRECT_URI:-}
+  KAKAO_REST_API_KEY: ${KAKAO_REST_API_KEY:-}
+  JWT_SECRET: ${JWT_SECRET}
+  PYTHON_ANALYSIS_URL: ${PYTHON_ANALYSIS_URL:-}
+  GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+  APP_CORS_ALLOWED_ORIGINS: ${APP_CORS_ALLOWED_ORIGINS}
+  APP_ADMIN_EMAILS: ${APP_ADMIN_EMAILS:-}
+  DB_CONNECTION_TIMEOUT: ${DB_CONNECTION_TIMEOUT:-1000}
+  KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS:-localhost:9092}
+  # 서비스 사이 동기 조회(내부 API). 기본은 같은 compose 네트워크의 서비스 이름(②).
+  # 서버마다 서비스 하나(①)면 .env 에 다른 서버의 사설 IP 와 호스트 포트(8091~8094)를 준다.
+  MARKET_URL: ${MARKET_URL:-http://market:8080}
+  EXCHANGE_URL: ${EXCHANGE_URL:-http://exchange:8080}
+  BROKER_URL: ${BROKER_URL:-http://broker:8080}
+  EXTRA_URL: ${EXTRA_URL:-http://extra:8080}
+
+x-logging: &logging
+  driver: "json-file"
+  options:
+    max-size: "50m"
+    max-file: "5"
 
 services:
-  backend:
+  # 시세 — KIS 웹소켓 연결 수 제한 때문에 하나만 띄운다. 자기 데이터가 없어 DB 를 붙이지 않는다.
+  market:
+    image: ${IMAGE_REPO:-local}/stockit-market:${IMAGE_TAG:-latest}
     build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: backend
+      <<: *service-build
+      args:
+        MODULE: market
+    container_name: market
+    ports:
+      - "8091:8080"
+      - "9091:8081"
+    restart: unless-stopped
+    mem_limit: ${MARKET_MEM_LIMIT:-1g}
+    environment:
+      <<: *service-env
+    logging: *logging
+
+  exchange:
+    image: ${IMAGE_REPO:-local}/stockit-exchange:${IMAGE_TAG:-latest}
+    build:
+      <<: *service-build
+      args:
+        MODULE: exchange
+    container_name: exchange
+    ports:
+      - "8092:8080"
+      - "9092:8081"
+    restart: unless-stopped
+    mem_limit: ${EXCHANGE_MEM_LIMIT:-1536m}
+    environment:
+      <<: *service-env
+      POSTGRES_URL: ${EXCHANGE_DB_URL:-}
+      POSTGRES_USER: stockit_exchange
+      POSTGRES_PASSWORD: ${EXCHANGE_DB_PASSWORD:-}
+      DB_POOL_SIZE: ${EXCHANGE_DB_POOL_SIZE:-30}
+      MATCHING_LIMIT_ORDER_FETCH_SIZE: ${MATCHING_LIMIT_ORDER_FETCH_SIZE:-100}
+      MATCHING_QUEUE_ACK_TIMEOUT: ${MATCHING_QUEUE_ACK_TIMEOUT:-1s}
+      MATCHING_QUEUE_FILL_CONCURRENCY: ${MATCHING_QUEUE_FILL_CONCURRENCY:-24}
+    logging: *logging
+
+  broker:
+    image: ${IMAGE_REPO:-local}/stockit-broker:${IMAGE_TAG:-latest}
+    build:
+      <<: *service-build
+      args:
+        MODULE: broker
+    container_name: broker
+    ports:
+      - "8093:8080"
+      - "9093:8081"
+    restart: unless-stopped
+    mem_limit: ${BROKER_MEM_LIMIT:-2g}
+    environment:
+      <<: *service-env
+      POSTGRES_URL: ${BROKER_DB_URL:-}
+      POSTGRES_USER: stockit_broker
+      POSTGRES_PASSWORD: ${BROKER_DB_PASSWORD:-}
+      DB_POOL_SIZE: ${BROKER_DB_POOL_SIZE:-30}
+      SETTLEMENT_QUEUE_CONCURRENCY: ${SETTLEMENT_QUEUE_CONCURRENCY:-8}
+    logging: *logging
+
+  extra:
+    image: ${IMAGE_REPO:-local}/stockit-extra:${IMAGE_TAG:-latest}
+    build:
+      <<: *service-build
+      args:
+        MODULE: extra
+    container_name: extra
+    ports:
+      - "8094:8080"
+      - "9094:8081"
+    restart: unless-stopped
+    mem_limit: ${EXTRA_MEM_LIMIT:-1g}
+    environment:
+      <<: *service-env
+      POSTGRES_URL: ${EXTRA_DB_URL:-}
+      POSTGRES_USER: stockit_extra
+      POSTGRES_PASSWORD: ${EXTRA_DB_PASSWORD:-}
+      DB_POOL_SIZE: ${EXTRA_DB_POOL_SIZE:-10}
+      FIREBASE_CREDENTIALS_BASE64: ${FIREBASE_CREDENTIALS_BASE64:-}
+    logging: *logging
+
+  # 게이트웨이 — 경로로 서비스를 고른다. /internal/** 은 어느 서비스로도 보내지 않는다(내부망 전용).
+  # 한 서버에 넷을 띄울 때(②)만. 서버마다 서비스 하나(①)면 서비스 이름을 주고 up 하므로 뜨지 않는다.
+  gateway:
+    image: traefik:v2.11
+    container_name: gateway
+    command:
+      - "--entrypoints.web.address=:8080"
+      - "--providers.file.filename=/etc/traefik/staging-routes.yml"
+      - "--accesslog=false"
+      - "--log.level=WARN"
     ports:
       - "8080:8080"
-      # 관리 포트(액추에이터). 부하 요청과 스레드 풀을 나누려고 분리했다
-      # — application-staging.yml 의 management.server.port 참고.
-      - "8081:8081"
+    volumes:
+      - ./traefik/staging-routes.yml:/etc/traefik/staging-routes.yml:ro
     restart: unless-stopped
-    # 힙을 인스턴스 크기에서 분리한다.
-    # Dockerfile이 MaxRAMPercentage=75라 제한이 없으면 힙 상한이 "호스트 메모리의 75%"가 되어,
-    # 인스턴스 타입을 바꾸는 순간 힙도 같이 변한다 — arm 간 비교가 깨진다.
-    # 4g → 힙 상한 3 GiB. 단계 3(앱 인메모리 오더북)에서 부족하면 이 한 줄만 올린다.
-    mem_limit: 4g
-    environment:
-      # staging 프로파일: 접속 대상을 환경변수로 받으면서 LoadTestController(@Profile("!prod"))를 살린다.
-      # dev는 호스트가 하드코딩돼 분리 인스턴스를 못 가리키고, prod는 부하 진입점이 사라진다.
-      - SPRING_PROFILES_ACTIVE=staging
-      - POSTGRES_DB=${POSTGRES_DB}
-      - POSTGRES_USER=${POSTGRES_USER}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
-      - POSTGRES_URL=${POSTGRES_URL}
-      - SPRING_REDIS_HOST=${SPRING_REDIS_HOST}
-      - SPRING_REDIS_PORT=${SPRING_REDIS_PORT:-6379}
-      - KIS_API_APPKEY=${KIS_API_APPKEY}
-      - KIS_API_APPSECRET=${KIS_API_APPSECRET}
-      - KAKAO_CLIENT_SECRET=${KAKAO_CLIENT_SECRET:-}
-      - KAKAO_REDIRECT_URI=${KAKAO_REDIRECT_URI:-}
-      - KAKAO_REST_API_KEY=${KAKAO_REST_API_KEY:-}
-      - JWT_SECRET=${JWT_SECRET}
-      - FIREBASE_CREDENTIALS_BASE64=${FIREBASE_CREDENTIALS_BASE64:-}
-      - PYTHON_ANALYSIS_URL=${PYTHON_ANALYSIS_URL:-}
-      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
-      - APP_CORS_ALLOWED_ORIGINS=${APP_CORS_ALLOWED_ORIGINS}
-      - APP_ADMIN_EMAILS=${APP_ADMIN_EMAILS:-}
-      # ── 매칭 엔진 ──
-      - MATCHING_LIMIT_ORDER_FETCH_SIZE=${MATCHING_LIMIT_ORDER_FETCH_SIZE:-100}
-      - DB_POOL_SIZE=${DB_POOL_SIZE:-60}
-      - DB_CONNECTION_TIMEOUT=${DB_CONNECTION_TIMEOUT:-1000}
-      # ── 체결 큐 (docker-compose.staging-kafka.yml) ──
-      - KAFKA_BOOTSTRAP_SERVERS=${KAFKA_BOOTSTRAP_SERVERS:-localhost:9092}
-      - MATCHING_QUEUE_ACK_TIMEOUT=${MATCHING_QUEUE_ACK_TIMEOUT:-1s}
-      - MATCHING_QUEUE_FILL_CONCURRENCY=${MATCHING_QUEUE_FILL_CONCURRENCY:-24}
-      - SETTLEMENT_QUEUE_CONCURRENCY=${SETTLEMENT_QUEUE_CONCURRENCY:-8}
-      # ── 정산 복구 ──
-      # staging 은 스케줄링이 꺼져 있어 부하 측정 중에는 돌지 않는다. 회차 후 SQL 로 확인한다.
-      - SETTLEMENT_RECOVERY_INTERVAL=${SETTLEMENT_RECOVERY_INTERVAL:-60s}
-      - SETTLEMENT_RECOVERY_GRACE_PERIOD=${SETTLEMENT_RECOVERY_GRACE_PERIOD:-30s}
-      - SETTLEMENT_RECOVERY_BATCH_SIZE=${SETTLEMENT_RECOVERY_BATCH_SIZE:-100}
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "50m"
-        max-file: "5"
+    depends_on:
+      - market
+      - exchange
+      - broker
+      - extra
+    logging: *logging
 
-  # 호스트 지표는 그 호스트 위에서만 수집할 수 있으므로 여기 남긴다.
+  # 호스트 지표는 그 호스트 위에서만 수집할 수 있으므로 여기 남긴다. ① 이면 서버마다 서비스와 함께 띄운다.
   # 부하 생성기가 병목이 아니었음을 증명하는 근거가 된다(앱 서버 CPU 여유).
   node-exporter:
     image: prom/node-exporter:latest

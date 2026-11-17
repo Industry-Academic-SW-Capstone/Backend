@@ -139,8 +139,12 @@ services:
         }
         create matching.commands 24
         create matching.commands.DLT 1
-        create settlement.requests 24
-        create settlement.requests.DLT 1
+        create exchange.reports 24
+        create exchange.reports.DLT 1
+        create member.events 24
+        create member.events.DLT 1
+        create extra.events 8
+        create extra.events.DLT 1
     restart: "no"
     networks:
       - backend

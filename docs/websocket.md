@@ -41,13 +41,24 @@
 | 필드 | 의미 |
 |------|------|
 | `viewerCounts: Map<String, AtomicInteger>` | 종목별 화면 구독자 수 |
-| `orderReferenceCounts: Map<String, AtomicInteger>` | 종목별 주문 참조 수 |
+| `openOrders: Map<String, Set<Long>>` | 종목별 오더북에 열린 주문 번호 |
 | `sessionSubscriptions: Map<String, Set<String>>` | 세션ID → 구독 종목 집합 |
 | `subscriptionIdToStockCode: Map<String, String>` | 구독ID → 종목코드 |
 
-- 카운트 증감은 `AtomicInteger.incrementAndGet()` / `decrementAndGet()`로 원자 처리 (레이스 컨디션 방지).
-- `hasActiveReason(stockCode)` — 화면 구독자 또는 주문 참조가 하나라도 있으면 구독 유지.
+- 화면 구독자 수는 `AtomicInteger.incrementAndGet()` / `decrementAndGet()`로 원자 처리 (레이스 컨디션 방지).
+- 열린 주문은 수가 아니라 **주문 번호 집합**입니다. 같은 통보가 두 번 와도(최소 한 번 전달) 결과가 같습니다.
+- `hasActiveReason(stockCode)` — 화면 구독자 또는 열린 주문이 하나라도 있으면 구독 유지.
   즉 화면을 닫아도 미체결 주문이 있으면 시세 구독을 유지합니다.
+
+## 열린 주문 따라가기 (`OpenOrderReportConsumer` → `OrderSubscriptionCoordinator`)
+
+시세는 증권사·거래소가 부르지 않고, 거래소 결과 통보(`exchange.reports`, 그룹 `market`, 스레드 1)를 직접 읽습니다.
+
+- `ACCEPTED` → `orderOpened` — 열린 주문 등록, 그 종목의 첫 이유면 KIS 구독
+- 남은 수량 0 인 `FILL`, `CANCELED`·`EXPIRED`·`REJECTED` → `orderClosed` — 제거, 이유가 모두 없어지면 KIS 해제
+- 열린 주문은 메모리에만 있어, 기동하면 거래소에 열린 주문을 물어(`contract.ExchangeQueryClient`) 되살린 **뒤에** 리스너를 시작합니다.
+  먼저 받으면 되살리기 전에 처리한 "닫힘"이 뒤늦은 "열림"에 덮여 구독이 남을 수 있습니다.
+- 시세는 KIS 웹소켓 연결 수 제한 때문에 인스턴스 하나로 운영합니다.
 
 ## 세션 이벤트 처리 (`StockSubscriptionEventListener`)
 
@@ -93,6 +104,7 @@
 - `global/config/WebSocketConfig.java` — STOMP 설정
 - `global/websocket/manager/WebSocketSubscriptionManager.java` — 구독 참조 카운팅
 - `global/websocket/manager/OrderSubscriptionCoordinator.java` — 주문 기반 구독 조정
+- `global/websocket/listener/OpenOrderReportConsumer.java` — 거래소 통보로 열린 주문 따라가기, 기동 시 복구
 - `global/websocket/listener/StockSubscriptionEventListener.java` — 세션 이벤트 처리
 - `global/websocket/client/KisWebSocketClient.java` — KIS 연결·수신·브로드캐스트
 - `global/websocket/monitor/WebSocketConnectionMonitor.java` — 연결 모니터링

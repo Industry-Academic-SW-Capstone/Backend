@@ -11,7 +11,7 @@ stockIt은 Spring Boot로 구축된 한국 주식 거래 시뮬레이션 플랫�
 이 파일은 항상 로드되는 오리엔테이션 문서입니다. 깊은 내용은 필요할 때만 해당 `docs/` 파일을 읽으세요:
 
 - `docs/architecture.md` — 패키지/도메인 구조, 이벤트 흐름, 캐싱
-- `docs/matching-engine.md` — 매칭 엔진 내부 구조 (Kafka 명령 큐와 종목 파티션 단일 작성자, 워터마크 재전달 거르기, 취소·만료, 정산 큐·복구 배치, 실패 처리)
+- `docs/matching-engine.md` — 매칭 엔진 내부 구조 (거래소 오더북과 Kafka 명령·통보, 종목 파티션 단일 작성자, 워터마크, 아웃박스, 취소·만료, 정산, 실패 처리)
 - `docs/websocket.md` — 실시간 스트리밍 설계 (STOMP 설정, 구독 참조 카운팅, KIS WebSocket 클라이언트, 브로드캐스트 흐름)
 - `docs/deployment.md` — CI/CD 파이프라인, Docker Hub, SSH + `docker-compose.prod.yml`, 시크릿, 모니터링
 - `docs/development.md` — 로컬 설정, 프로파일, 테스트, 마이그레이션
@@ -36,6 +36,10 @@ stockIt은 Spring Boot로 구축된 한국 주식 거래 시뮬레이션 플랫�
 ./gradlew build -x test      # 테스트 제외 빌드
 ./gradlew clean build        # 클린 빌드
 
+# 실행
+./gradlew :app:bootRun       # 네 서비스를 한 프로세스로
+./gradlew :broker:bootRun    # 서비스 하나만 (market·exchange·broker·extra, docs/development.md)
+
 # 테스트
 ./gradlew test                                    # 전체 테스트 실행
 ./gradlew test --tests "ClassName"                 # 특정 테스트 클래스 실행
@@ -53,6 +57,10 @@ docker-compose --profile load-test run --rm k6 run /scripts/matching-engine-test
 ## 아키텍처
 
 **Java 21 / Spring Boot 3.5.6 / Gradle**, PostgreSQL 17(운영은 아직 15), Redis 7, Kafka 3.9(KRaft), Flyway 마이그레이션 사용.
+
+### Gradle 모듈
+
+한 저장소 멀티 모듈입니다: `contract`(서비스 사이 계약) · `common`(공통 인프라·설정 리소스·마이그레이션) · `market`(시세) · `exchange`(거래소) · `broker`(증권사) · `extra`(부가) · `app`(넷을 한 프로세스로 띄우는 실행 모듈, 서비스를 넘나드는 테스트). 네 서비스는 각자 실행 클래스(`grit.launch.<서비스>`)와 실행 jar 가 있고, 각 모듈 테스트는 그 서비스가 혼자 뜨는지 확인합니다. 서비스 모듈끼리는 의존할 수 없습니다(빌드 실패). 패키지 이름은 모듈과 무관하게 `grit.stockIt.…` 그대로입니다. 자세한 배치는 `docs/architecture.md`.
 
 ### 패키지 구조 (`grit.stockIt`)
 
@@ -78,8 +86,8 @@ docker-compose --profile load-test run --rm k6 run /scripts/matching-engine-test
 
 ### 핵심 아키텍처 패턴
 
-- **명령 큐**: 체결·취소·만료는 Kafka `matching.commands`(종목 키) → 종목 파티션 워커, 정산은 `settlement.requests`(계좌 키) → 정산 워커
-- **이벤트 기반**: 도메인 이벤트로 체결과 미션·알림 같은 후속 처리를 디커플링
+- **명령 큐**: 체결·취소·만료는 Kafka `matching.commands`(종목 키) → 종목 파티션 워커, 체결 결과는 `exchange.reports`(계좌 키) → 정산 워커
+- **이벤트 기반**: 체결·정산과 미션·알림은 Kafka 이벤트(`exchange.reports`, `member.events`, `extra.events`)와 아웃박스로 디커플링
 - **3단계 캐싱**: Redis(분산) + Caffeine(로컬 랭킹) + `@Cacheable`
 - **WebSocket**: `/ws`에서 SockJS 위 STOMP, 토픽은 `/topic`·`/queue`, 앱 prefix는 `/app`
 - **JSON 컨벤션**: Jackson SNAKE_CASE — Java camelCase가 API 응답에서 snake_case로 자동 변환
@@ -107,7 +115,7 @@ docker-compose --profile load-test run --rm k6 run /scripts/matching-engine-test
 
 ## 데이터베이스 마이그레이션
 
-Flyway SQL 스크립트는 `src/main/resources/db/migration/`에 있습니다(V2, V6–V9). Flyway 자동 실행은 비활성화돼 있으며, 초기화는 `FlywayConfig.java`가 담당합니다.
+Flyway SQL 스크립트는 `common/src/main/resources/db/migration/`에 있습니다(V2, V6–V20). V20 부터 서비스마다 DB 가 나뉩니다 — 거래소·증권사·부가는 각자 인스턴스(서비스 이름의 schema), 시세는 DB 없음(`docs/development.md`). Flyway 자동 실행은 비활성화돼 있으며, 초기화는 `FlywayConfig.java`가 담당합니다.
 
 ## CI/CD
 
@@ -124,4 +132,4 @@ GitHub Actions(`.github/workflows/ci-cd.yml`): JDK 21 Temurin으로 빌드하고
 - **주석**: 코드로 표현할 수 없는 제약만 `//` 한 줄로. 클래스·메서드 위 설명 블록과 javadoc 형식(`@param`, `{@link}`, `<p>`) 금지 — 배경·트레이드오프는 PR 본문에
 - **검증**: 요청 바디에 JSR-303 `@Valid`
 - **API 문서**: SpringDoc OpenAPI 애노테이션(`@Operation`, `@Tag`) — Swagger UI는 `/swagger-ui/`
-- **Baseline**: 기존 위반은 억제돼 있습니다(`config/checkstyle/suppressions.xml`, `src/test/resources/archunit_store/`) — 여기에 신규 항목을 절대 추가하지 마세요
+- **Baseline**: 기존 위반은 억제돼 있습니다(`config/checkstyle/suppressions.xml`, `app/src/test/resources/archunit_store/`) — 여기에 신규 항목을 절대 추가하지 마세요

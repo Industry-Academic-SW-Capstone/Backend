@@ -1,8 +1,11 @@
 # 프로파일링 회차 전용 오버라이드
 #
-#   docker compose -f docker-compose.staging-app.yml -f docker-compose.profile.yml up -d --build
+#   docker compose -f docker-compose.staging-app.yml -f docker-compose.profile.yml up -d --build [서비스]
 #
 # 평소 회차는 -f 를 하나만 주면 된다. 이 파일을 지우거나 안 넘기면 구성이 원래대로 돌아간다.
+# 네 서비스(market·exchange·broker·extra)에 같은 것을 건다. 서버마다 서비스 하나면 끝에 그 서비스 이름을 준다.
+# 덤프는 benchmark/autodump.sh(저장소 밖) — 서버마다 그 서버의 서비스 컨테이너를 대상으로 돈다.
+# 이미지 태그에 -jdk 를 붙여 평소 이미지(JRE)를 덮어쓰지 않는다. Docker Hub 로 나눌 때는 이 파일도 함께 -f 로 주고 build · push 한다.
 #
 # 두 가지를 바꾼다.
 #
@@ -20,10 +23,23 @@
 #    JAVA_OPTS 가 아니라 JAVA_TOOL_OPTIONS 인 이유: 전자는 Dockerfile 이 정의한 값을
 #    통째로 덮어써 MaxRAMPercentage=75 가 날아간다(힙 3 GiB → 약 1 GiB). 후자는 JVM 이
 #    기존 옵션에 덧붙인다.
+x-profile: &profile
+  build:
+    args:
+      RUNTIME_IMAGE: eclipse-temurin:21-jdk-alpine
+  environment:
+    JAVA_TOOL_OPTIONS: -XX:FlightRecorderOptions=stackdepth=128
+
 services:
-  backend:
-    build:
-      args:
-        RUNTIME_IMAGE: eclipse-temurin:21-jdk-alpine
-    environment:
-      - JAVA_TOOL_OPTIONS=-XX:FlightRecorderOptions=stackdepth=128
+  market:
+    <<: *profile
+    image: ${IMAGE_REPO:-local}/stockit-market:${IMAGE_TAG:-latest}-jdk
+  exchange:
+    <<: *profile
+    image: ${IMAGE_REPO:-local}/stockit-exchange:${IMAGE_TAG:-latest}-jdk
+  broker:
+    <<: *profile
+    image: ${IMAGE_REPO:-local}/stockit-broker:${IMAGE_TAG:-latest}-jdk
+  extra:
+    <<: *profile
+    image: ${IMAGE_REPO:-local}/stockit-extra:${IMAGE_TAG:-latest}-jdk

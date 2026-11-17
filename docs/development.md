@@ -14,8 +14,18 @@
 ./gradlew build              # 전체 빌드 (테스트 포함)
 ./gradlew build -x test      # 테스트 제외 빌드
 ./gradlew clean build        # 클린 빌드
-./gradlew bootRun            # 실행
+./gradlew :app:bootRun       # 네 서비스를 한 프로세스로 실행 (포트 8080)
+
+# 서비스별로 따로 실행 — 각자 프로필 <서비스> 가 더해진다(application-<서비스>.yml)
+./gradlew :market:bootRun    # 시세   8091
+./gradlew :exchange:bootRun  # 거래소 8092 (내부 API 켬)
+./gradlew :broker:bootRun    # 증권사 8093 (내부 API 켬)
+./gradlew :extra:bootRun     # 부가   8094 (내부 API 켬)
 ```
+
+서비스별로 띄우면 서비스 사이 동기 조회(`*QueryClient`)가 HTTP 로 간다. 묻는 쪽은 `stockit.services.*-url`
+(환경변수 `MARKET_URL`·`EXCHANGE_URL`·`BROKER_URL`·`EXTRA_URL`, 기본 localhost 위 포트)로 부르고, 답하는 쪽은
+`stockit.internal-api.enabled=true` 일 때만 `/internal/**` 를 연다. 한 프로세스(app)에서는 내부 API 가 꺼져 있고 같은 프로세스 구현을 바로 쓴다.
 
 Docker Compose:
 
@@ -76,9 +86,15 @@ SPRING_PROFILES_ACTIVE=local
 
 ## 데이터베이스 마이그레이션
 
-- Flyway SQL: `src/main/resources/db/migration/` (현재 `V2`, `V6`~`V9`).
+- Flyway SQL: `common/src/main/resources/db/migration/` (현재 `V2`, `V6`~`V20`).
 - Flyway **자동 실행은 비활성화**되어 있으며 초기화는 `global/config/FlywayConfig.java`가 담당합니다.
 - 새 마이그레이션 추가 시 다음 버전 번호로 `V{n}__{설명}.sql` 파일을 생성합니다.
+- **서비스별 DB**: 거래소·증권사·부가는 각자 DB 인스턴스(그 안에 서비스 이름의 schema)를 쓰고, 시세는 DB 가 없다.
+  표 이름만 쓴 SQL 은 커넥션의 search_path(`stockit.db.search-path`, 서비스 프로필이 정함)로, JPA 는 `hibernate.default_schema` 로 자기 schema 에 간다.
+  새 인스턴스마다 `db/service-role.sql` 을 관리자로 한 번 실행한다(`-v service=<서비스> -v password=…`).
+  옛 단일 DB 는 `V20` 으로 schema 를 나눈 뒤 `pg_dump --schema=<서비스> --no-owner` 를 그 서비스 계정으로 새 인스턴스에 복원한다.
+  테스트와 로컬 app 실행은 DB 하나(public) 그대로다.
+- 미션·보상·칭호 시드(`extra` 의 `data.sql`)는 부가의 관리자 API `POST /api/admin/missions/seed` 로 반영한다(upsert).
 
 ## 코드 컨벤션
 

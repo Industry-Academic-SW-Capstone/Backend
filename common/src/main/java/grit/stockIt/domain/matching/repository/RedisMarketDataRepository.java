@@ -1,0 +1,118 @@
+package grit.stockIt.domain.matching.repository;
+
+import grit.stockIt.contract.MarketPriceCache;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataAccessException;
+import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.stereotype.Repository;
+
+import java.math.BigDecimal;
+import java.time.Duration;
+import java.time.ZoneId;
+import java.time.ZonedDateTime;
+import java.util.Optional;
+
+// 시세가 주인인 현재가 캐시의 Redis 구현. 시세(틱으로 갱신)와 증권사(랭킹·종목 상세가 읽고 KIS REST 값으로 채움)가
+// 같은 Redis 를 직접 읽고 쓰므로 두 서비스가 함께 쓰는 공통 모듈에 둔다. 키 형식은 여기만 안다.
+@Slf4j
+@Repository
+@RequiredArgsConstructor
+public class RedisMarketDataRepository implements MarketPriceCache {
+
+    private static final String LAST_PRICE_KEY_PATTERN = "sim:price:last:%s";
+    private static final Duration CACHE_TTL = Duration.ofMinutes(5); // 5분 캐시
+
+    private static final String UPPER_LIMIT_PRICE_KEY_PATTERN = "sim:price:upperlimit:%s";
+    private static final ZoneId KST = ZoneId.of("Asia/Seoul");
+
+    private final StringRedisTemplate redisTemplate;
+
+    @Override
+    public void updateLastPrice(String stockCode, BigDecimal price) {
+        if (stockCode == null || price == null) {
+            return;
+        }
+        try {
+            redisTemplate.opsForValue().set(
+                    buildLastPriceKey(stockCode),
+                    price.toPlainString(),
+                    CACHE_TTL
+            );
+        } catch (DataAccessException e) {
+            log.error("Redis에 마지막 체결가 저장 실패. stockCode={}", stockCode, e);
+        }
+    }
+
+    @Override
+    public Optional<BigDecimal> getLastPrice(String stockCode) {
+        if (stockCode == null) {
+            return Optional.empty();
+        }
+        try {
+            String value = redisTemplate.opsForValue().get(buildLastPriceKey(stockCode));
+            if (value == null) {
+                return Optional.empty();
+            }
+            return Optional.of(new BigDecimal(value));
+        } catch (DataAccessException e) {
+            log.error("Redis에서 마지막 체결가 조회 실패. stockCode={}", stockCode, e);
+            return Optional.empty();
+        } catch (NumberFormatException e) {
+            log.warn("Redis 마지막 체결가 값 파싱 실패. stockCode={}", stockCode, e);
+            return Optional.empty();
+        }
+    }
+
+    @Override
+    public void updateUpperLimitPrice(String stockCode, BigDecimal price) {
+        if (stockCode == null || price == null) {
+            return;
+        }
+        try {
+            redisTemplate.opsForValue().set(
+                    buildUpperLimitPriceKey(stockCode),
+                    price.toPlainString(),
+                    ttlUntilNextTradingDay()
+            );
+        } catch (DataAccessException e) {
+            log.error("Redis에 상한가 저장 실패. stockCode={}", stockCode, e);
+        }
+    }
+
+    @Override
+    public Optional<BigDecimal> getUpperLimitPrice(String stockCode) {
+        if (stockCode == null) {
+            return Optional.empty();
+        }
+        try {
+            String value = redisTemplate.opsForValue().get(buildUpperLimitPriceKey(stockCode));
+            if (value == null) {
+                return Optional.empty();
+            }
+            return Optional.of(new BigDecimal(value));
+        } catch (DataAccessException e) {
+            log.error("Redis에서 상한가 조회 실패. stockCode={}", stockCode, e);
+            return Optional.empty();
+        } catch (NumberFormatException e) {
+            log.warn("Redis 상한가 값 파싱 실패. stockCode={}", stockCode, e);
+            return Optional.empty();
+        }
+    }
+
+    private String buildLastPriceKey(String stockCode) {
+        return LAST_PRICE_KEY_PATTERN.formatted(stockCode);
+    }
+
+    private String buildUpperLimitPriceKey(String stockCode) {
+        return UPPER_LIMIT_PRICE_KEY_PATTERN.formatted(stockCode);
+    }
+
+    // 상한가는 기준가에서 나오므로 매매일이 바뀌면 값이 달라진다. 자정을 넘긴 값을 쓰면
+    // 어제 기준으로 홀딩을 잡게 되므로 날짜 경계에서 반드시 버린다.
+    private Duration ttlUntilNextTradingDay() {
+        ZonedDateTime now = ZonedDateTime.now(KST);
+        return Duration.between(now, now.toLocalDate().plusDays(1).atStartOfDay(KST));
+    }
+}
+
