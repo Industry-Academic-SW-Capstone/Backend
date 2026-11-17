@@ -71,7 +71,6 @@ push → CI (모든 브랜치)                CD (main 브랜치만)
 ## Compose 구성
 
 - 개발: `docker-compose.yml` — Traefik, PostgreSQL(`db`), Redis, Backend, k6, 모니터링(prometheus/grafana/exporters)
-- 스테이징: `docker-compose.staging.yml`
 - 스테이징 부하 측정(호스트 분리): `docker-compose.staging-app.yml`(측정 대상 — 시세·거래소·증권사·부가 네 컨테이너와 경로로 나눠 주는 게이트웨이, `traefik/staging-routes.yml`. DB 는 거래소·증권사·부가 RDS 인스턴스 셋) · `docker-compose.staging-ops.yml`(k6·Prometheus·Grafana) · `docker-compose.staging-kafka.yml`(체결 큐 브로커 1대). 각 파일 머리 주석에 필요한 `.env` 와 보안 그룹이 있다
 - 운영: `docker-compose.prod.yml`
 
