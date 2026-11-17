@@ -8,6 +8,9 @@ subprojects {
 	apply plugin: 'io.spring.dependency-management'
 	apply plugin: 'checkstyle'
 
+	// Boot 3.5.6 기본 Testcontainers 1.21.3 은 Docker 29(CI ubuntu-26.04) 에 붙지 못한다
+	ext['testcontainers.version'] = '1.21.4'
+
 	group = 'grit'
 	version = '0.0.1-SNAPSHOT'
 
