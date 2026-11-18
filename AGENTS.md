@@ -11,7 +11,7 @@ stockIt은 Spring Boot로 구축된 한국 주식 거래 시뮬레이션 플랫�
 이 파일은 항상 로드되는 오리엔테이션 문서입니다. 깊은 내용은 필요할 때만 해당 `docs/` 파일을 읽으세요:
 
 - `docs/architecture.md` — 패키지/도메인 구조, 이벤트 흐름, 캐싱
-- `docs/matching-engine.md` — Redis 오더북 매칭 내부 구조 (오더북 키, 분산 락, 계좌 비관적 락, 이중 쓰기 정합성, 복구 배치, 동시성)
+- `docs/matching-engine.md` — 매칭 엔진 내부 구조 (일부 Redis 시절 설명이 남아 있음 — 현재는 RDB 오더북·종목 advisory 락·계좌 비관적 락·정산 복구 배치)
 - `docs/websocket.md` — 실시간 스트리밍 설계 (STOMP 설정, 구독 참조 카운팅, KIS WebSocket 클라이언트, 브로드캐스트 흐름)
 - `docs/deployment.md` — CI/CD 파이프라인, Docker Hub, SSH + `docker-compose.prod.yml`, 시크릿, 모니터링
 - `docs/development.md` — 로컬 설정, 프로파일, 테스트, 마이그레이션
@@ -42,22 +42,20 @@ stockIt은 Spring Boot로 구축된 한국 주식 거래 시뮬레이션 플랫�
 ./gradlew test --tests "ClassName.methodName"      # 특정 테스트 메서드 실행
 
 # Docker (개발)
-docker-compose up -d          # 전체 서비스 시작 (Traefik, PostgreSQL, Redis, Backend)
+docker-compose up -d          # PostgreSQL(pgvector), Backend (AI 서버는 --profile ai)
 docker-compose down           # 전체 서비스 중지
 docker-compose build          # 백엔드 이미지 재빌드
 
-# 부하 테스트 (k6) — 스크립트는 저장소에 없다. 로컬 k6/scripts/ 에 둘 것
-docker-compose --profile load-test run --rm k6 run /scripts/matching-engine-test.js
 ```
 
 ## 아키텍처
 
-**Java 21 / Spring Boot 3.5.6 / Gradle**, PostgreSQL 17(운영은 아직 15), Redis 7, Flyway 마이그레이션 사용.
+**Java 21 / Spring Boot 3.5.6 / Gradle**, PostgreSQL 17(pgvector 이미지), Flyway 마이그레이션 파일 사용. 이 브랜치(`toss/main`)는 토스 배포용으로 Redis·Kafka·Prometheus 가 없다.
 
 ### 패키지 구조 (`grit.stockIt`)
 
 - **`domain/`** — 비즈니스 모듈. 각 모듈은 controller/service/repository/dto/entity 계층으로 구성:
-  - `matching` — Redis 기반 지정가 주문 매칭 엔진 (핵심 거래 로직)
+  - `matching` — RDB 오더북(`trade_order`) 기반 지정가 매칭 엔진, 종목 advisory 락으로 직렬화 (핵심 거래 로직)
   - `order` / `execution` — 주문 접수 및 체결 추적, 이벤트 기반 처리(`LimitOrderFillEvent`)
   - `account` — 포트폴리오 및 현금 관리
   - `stock` — 주식 데이터 및 KIS API 연동
@@ -69,7 +67,8 @@ docker-compose --profile load-test run --rm k6 run /scripts/matching-engine-test
   - `mission` / `title` / `industry` — 게이미피케이션 및 분류
 
 - **`global/`** — 횡단 관심사(cross-cutting) 인프라:
-  - `config/` — Security, WebSocket(STOMP), Redis, JPA, Cache, Flyway, Swagger, 외부 API 프로퍼티
+  - `config/` — Security, WebSocket(STOMP), JPA, Cache, Flyway, Swagger, 외부 API 프로퍼티
+  - `cache/` — 서버 메모리 TTL 캐시(`LocalTtlCache`, Caffeine)
   - `jwt/` — JWT 필터 및 토큰 서비스
   - `exception/` — GlobalExceptionHandler와 커스텀 예외(BadRequestException, ForbiddenException, UntradeableStockException)
   - `websocket/` — KIS WebSocket 클라이언트, STOMP 브로커, 구독 관리
@@ -79,14 +78,14 @@ docker-compose --profile load-test run --rm k6 run /scripts/matching-engine-test
 ### 핵심 아키텍처 패턴
 
 - **이벤트 기반**: 도메인 이벤트(예: `LimitOrderFillEvent`)로 주문 매칭과 체결/알림을 디커플링
-- **3단계 캐싱**: Redis(분산) + Caffeine(로컬 랭킹) + `@Cacheable`
+- **캐싱**: 서버 메모리(`LocalTtlCache`, Caffeine — 시세·차트·분석·기업 설명) + Caffeine 랭킹 캐시. KIS 토큰은 `kis_credential` 테이블
 - **WebSocket**: `/ws`에서 SockJS 위 STOMP, 토픽은 `/topic`·`/queue`, 앱 prefix는 `/app`
 - **JSON 컨벤션**: Jackson SNAKE_CASE — Java camelCase가 API 응답에서 snake_case로 자동 변환
-- **모니터링**: Spring Actuator + Micrometer → Prometheus 메트릭; PostgreSQL 슬로우 쿼리 모니터링은 `pg_stat_statements` 사용(`monitoring/` 참고)
+- **모니터링**: 생존 확인용 `/actuator/health` 만 노출한다(Prometheus·Grafana 없음). 느린 쿼리는 PostgreSQL `log_min_duration_statement`(1초) 로그로 본다
 
 ## 환경 & 프로파일
 
-세 가지 Spring 프로파일: `local`(로컬 DB/Redis), `dev`(Docker 서비스, **기본값**), `prod`(외부 DB). 활성 프로파일은 `SPRING_PROFILES_ACTIVE`를 통해 기본적으로 `dev`로 설정됩니다.
+세 가지 Spring 프로파일: `local`(로컬 DB), `dev`(Docker 서비스, **기본값**), `prod`(EC2 배포, `docker-compose.prod.yml`). 활성 프로파일은 `SPRING_PROFILES_ACTIVE`를 통해 기본적으로 `dev`로 설정됩니다.
 
 필수 환경변수(`.env`에 설정):
 - `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_URL`
@@ -102,7 +101,7 @@ docker-compose --profile load-test run --rm k6 run /scripts/matching-engine-test
 
 - **단위/통합**: JUnit 5 + Testcontainers(PostgreSQL) — 외부 DB 불필요
 - **동시성 테스트**: `LimitOrderMatchingServiceConcurrencyTest`가 동시 주문 매칭 하에서 데이터 정합성을 검증
-- **부하 테스트**: k6 스크립트(`k6/`)와 측정 보조 스크립트(`benchmark/`)는 개인 측정용이라 저장소에 올리지 않습니다(`.gitignore`). 부하 진입점 `POST /api/test/mock-execution`(`LoadTestController`, prod 제외)만 코드에 있습니다
+- **부하 테스트**: 이 브랜치에는 부하 측정 구성이 없습니다. 측정은 포트폴리오 브랜치(develop)에서 합니다
 
 ## 데이터베이스 마이그레이션
 
@@ -110,7 +109,7 @@ Flyway SQL 스크립트는 `src/main/resources/db/migration/`에 있습니다(V2
 
 ## CI/CD
 
-GitHub Actions(`.github/workflows/ci-cd.yml`): JDK 21 Temurin으로 빌드하고, Docker 이미지를 `${DOCKER_USERNAME}/stockit`에 푸시하며(태그: 브랜치 ref, `<branch>-<sha>`, 기본 브랜치에서는 `latest`), SSH로 배포합니다. CD는 `main` 브랜치 푸시 시 트리거됩니다.
+GitHub Actions(`.github/workflows/ci-cd.yml`): `toss/main` 푸시 시 빌드·테스트 후 `${DOCKER_USERNAME}/stockit:toss` 이미지를 올리고, SSH로 EC2 의 `~/stockit` 에서 `docker-compose.prod.yml` 을 다시 띄웁니다. 비밀값은 서버의 `.env` 에 있습니다. 자세한 절차는 `docs/deployment.md`.
 
 ## 코드 컨벤션
 

@@ -20,7 +20,8 @@
 Docker Compose:
 
 ```bash
-docker-compose up -d          # Traefik, PostgreSQL, Redis, Backend, 모니터링
+docker-compose up -d          # PostgreSQL(pgvector), Backend
+docker-compose --profile ai up -d   # AI 서버까지 (AI_IMAGE 로 이미지 지정)
 docker-compose down
 docker-compose build          # 백엔드 이미지 재빌드
 ```
@@ -29,9 +30,9 @@ docker-compose build          # 백엔드 이미지 재빌드
 
 | 프로파일 | 용도 |
 |----------|------|
-| `local` | 로컬 DB/Redis (localhost) |
+| `local` | 로컬 DB (localhost) |
 | `dev` | Docker 서비스 (**기본값**) |
-| `prod` | 외부 DB (배포 서버) |
+| `prod` | EC2 배포 (`docker-compose.prod.yml`, 빈 DB 면 테이블·인덱스·기초 데이터 생성) |
 
 ```bash
 -Dspring.profiles.active=local          # 또는
@@ -52,10 +53,10 @@ SPRING_PROFILES_ACTIVE=local
 | `JWT_SECRET` | JWT 서명 |
 | `GEMINI_API_KEY` / `CLAUDE_API_KEY` | AI 분석 |
 | `DART_API_KEY` | DART 공시 |
-| `PYTHON_ANALYSIS_URL` | 외부 Python 분석 서비스 |
+| `PYTHON_ANALYSIS_URL` | Python AI 서버 (compose 에서는 `http://ai:8000`) |
+| `NEWS_DB_PASSWORD` | 뉴스 RAG DB(`stock_news`)의 `stockai` 계정 (compose, 선택) |
 
-> `KAKAO_CLIENT_SECRET`, `FIREBASE_CREDENTIALS_BASE64` 등은 운영 배포 시
-> GitHub Secrets로 주입됩니다. → [deployment.md](deployment.md)
+> 운영 값은 서버의 `.env` 에 둡니다(`.env.prod.example`). → [deployment.md](deployment.md)
 
 ## 테스트
 
@@ -68,15 +69,11 @@ SPRING_PROFILES_ACTIVE=local
 - **단위/통합**: JUnit 5 + Testcontainers(PostgreSQL) — 외부 DB 불필요.
 - **동시성**: `LimitOrderMatchingServiceConcurrencyTest` — 동시 주문 매칭 시 데이터 정합성 검증.
   → [matching-engine.md](matching-engine.md)
-- **부하(k6)**:
-  ```bash
-  docker-compose --profile load-test run --rm k6 run /scripts/matching-engine-test.js
-  ```
-  스크립트는 저장소에 없습니다. `k6/`와 `benchmark/`는 개인 측정용이라 `.gitignore`에 들어 있으니 로컬에 두고 씁니다.
 
 ## 데이터베이스 마이그레이션
 
-- Flyway SQL: `src/main/resources/db/migration/` (현재 `V2`, `V6`~`V9`).
+- Flyway SQL: `src/main/resources/db/migration/` (현재 `V2`, `V6`~`V13`).
+- 운영(`prod`)은 빈 DB 에서 엔티티로 테이블을 만들고, 엔티티로 표현되지 않는 `V2`·`V10` 과 `data.sql` 을 `spring.sql.init` 으로 돌립니다.
 - Flyway **자동 실행은 비활성화**되어 있으며 초기화는 `global/config/FlywayConfig.java`가 담당합니다.
 - 새 마이그레이션 추가 시 다음 버전 번호로 `V{n}__{설명}.sql` 파일을 생성합니다.
 

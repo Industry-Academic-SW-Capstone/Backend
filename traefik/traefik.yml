@@ -8,33 +8,21 @@ entryPoints:
           scheme: https
   websecure:
     address: ":443"
-  dashboard:
-    address: ":8088"
-
-api:
-  dashboard: true
-  insecure: false # 배포용으로 인증 활성화
 
 log:
   level: INFO
 
-accessLog: {}
-
+# 라우팅은 docker-compose.prod.yml 의 컨테이너 라벨이 정한다. 도메인은 .env 의 API_DOMAIN.
 providers:
   docker:
     exposedByDefault: false
-    network: backend # spring-app 컨테이너가 연결된 Docker 네트워크 이름
+    network: backend
     endpoint: "unix:///var/run/docker.sock"
-  file:
-    filename: "/etc/traefik/dynamic_conf.yml" # 컨테이너 내부 경로
-    watch: true # 파일 변경 감지
 
 certificatesResolvers:
   letsencrypt:
     acme:
-      email: ymkim2353@gmail.com # 실제 사용하는 이메일 주소 권장
-      storage: /etc/traefik/letsencrypt/acme.json # acme 인증서 저장 경로
+      email: ymkim2353@gmail.com
+      storage: /etc/traefik/letsencrypt/acme.json
       httpChallenge:
-        entryPoint: web # HTTP 챌린지는 'web'(80) 엔트리포인트 사용
-      # 프로덕션 환경 권장
-      caServer: "https://acme-v02.api.letsencrypt.org/directory"
+        entryPoint: web

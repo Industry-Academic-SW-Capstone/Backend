@@ -1,242 +1,148 @@
+# EC2 한 대(메모리 2GB + 스왑) 배포 구성: Traefik + PostgreSQL(pgvector) + 백엔드 + AI 서버.
+# 값은 같은 디렉터리의 .env 에서 읽는다(.env.prod.example 참고).
+# 메모리 상한 합계 약 1.7GB — 나머지는 OS 몫이고, 순간 초과는 스왑이 받는다.
 services:
   traefik:
-    image: traefik:v2.11
+    image: traefik:v3.0
     container_name: traefik
-    restart: always
+    restart: unless-stopped
     ports:
       - "80:80"
       - "443:443"
-      - "8088:8088"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - ./traefik/traefik.yml:/etc/traefik/traefik.yml:ro
-      - ./traefik/dynamic_conf.yml:/etc/traefik/dynamic_conf.yml:ro
       - ./traefik/letsencrypt:/etc/traefik/letsencrypt
-      - ./traefik/users:/etc/traefik/users:ro
     networks:
       - backend
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-  redis:
-    image: redis:7
-    container_name: redis
-    restart: always
-    ports:
-      - "6379:6379"
-    command:
-      [
-        "redis-server",
-        "--slowlog-log-slower-than",
-        "1000",
-        "--slowlog-max-len",
-        "256",
-        "--logfile",
-        "/var/log/redis/redis-server.log",
-      ]
-    volumes:
-      - redis_data:/data
-      - ./logs/redis:/var/log/redis # 로그 마운트
-    networks:
-      - backend
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-
-  redis-cli:
-    image: redis:7
-    container_name: redis-cli
-    depends_on:
-      - redis
-    networks:
-      - backend
-    command: [ "tail", "-f", "/dev/null" ] # 컨테이너를 계속 실행 상태로 유지
-    volumes:
-      - ./redis-scripts:/scripts # Redis 스크립트 디렉토리 마운트
-    logging:
-      driver: "json-file"
+    mem_limit: 96m
+    logging: &logging
+      driver: json-file
       options:
         max-size: "10m"
         max-file: "3"
 
   db:
-    image: postgres:15
+    image: pgvector/pgvector:pg17
     container_name: postgres
-    restart: always
-    ports:
-      - "5432:5432"
+    restart: unless-stopped
     environment:
       POSTGRES_DB: ${POSTGRES_DB}
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      # 뉴스 RAG 용 stock_news DB 계정(postgres/init/10-news-db.sh). 첫 기동에만 쓰인다.
+      NEWS_DB_PASSWORD: ${NEWS_DB_PASSWORD}
       TZ: Asia/Seoul
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./monitoring/postgres/init-pg-stat-statements.sql:/docker-entrypoint-initdb.d/01-pg-stat-statements.sql:ro
-    networks:
-      - backend
-    deploy:
-      resources:
-        limits:
-          memory: 1G
+      - ./postgres/init:/docker-entrypoint-initdb.d:ro
+    # 호스트로 포트를 열지 않는다. 접속은 컨테이너 네트워크 안에서만.
     command:
       - postgres
       - "-c"
-      - "shared_preload_libraries=pg_stat_statements"
+      - "shared_buffers=96MB"
       - "-c"
-      - "pg_stat_statements.track=all"
-      - "-c"
-      - "pg_stat_statements.max=10000"
-      - "-c"
-      - "shared_buffers=256MB"
+      - "effective_cache_size=256MB"
       - "-c"
       - "work_mem=4MB"
       - "-c"
-      - "effective_cache_size=512MB"
+      - "max_connections=40"
+      - "-c"
+      - "log_min_duration_statement=1000"
     healthcheck:
-      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}" ]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
       interval: 5s
       timeout: 5s
       retries: 10
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
+    networks:
+      - backend
+    mem_limit: 384m
+    logging: *logging
 
   backend:
-    image: hwnahee/stockit:main
+    image: ${DOCKER_USERNAME}/stockit:${BACKEND_TAG:-toss}
     container_name: backend
+    restart: unless-stopped
     depends_on:
       db:
         condition: service_healthy
-      redis:
-        condition: service_started
-    ports:
-      - "8080:8080"
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      POSTGRES_URL: jdbc:postgresql://db:5432/${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      PYTHON_ANALYSIS_URL: http://ai:8000
+      KIS_API_APPKEY: ${KIS_API_APPKEY}
+      KIS_API_APPSECRET: ${KIS_API_APPSECRET}
+      KAKAO_REST_API_KEY: ${KAKAO_REST_API_KEY}
+      KAKAO_CLIENT_SECRET: ${KAKAO_CLIENT_SECRET:-}
+      KAKAO_REDIRECT_URI: ${KAKAO_REDIRECT_URI}
+      JWT_SECRET: ${JWT_SECRET}
+      GEMINI_API_KEY: ${GEMINI_API_KEY}
+      CLAUDE_API_KEY: ${CLAUDE_API_KEY:-}
+      DART_API_KEY: ${DART_API_KEY:-}
+      FIREBASE_CREDENTIALS_BASE64: ${FIREBASE_CREDENTIALS_BASE64:-}
+      # 미설정 시 기동에 실패한다(fail-fast).
+      APP_CORS_ALLOWED_ORIGINS: ${APP_CORS_ALLOWED_ORIGINS}
+      APP_ADMIN_EMAILS: ${APP_ADMIN_EMAILS:-}
+      # 빈 DB 에 처음 올릴 때 한 번 true 로 두면 KIS 종목 마스터를 받아 온다.
+      APP_RUN_MASTER_UPDATE_ON_STARTUP: ${APP_RUN_MASTER_UPDATE_ON_STARTUP:-false}
+      # 상한 896MB 중 힙 약 490MB. 나머지는 메타스페이스·스레드 스택·코드 캐시 몫이다.
+      JAVA_OPTS: >-
+        -XX:+UseContainerSupport -XX:MaxRAMPercentage=55.0 -XX:MaxMetaspaceSize=192m -Xss512k
+        -XX:+UseG1GC -XX:+UseStringDeduplication -Duser.timezone=Asia/Seoul
+      SERVER_TOMCAT_THREADS_MAX: 50
+      SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE: 10
+    # Traefik 은 healthy 가 된 컨테이너에만 보낸다. Dockerfile 기본(30초 간격)이면 배포마다 약 40초 404 가 난다.
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/actuator/health"]
+      interval: 5s
+      timeout: 3s
+      start_period: 10s
+      retries: 3
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.api.rule=Host(`${API_DOMAIN}`)
+      - traefik.http.routers.api.entrypoints=websecure
+      - traefik.http.routers.api.tls.certresolver=letsencrypt
+      - traefik.http.routers.api.middlewares=security-headers
+      - traefik.http.services.api.loadbalancer.server.port=8080
+      - traefik.http.middlewares.security-headers.headers.contentTypeNosniff=true
+      - traefik.http.middlewares.security-headers.headers.frameDeny=true
+      - traefik.http.middlewares.security-headers.headers.stsSeconds=31536000
     networks:
       - backend
-    restart: unless-stopped
-    environment:
-      - POSTGRES_DB=${POSTGRES_DB}
-      - POSTGRES_USER=${POSTGRES_USER}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
-      - POSTGRES_URL=${POSTGRES_URL}
-      - SPRING_PROFILES_ACTIVE=prod
-      - SPRING_REDIS_HOST=${SPRING_REDIS_HOST}
-      - SPRING_REDIS_PORT=${SPRING_REDIS_PORT:-6379}
-      - KIS_API_APPKEY=${KIS_API_APPKEY}
-      - KIS_API_APPSECRET=${KIS_API_APPSECRET}
-      - KAKAO_CLIENT_SECRET=${KAKAO_CLIENT_SECRET}
-      - KAKAO_REDIRECT_URI=${KAKAO_REDIRECT_URI}
-      - KAKAO_REST_API_KEY=${KAKAO_REST_API_KEY}
-      - JWT_SECRET=${JWT_SECRET}
-      - FIREBASE_CREDENTIALS_BASE64=${FIREBASE_CREDENTIALS_BASE64}
-      - PYTHON_ANALYSIS_URL=${PYTHON_ANALYSIS_URL}
-      - GEMINI_API_KEY=${GEMINI_API_KEY}
-      # 미설정 시 애플리케이션이 기동에 실패한다(fail-fast). 와일드카드 오리진은 더 이상 허용되지 않는다.
-      - APP_CORS_ALLOWED_ORIGINS=${APP_CORS_ALLOWED_ORIGINS}
-      # 관리자 API 허용 이메일(쉼표 구분). 비면 관리자 API는 아무도 못 쓴다.
-      - APP_ADMIN_EMAILS=${APP_ADMIN_EMAILS:-}
+    mem_limit: 896m
     logging:
-      driver: "json-file"
+      <<: *logging
       options:
-        max-size: "50m"
+        max-size: "20m"
         max-file: "5"
 
-  postgres-exporter:
-    image: quay.io/prometheuscommunity/postgres-exporter:latest
-    container_name: postgres-exporter
-    environment:
-      DATA_SOURCE_NAME: "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}?sslmode=disable"
-    command:
-      - "--collector.stat_statements"
+  ai:
+    image: ${DOCKER_USERNAME}/stockit-ai:${AI_TAG:-toss}
+    container_name: ai
+    restart: unless-stopped
     depends_on:
       db:
         condition: service_healthy
-    networks:
-      - backend
-    restart: unless-stopped
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-
-  node-exporter:
-    image: prom/node-exporter:latest
-    container_name: node-exporter
-    volumes:
-      - /proc:/host/proc:ro
-      - /sys:/host/sys:ro
-      - /:/rootfs:ro
-    command:
-      - '--path.procfs=/host/proc'
-      - '--path.sysfs=/host/sys'
-      - '--path.rootfs=/rootfs'
-      - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'
-    networks:
-      - backend
-    restart: unless-stopped
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-
-  prometheus:
-    image: prom/prometheus:latest
-    container_name: prometheus
-    command:
-      - '--config.file=/etc/prometheus/prometheus.yml'
-      - '--web.enable-remote-write-receiver'
-      - '--storage.tsdb.retention.time=30d'
-    ports:
-      - "9090:9090"
-    volumes:
-      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
-      - prometheus_data:/prometheus
-    networks:
-      - backend
-    restart: unless-stopped
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-
-  grafana:
-    image: grafana/grafana:latest
-    container_name: grafana
-    ports:
-      - "3000:3000"
-    volumes:
-      - grafana_data:/var/lib/grafana
-      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
-      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    # 외부로 열지 않는다. 백엔드만 http://ai:8000 으로 부른다.
     environment:
-      GF_SECURITY_ADMIN_USER: admin
-      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
-    depends_on:
-      - prometheus
+      GEMINI_API_KEY: ${GEMINI_API_KEY}
+      NAVER_CLIENT_ID: ${NAVER_CLIENT_ID:-}
+      NAVER_CLIENT_SECRET: ${NAVER_CLIENT_SECRET:-}
+      PGVECTOR_HOST: db
+      PGVECTOR_PORT: 5432
+      PGVECTOR_USER: stockai
+      PGVECTOR_PASSWORD: ${NEWS_DB_PASSWORD}
+      PGVECTOR_DB: stock_news
     networks:
       - backend
-    restart: unless-stopped
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
+    mem_limit: 320m
+    logging: *logging
 
 volumes:
   postgres_data:
-  redis_data:
-  prometheus_data:
-  grafana_data:
 
 networks:
   backend:
