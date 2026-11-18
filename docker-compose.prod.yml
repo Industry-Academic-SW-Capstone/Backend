@@ -3,7 +3,7 @@
 # 메모리 상한 합계 약 1.7GB — 나머지는 OS 몫이고, 순간 초과는 스왑이 받는다.
 services:
   traefik:
-    image: traefik:v3.0
+    image: traefik:v3.7
     container_name: traefik
     restart: unless-stopped
     ports:
