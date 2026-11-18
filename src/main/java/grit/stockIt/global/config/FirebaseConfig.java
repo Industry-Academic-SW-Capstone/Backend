@@ -5,7 +5,7 @@ import com.google.firebase.FirebaseApp;
 import com.google.firebase.FirebaseOptions;
 import com.google.firebase.messaging.FirebaseMessaging;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.util.StringUtils;
@@ -21,7 +21,8 @@ import java.util.Base64;
  */
 @Slf4j
 @Configuration
-@ConditionalOnProperty(name = "firebase.credentials-base64")
+// application.yml 이 이 속성을 빈 값으로라도 늘 정의하므로, 존재 여부가 아니라 값이 있는지로 켠다.
+@ConditionalOnExpression("!'${firebase.credentials-base64:}'.isBlank()")
 public class FirebaseConfig {
 
     private final FirebaseProperties firebaseProperties;
