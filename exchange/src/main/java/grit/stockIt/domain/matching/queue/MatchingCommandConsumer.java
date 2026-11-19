@@ -8,7 +8,7 @@ import org.springframework.stereotype.Component;
 import java.util.List;
 
 // 체결 워커. 파티션 하나를 스레드 하나가 맡아 그 안의 명령(주문, 체결, 취소, 만료)을 도착 순서대로 처리한다.
-// poll 한 번에 받은 명령(최대 matching.queue.batch-max)을 파티션별로 한 트랜잭션에 묶는다. 기다려서 채우지 않는다.
+// poll 한 번에 받은 명령을 같은 파티션끼리 matching.queue.batch-max 개씩 끊어 한 트랜잭션에 묶는다. 기다려서 채우지 않는다.
 // 체결 결과 통보는 체결 트랜잭션이 아웃박스에 적고, 아웃박스 릴레이가 exchange.reports 로 보낸다.
 @Component
 @RequiredArgsConstructor
@@ -24,8 +24,7 @@ public class MatchingCommandConsumer {
             concurrency = "${matching.queue.fill-concurrency:24}",
             batch = "true",
             properties = {
-                    "spring.json.value.default.type=grit.stockIt.domain.matching.queue.MatchingCommand",
-                    "max.poll.records=${matching.queue.batch-max:20}"
+                    "spring.json.value.default.type=grit.stockIt.domain.matching.queue.MatchingCommand"
             }
     )
     public void consume(List<ConsumerRecord<String, MatchingCommand>> records) {

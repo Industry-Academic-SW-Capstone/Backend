@@ -5,6 +5,7 @@ import jakarta.persistence.EntityManager;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.log.LogAccessor;
 import org.springframework.kafka.listener.BatchListenerFailedException;
 import org.springframework.kafka.support.serializer.SerializationUtils;
@@ -14,7 +15,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 import java.util.ArrayList;
 import java.util.List;
 
-// poll 한 번의 명령을 파티션 묶음마다 트랜잭션 하나로 처리해 커밋 수를 줄인다. 묶음이 실패하면 한 건씩 각자 트랜잭션으로 다시 처리한다.
+// poll 한 번의 명령을 같은 파티션 구간마다 batch-max 개씩 끊어 묶음 하나를 트랜잭션 하나로 처리해 커밋 수를 줄인다. 묶음이 실패하면 한 건씩 각자 트랜잭션으로 다시 처리한다.
 @Slf4j
 @Component
 @RequiredArgsConstructor
@@ -26,6 +27,9 @@ public class MatchingBatchProcessor {
     private final MatchingQueueMetrics metrics;
     private final TransactionTemplate transactionTemplate;
     private final EntityManager entityManager;
+
+    @Value("${matching.queue.batch-max:20}")
+    private int batchMax;
 
     public void process(List<ConsumerRecord<String, MatchingCommand>> records) {
         for (List<ConsumerRecord<String, MatchingCommand>> run : partitionRuns(records)) {
@@ -55,10 +59,18 @@ public class MatchingBatchProcessor {
     private void processRun(List<ConsumerRecord<String, MatchingCommand>> run) {
         int unreadableAt = firstUnreadable(run);
         if (unreadableAt > 0) {
-            processTogether(run.subList(0, unreadableAt));
+            processInChunks(run.subList(0, unreadableAt));
         }
         if (unreadableAt < run.size()) {
             throw unreadable(run.get(unreadableAt));
+        }
+    }
+
+    // 앞 묶음은 이미 커밋돼 있어 뒤 묶음의 실패 레코드로 에러 핸들러에 넘겨도 offset 이 앞서 커밋되지 않는다.
+    private void processInChunks(List<ConsumerRecord<String, MatchingCommand>> commands) {
+        int chunkSize = Math.max(1, batchMax);
+        for (int from = 0; from < commands.size(); from += chunkSize) {
+            processTogether(commands.subList(from, Math.min(from + chunkSize, commands.size())));
         }
     }
 

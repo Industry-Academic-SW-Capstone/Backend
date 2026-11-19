@@ -89,6 +89,9 @@ class MatchingCommandConsumerIntegrationTest extends KafkaIntegrationTestSupport
     @Test
     @DisplayName("여러 명령을 한 번에 받아 모두 처리한다")
     void manyCommands_processedInBatches() throws Exception {
+        DistributionSummary batchSize = meterRegistry.get("matching.batch.size").summary();
+        long batchCountBefore = batchSize.count();
+        double batchTotalBefore = batchSize.totalAmount();
         List<CompletableFuture<SendResult<String, MatchingCommand>>> sent = new ArrayList<>();
         for (int i = 0; i < 10; i++) {
             sent.add(commandTemplate.send(MatchingTopics.COMMANDS, STOCK_CODE,
@@ -98,9 +101,9 @@ class MatchingCommandConsumerIntegrationTest extends KafkaIntegrationTestSupport
         RecordMetadata last = sent.get(sent.size() - 1).get(WAIT.toSeconds(), TimeUnit.SECONDS).getRecordMetadata();
         await().atMost(WAIT).until(() -> lastOffsetOf(last.partition()) >= last.offset());
         assertThat(lastOffsetOf(last.partition())).isEqualTo(last.offset());
-        DistributionSummary batchSize = meterRegistry.find("matching.batch.size").summary();
-        assertThat(batchSize).isNotNull();
-        assertThat(batchSize.max()).isGreaterThan(1);
+        await().atMost(WAIT).until(() -> batchSize.totalAmount() - batchTotalBefore >= 10);
+        assertThat(batchSize.totalAmount() - batchTotalBefore).isEqualTo(10.0);
+        assertThat(batchSize.count() - batchCountBefore).as("한 트랜잭션에 둘 이상 묶인 적이 있다").isLessThan(10);
     }
 
     @Test

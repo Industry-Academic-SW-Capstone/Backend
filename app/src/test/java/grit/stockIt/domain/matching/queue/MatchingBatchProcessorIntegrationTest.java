@@ -22,7 +22,9 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.kafka.listener.BatchListenerFailedException;
 import org.springframework.kafka.support.serializer.DeserializationException;
 import org.springframework.kafka.support.serializer.SerializationUtils;
+import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
@@ -42,12 +44,14 @@ import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
-@DisplayName("MatchingBatchProcessor — 파티션별 한 트랜잭션, 실패하면 한 건씩 (통합)")
+@DisplayName("MatchingBatchProcessor — 파티션 구간을 batch-max 개씩 한 트랜잭션, 실패하면 한 건씩 (통합)")
+@TestPropertySource(properties = "matching.queue.batch-max=" + MatchingBatchProcessorIntegrationTest.BATCH_MAX)
 class MatchingBatchProcessorIntegrationTest extends IntegrationTestSupport {
 
     private static final String STOCK_CODE = "005930";
     private static final BigDecimal PRICE = new BigDecimal("100");
     private static final long ACCOUNT_ID = 77L;
+    static final int BATCH_MAX = 3;
 
     @Autowired private MatchingBatchProcessor processor;
     @Autowired private ExchangeOrderRepository exchangeOrderRepository;
@@ -276,6 +280,74 @@ class MatchingBatchProcessorIntegrationTest extends IntegrationTestSupport {
                 .containsExactly(ExecutionReportType.FILL);
         assertThat(counter("matching.batch.fallback") - fallbackBefore).isZero();
         assertThat(batchSize().count() - batchCountBefore).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("batch-max 보다 긴 구간은 batch-max 개씩 끊어 각자 커밋한다")
+    void batch_max보다_긴_구간은_batch_max_개씩_끊어_각자_커밋한다() {
+        List<ConsumerRecord<String, MatchingCommand>> run = new ArrayList<>();
+        for (int i = 0; i < 7; i++) {
+            placeSell((long) i + 1, 1);
+            run.add(record(0, i, buyFill(1)));
+        }
+        long batchCountBefore = batchSize().count();
+        double batchTotalBefore = batchSize().totalAmount();
+        double fallbackBefore = counter("matching.batch.fallback");
+
+        processor.process(run);
+
+        assertThat(fillCount()).isEqualTo(7);
+        assertThat(watermarkOf(0)).contains(6L);
+        assertThat(batchSize().count() - batchCountBefore).as("ceil(7/3) 트랜잭션").isEqualTo(3);
+        assertThat(batchSize().totalAmount() - batchTotalBefore).isEqualTo(7.0);
+        assertThat(counter("matching.batch.fallback") - fallbackBefore).isZero();
+    }
+
+    @Test
+    @DisplayName("두 번째 묶음이 실패해도 첫 묶음은 커밋된 채로 남는다")
+    void 두_번째_묶음이_실패해도_첫_묶음은_커밋된_채로_남는다() {
+        List<ConsumerRecord<String, MatchingCommand>> run = new ArrayList<>();
+        for (int i = 0; i < 7; i++) {
+            placeSell((long) i + 1, 1);
+            run.add(record(0, i, i == 4 ? buyFill(0) : buyFill(1)));
+        }
+        ConsumerRecord<String, MatchingCommand> invalid = run.get(4);
+        long batchCountBefore = batchSize().count();
+        double batchTotalBefore = batchSize().totalAmount();
+        double fallbackBefore = counter("matching.batch.fallback");
+
+        assertThatThrownBy(() -> processor.process(run))
+                .isInstanceOfSatisfying(BatchListenerFailedException.class, e -> {
+                    assertThat(e.getCause()).isInstanceOf(InvalidMatchingCommandException.class);
+                    assertThat(e.getRecord()).isSameAs(invalid);
+                });
+
+        assertThat(fillCount()).as("첫 묶음 셋 + 한 건씩 다시 처리한 offset 3").isEqualTo(4);
+        assertThat(watermarkOf(0)).contains(3L);
+        assertThat(batchSize().count() - batchCountBefore).as("첫 묶음 + 한 건").isEqualTo(2);
+        assertThat(batchSize().totalAmount() - batchTotalBefore).isEqualTo(4.0);
+        assertThat(counter("matching.batch.fallback") - fallbackBefore).isEqualTo(1.0);
+    }
+
+    @Test
+    @DisplayName("batch-max 가 1 이면 명령마다 트랜잭션 하나다")
+    void batch_max가_1이면_명령마다_트랜잭션_하나다() {
+        placeSell(1L, 1);
+        placeSell(2L, 1);
+        placeSell(3L, 1);
+        long batchCountBefore = batchSize().count();
+        double batchTotalBefore = batchSize().totalAmount();
+        ReflectionTestUtils.setField(processor, "batchMax", 1);
+        try {
+            processor.process(List.of(record(0, 0, buyFill(1)), record(0, 1, buyFill(1)), record(0, 2, buyFill(1))));
+        } finally {
+            ReflectionTestUtils.setField(processor, "batchMax", BATCH_MAX);
+        }
+
+        assertThat(fillCount()).isEqualTo(3);
+        assertThat(watermarkOf(0)).contains(2L);
+        assertThat(batchSize().count() - batchCountBefore).isEqualTo(3);
+        assertThat(batchSize().totalAmount() - batchTotalBefore).isEqualTo(3.0);
     }
 
     private List<ConsumerRecord<String, MatchingCommand>> failingOnceAtSecond() {
