@@ -168,6 +168,8 @@ matching:
     ack-timeout: ${MATCHING_QUEUE_ACK_TIMEOUT:1s}
     # 체결 워커 스레드 수. 파티션(24)마다 하나라 종목이 서로 다른 스레드에 갈 확률이 가장 높다.
     fill-concurrency: ${MATCHING_QUEUE_FILL_CONCURRENCY:24}
+    # 체결 워커가 명령 몇 개를 한 트랜잭션으로 묶을지. 1 이면 명령마다 커밋한다.
+    batch-max: ${MATCHING_QUEUE_BATCH_MAX:20}
 
 # 아웃박스 릴레이 — 체결 결과 통보를 아웃박스에서 Kafka 로 보낸다
 outbox:
