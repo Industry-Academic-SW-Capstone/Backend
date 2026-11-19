@@ -7,19 +7,28 @@ import grit.stockIt.domain.matching.service.FillCommandPublisher;
 import grit.stockIt.domain.matching.service.FillDispatchResult;
 import grit.stockIt.domain.order.entity.OrderMethod;
 import grit.stockIt.global.support.KafkaIntegrationTestSupport;
+import io.micrometer.core.instrument.DistributionSummary;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.serialization.ByteArraySerializer;
 import org.apache.kafka.common.serialization.StringSerializer;
+import org.apache.kafka.clients.producer.RecordMetadata;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.kafka.core.KafkaTemplate;
+import org.springframework.kafka.support.SendResult;
 
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
@@ -34,6 +43,12 @@ class MatchingCommandConsumerIntegrationTest extends KafkaIntegrationTestSupport
 
     @Autowired
     private ConsumerWatermarkRepository consumerWatermarkRepository;
+
+    @Autowired
+    private KafkaTemplate<String, MatchingCommand> commandTemplate;
+
+    @Autowired
+    private MeterRegistry meterRegistry;
 
     @Test
     @DisplayName("입구에 넣은 명령을 워커가 꺼내 처리하고 그 위치를 기록한다")
@@ -69,6 +84,36 @@ class MatchingCommandConsumerIntegrationTest extends KafkaIntegrationTestSupport
 
         awaitWatermarkReaches(next);
         assertThat(findDeadLetter(MatchingTopics.COMMANDS, value -> value.contains(invalidEventId))).isTrue();
+    }
+
+    @Test
+    @DisplayName("여러 명령을 한 번에 받아 모두 처리한다")
+    void manyCommands_processedInBatches() throws Exception {
+        List<CompletableFuture<SendResult<String, MatchingCommand>>> sent = new ArrayList<>();
+        for (int i = 0; i < 10; i++) {
+            sent.add(commandTemplate.send(MatchingTopics.COMMANDS, STOCK_CODE,
+                    MatchingCommand.fill(STOCK_CODE, fillEvent(1), System.currentTimeMillis())));
+        }
+
+        RecordMetadata last = sent.get(sent.size() - 1).get(WAIT.toSeconds(), TimeUnit.SECONDS).getRecordMetadata();
+        await().atMost(WAIT).until(() -> lastOffsetOf(last.partition()) >= last.offset());
+        assertThat(lastOffsetOf(last.partition())).isEqualTo(last.offset());
+        DistributionSummary batchSize = meterRegistry.find("matching.batch.size").summary();
+        assertThat(batchSize).isNotNull();
+        assertThat(batchSize.max()).isGreaterThan(1);
+    }
+
+    @Test
+    @DisplayName("한 poll 중간의 읽을 수 없는 메시지는 DLT 로 보내고 앞뒤는 반영한다")
+    void unreadableInMiddle_toDlt_neighborsApplied() throws Exception {
+        String garbage = "not-json-" + UUID.randomUUID();
+        FillDispatchResult.Queued before = (FillDispatchResult.Queued) fillCommandPublisher.publish(STOCK_CODE, fillEvent(1));
+        sendRaw(garbage.getBytes(StandardCharsets.UTF_8));
+        FillDispatchResult.Queued after = (FillDispatchResult.Queued) fillCommandPublisher.publish(STOCK_CODE, fillEvent(1));
+
+        awaitWatermarkReaches(before);
+        awaitWatermarkReaches(after);
+        assertThat(findDeadLetter(MatchingTopics.COMMANDS, value -> value.equals(garbage))).isTrue();
     }
 
     private void awaitWatermarkReaches(FillDispatchResult.Queued queued) {

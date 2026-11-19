@@ -60,6 +60,10 @@ exchange.reports — 시세 워커 1 (OpenOrderReportConsumer, 리스너 id·그
   접수한 취소보다 먼저 도착한 체결이 주문을 채웠으면 취소는 아무것도 하지 않는다(거래소의 "Too late to cancel").
 - 시간 우선은 거래소에 도착한 순서(`exchange_order.accepted_at`)다. 실제 거래소도 회원사가 보낸 순서가 아니라 도달한 순서를 따른다.
 - 서로 다른 종목은 다른 파티션·다른 워커라 병렬로 처리된다. **인기 종목 하나의 처리량은 워커 하나가 정한다.**
+- 워커는 poll 한 번에 받은 명령(최대 `matching.queue.batch-max`, 기본 20)을 파티션별로 한 트랜잭션에 묶어 처리한다(`MatchingBatchProcessor`).
+  기다려서 채우지 않으므로 밀린 만큼만 묶이고, 명령 종류와 상관없이 Kafka 레코드 순서대로 처리한다. 1 이면 명령마다 트랜잭션 하나다.
+  묶음이 실패하면 롤백하고 같은 명령을 한 건씩 다시 처리한다(`matching.batch.fallback`). 한 건짜리가 실패하면 곧바로 에러 핸들러(DLT·재시도)로 넘긴다.
+  체결·중복·대기 지표는 커밋 뒤에 기록한다.
 - 파티션 수(24)는 키 → 파티션 매핑이다. 늘리면 같은 종목이 다른 파티션으로 가 순서가 깨지므로 처음에 정해 만든다(자동 생성 끔).
 
 ## 명령 (`MatchingCommand`)
@@ -194,6 +198,8 @@ ON CONFLICT (topic, partition_no) DO UPDATE
 | `matching.fill.queue.wait` | 큐에 넣은 뒤 워커가 꺼낼 때까지 |
 | `matching.fill.e2e` | 큐에 넣은 뒤 체결이 커밋될 때까지 |
 | `matching.fill.duplicate` | 워터마크로 건너뛴 체결 명령 수(재전달) |
+| `matching.batch.size` | 트랜잭션 하나로 묶어 처리한 명령 수 |
+| `matching.batch.fallback` | 묶음 처리에 실패해 한 건씩 다시 처리한 횟수 |
 | `settlement.e2e` | 체결 커밋 → 정산 커밋 (아웃박스 릴레이 시간 포함) |
 | `outbox.relay.published` / `outbox.relay.failures` | 아웃박스에서 보낸 수 / 전송 실패 횟수 |
 | `outbox.pending.rows` / `outbox.pending.oldest.age` | 아웃박스에서 보내기를 기다리는 행 수 / 가장 오래 기다린 시간(초). 5초마다 센다(`outbox.relay.pending-sample-interval`). Kafka lag 에 안 보이는 릴레이 밀림 |
