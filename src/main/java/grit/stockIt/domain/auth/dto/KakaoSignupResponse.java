@@ -11,8 +11,8 @@ import lombok.Getter;
 @AllArgsConstructor
 @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
 public class KakaoSignupResponse {
+    private String signupToken;
     private String email;
     private String name;
     private String profileImage;
-    //private boolean isNewUser;
 }

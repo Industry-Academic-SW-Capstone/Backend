@@ -50,7 +50,7 @@ public class KakaoAuthController {
     @Operation(summary = "카카오 회원가입 완료", description = "신규 회원 가입 완료 처리")
     @PostMapping("/signup/complete")
     public ResponseEntity<JwtToken> completeSignup(@Valid @RequestBody KakaoSignupCompleteRequest req) {
-        JwtToken token = kakaoAuthService.completeSignup(req.getEmail(), req.getName(), req.getProfileImage());
+        JwtToken token = kakaoAuthService.completeSignupWithTicket(req.getSignupToken(), req.getName(), req.getProfileImage());
         return ResponseEntity.ok(token);
     }
 

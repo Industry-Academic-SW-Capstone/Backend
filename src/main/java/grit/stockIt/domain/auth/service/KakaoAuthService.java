@@ -10,6 +10,8 @@ import grit.stockIt.domain.member.entity.AuthProvider;
 import grit.stockIt.domain.member.entity.Member;
 import grit.stockIt.domain.member.repository.MemberRepository;
 import grit.stockIt.domain.member.service.MemberRegistrationService;
+import grit.stockIt.global.cache.LocalTtlCache;
+import grit.stockIt.global.exception.BadRequestException;
 import grit.stockIt.global.jwt.JwtService;
 import grit.stockIt.global.jwt.JwtToken;
 import lombok.RequiredArgsConstructor;
@@ -19,8 +21,10 @@ import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.Optional;
+import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 
 @Slf4j
@@ -29,10 +33,14 @@ import java.util.concurrent.CompletableFuture;
 @Transactional(readOnly = true)
 public class KakaoAuthService {
 
+    private static final String SIGNUP_TICKET_KEY_PREFIX = "kakao:signup:";
+    private static final Duration SIGNUP_TICKET_TTL = Duration.ofMinutes(10);
+
     private final KakaoOAuthClient kakaoOAuthClient;
     private final MemberRepository memberRepository;
     private final JwtService jwtService;
     private final MemberRegistrationService memberRegistrationService;
+    private final LocalTtlCache localTtlCache;
 
     /**
      * 카카오 로그인 (비동기 처리)
@@ -54,7 +62,8 @@ public class KakaoAuthService {
     }
 
     private KakaoLoginResponse processLogin(KakaoTokenResponse tokenResponse, KakaoUserInfoResponse userInfo) {
-        String email = userInfo.getKakaoAccount().getEmail();
+        var kakaoAccount = userInfo.getKakaoAccount();
+        String email = (kakaoAccount != null) ? kakaoAccount.getEmail() : null;
         if (email == null) {
             throw new IllegalArgumentException("카카오 계정에 이메일 정보가 없습니다.");
         }
@@ -70,11 +79,16 @@ public class KakaoAuthService {
 
             return KakaoLoginResponse.ofExistingUser(jwtToken);
         } else {
-            var profile = userInfo.getKakaoAccount().getProfile();
+            var profile = kakaoAccount.getProfile();
             String nickname = (profile != null) ? profile.getNickname() : null;
             String profileImage = (profile != null) ? profile.getProfileImageUrl() : null;
 
+            // 가입 완료 요청은 이 표만 믿는다. 본문의 이메일을 믿으면 남의 이메일로 가입할 수 있다.
+            String signupToken = UUID.randomUUID().toString();
+            localTtlCache.put(SIGNUP_TICKET_KEY_PREFIX + signupToken, email, SIGNUP_TICKET_TTL);
+
             KakaoSignupResponse signupInfo = KakaoSignupResponse.builder()
+                    .signupToken(signupToken)
                     .email(email)
                     .name(nickname)
                     .profileImage(profileImage)
@@ -82,6 +96,16 @@ public class KakaoAuthService {
 
             return KakaoLoginResponse.ofNewUser(signupInfo);
         }
+    }
+
+    @Transactional
+    public JwtToken completeSignupWithTicket(String signupToken, String name, String profileImage) {
+        String key = SIGNUP_TICKET_KEY_PREFIX + signupToken;
+        String email = localTtlCache.get(key)
+                .orElseThrow(() -> new BadRequestException("가입 정보가 만료되었습니다. 카카오 로그인을 다시 해 주세요."));
+        JwtToken token = completeSignup(email, name, profileImage);
+        localTtlCache.delete(key);
+        return token;
     }
 
     @Transactional
