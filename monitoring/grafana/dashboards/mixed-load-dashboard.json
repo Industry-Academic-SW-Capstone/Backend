@@ -265,8 +265,17 @@
             "uid": "prometheus"
           },
           "refId": "A",
-          "expr": "sum by (listener) (label_replace(rate(spring_kafka_listener_seconds_count{job=\"spring-boot\",result=\"success\"}[1m]), \"listener\", \"$1\", \"name\", \"(.+)-[0-9]+\"))",
+          "expr": "sum by (listener) (label_replace(rate(spring_kafka_listener_seconds_count{job=\"spring-boot\",name!~\"matching-fill-.*\",result=\"success\"}[1m]), \"listener\", \"$1\", \"name\", \"(.+)-[0-9]+\"))",
           "legendFormat": "{{listener}}"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "refId": "B",
+          "expr": "sum(rate(matching_command_duration_seconds_count{job=\"spring-boot\",type=\"FILL\"}[1m]))",
+          "legendFormat": "matching-fill (체결 명령/s)"
         }
       ]
     },
@@ -665,7 +674,7 @@
       "id": 46,
       "type": "timeseries",
       "title": "Listener Time per Event by Group (ms)",
-      "description": "그룹별 메시지 한 건 처리 시간 평균. 처리량 ≈ 스레드 수 ÷ 이 값.",
+      "description": "그룹별 메시지 한 건 처리 시간 평균. 체결(matching-fill)은 리스너가 배치 단위라 matching_command_duration(배치 시간 ÷ 명령 수)으로 계산한다. 처리량 ≈ 스레드 수 ÷ 이 값.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -708,8 +717,17 @@
             "uid": "prometheus"
           },
           "refId": "A",
-          "expr": "1000 * sum by (listener) (label_replace(rate(spring_kafka_listener_seconds_sum{job=\"spring-boot\"}[1m]), \"listener\", \"$1\", \"name\", \"(.+)-[0-9]+\")) / sum by (listener) (label_replace(rate(spring_kafka_listener_seconds_count{job=\"spring-boot\"}[1m]), \"listener\", \"$1\", \"name\", \"(.+)-[0-9]+\"))",
+          "expr": "1000 * sum by (listener) (label_replace(rate(spring_kafka_listener_seconds_sum{job=\"spring-boot\",name!~\"matching-fill-.*\"}[1m]), \"listener\", \"$1\", \"name\", \"(.+)-[0-9]+\")) / sum by (listener) (label_replace(rate(spring_kafka_listener_seconds_count{job=\"spring-boot\",name!~\"matching-fill-.*\"}[1m]), \"listener\", \"$1\", \"name\", \"(.+)-[0-9]+\"))",
           "legendFormat": "{{listener}}"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "refId": "B",
+          "expr": "1000 * sum(rate(matching_command_duration_seconds_sum{job=\"spring-boot\"}[1m])) / sum(rate(matching_command_duration_seconds_count{job=\"spring-boot\"}[1m]))",
+          "legendFormat": "matching-fill (명령 한 건)"
         }
       ]
     },
@@ -768,8 +786,8 @@
     {
       "id": 48,
       "type": "timeseries",
-      "title": "Listener Failures by Group",
-      "description": "그룹별 처리 실패/s(재시도 포함). 0 이 아니면 해당 서비스 로그를 본다. 독 메시지만 DLT 로 간다.",
+      "title": "Listener Failures by Group (matching-fill 은 실패한 배치 수)",
+      "description": "그룹별 처리 실패/s(재시도 포함). 0 이 아니면 해당 서비스 로그를 본다. 독 메시지만 DLT 로 간다. matching-fill 은 리스너가 배치 단위라 실패한 배치 호출 수를 센다. 배치 롤백 후 한 건씩 재처리한 횟수는 Matching Batch Fallback(111) 참고.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -1057,7 +1075,7 @@
             "uid": "prometheus"
           },
           "refId": "B",
-          "expr": "sum(rate(spring_kafka_listener_seconds_count{job=\"spring-boot\",name=~\"matching-fill-.*\",result=\"success\"}[1m])) or sum(rate(k6_http_reqs_total{scenario=\"fill\",status=\"200\"}[1m]))",
+          "expr": "sum(rate(matching_command_duration_seconds_count{job=\"spring-boot\",type=\"FILL\"}[1m])) or sum(rate(k6_http_reqs_total{scenario=\"fill\",status=\"200\"}[1m]))",
           "legendFormat": "processed"
         }
       ]
@@ -1450,7 +1468,7 @@
       "id": 32,
       "type": "timeseries",
       "title": "Worker Time per Event (mean)",
-      "description": "워커가 메시지 하나를 처리한 평균 시간. 워커 수가 그대로인데 이 값이 길어지면 처리량이 떨어진다. CPU 를 다투면 DB 응답 뒤 CPU 차례를 기다리는 시간까지 여기에 들어간다.",
+      "description": "워커가 메시지 하나(체결은 배치 시간 ÷ 명령 수)를 처리한 평균 시간. 워커 수가 그대로인데 이 값이 길어지면 처리량이 떨어진다. CPU 를 다투면 DB 응답 뒤 CPU 차례를 기다리는 시간까지 여기에 들어간다.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -1494,7 +1512,7 @@
             "uid": "prometheus"
           },
           "refId": "A",
-          "expr": "1000*sum(rate(spring_kafka_listener_seconds_sum{job=\"spring-boot\",name=~\"matching-fill-.*\"}[1m]))/sum(rate(spring_kafka_listener_seconds_count{job=\"spring-boot\",name=~\"matching-fill-.*\"}[1m]))",
+          "expr": "1000 * sum(rate(matching_command_duration_seconds_sum{job=\"spring-boot\",type=\"FILL\"}[1m])) / sum(rate(matching_command_duration_seconds_count{job=\"spring-boot\",type=\"FILL\"}[1m]))",
           "legendFormat": "체결 한 건 (ms)"
         },
         {
@@ -1509,13 +1527,137 @@
       ]
     },
     {
+      "id": 110,
+      "type": "timeseries",
+      "title": "Matching Batch Size",
+      "description": "체결 워커가 한 트랜잭션에 묶어 커밋한 명령 수. 평균 = 구간 합 ÷ 건수, 최대 = 앱이 본 구간 최댓값. 1 에 붙어 있으면 배치 이득이 없다.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 99,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 0,
+            "spanNulls": true
+          },
+          "decimals": 1
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "max",
+            "mean"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "refId": "A",
+          "expr": "sum(rate(matching_batch_size_sum{job=\"spring-boot\"}[1m])) / sum(rate(matching_batch_size_count{job=\"spring-boot\"}[1m]))",
+          "legendFormat": "평균 명령 수/배치"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "refId": "B",
+          "expr": "max(max_over_time(matching_batch_size_max{job=\"spring-boot\"}[1m]))",
+          "legendFormat": "최대"
+        }
+      ]
+    },
+    {
+      "id": 111,
+      "type": "timeseries",
+      "title": "Matching Batch Fallback",
+      "description": "배치 커밋이 롤백돼 명령을 한 건씩 다시 처리한 횟수(초당). 0 이 정상. 계속 뜨면 배치 안에 반복해서 실패하는 명령이 있다.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 99,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 0,
+            "spanNulls": true
+          },
+          "decimals": 2
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "max",
+            "mean"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "refId": "A",
+          "expr": "sum(rate(matching_batch_fallback_total{job=\"spring-boot\"}[1m]))",
+          "legendFormat": "fallback/s"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "refId": "B",
+          "expr": "sum(rate(matching_batch_size_count{job=\"spring-boot\"}[1m]))",
+          "legendFormat": "배치 커밋/s"
+        }
+      ]
+    },
+    {
       "id": 7,
       "type": "row",
       "title": "Saturation — 병목 자원",
       "collapsed": false,
       "gridPos": {
         "x": 0,
-        "y": 99,
+        "y": 107,
         "w": 24,
         "h": 1
       },
@@ -1532,7 +1674,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 100,
+        "y": 108,
         "w": 12,
         "h": 8
       },
@@ -1593,7 +1735,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 100,
+        "y": 108,
         "w": 12,
         "h": 8
       },
@@ -1663,7 +1805,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 108,
+        "y": 116,
         "w": 12,
         "h": 8
       },
@@ -1731,7 +1873,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 108,
+        "y": 116,
         "w": 12,
         "h": 8
       },
@@ -1783,7 +1925,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 116,
+        "y": 124,
         "w": 12,
         "h": 8
       },
@@ -1861,7 +2003,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 116,
+        "y": 124,
         "w": 12,
         "h": 8
       },
@@ -1913,7 +2055,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 124,
+        "y": 132,
         "w": 12,
         "h": 8
       },
@@ -1965,7 +2107,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 124,
+        "y": 132,
         "w": 12,
         "h": 8
       },
@@ -2033,7 +2175,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 132,
+        "y": 140,
         "w": 12,
         "h": 8
       },
@@ -2085,7 +2227,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 132,
+        "y": 140,
         "w": 12,
         "h": 8
       },
@@ -2137,7 +2279,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 140,
+        "y": 148,
         "w": 12,
         "h": 8
       },
@@ -2199,7 +2341,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 140,
+        "y": 148,
         "w": 12,
         "h": 8
       },
@@ -2270,7 +2412,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 148,
+        "y": 156,
         "w": 12,
         "h": 8
       },
@@ -2341,7 +2483,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 148,
+        "y": 156,
         "w": 12,
         "h": 8
       },
@@ -2399,7 +2541,7 @@
       "collapsed": false,
       "gridPos": {
         "x": 0,
-        "y": 156,
+        "y": 164,
         "w": 24,
         "h": 1
       },
@@ -2416,7 +2558,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 157,
+        "y": 165,
         "w": 12,
         "h": 8
       },
@@ -2469,7 +2611,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 157,
+        "y": 165,
         "w": 12,
         "h": 8
       },
@@ -2514,15 +2656,15 @@
     {
       "id": 25,
       "type": "timeseries",
-      "title": "Fill Worker Throughput",
-      "description": "체결 워커(스레드)별 처리량. 파티션 하나에 워커 하나라 종목별 처리 속도와 같다. 모두 같은 비율로 꺾이면 공유 자원 병목이다.",
+      "title": "Fill Worker Batches /s (워커별 배치 수 — 명령 수 아님)",
+      "description": "워커(스레드)별 리스너 호출 수 = 배치 수. 명령 수가 아니다. 합계 체결 명령/s 선을 함께 둔다.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
       },
       "gridPos": {
         "x": 0,
-        "y": 165,
+        "y": 173,
         "w": 12,
         "h": 8
       },
@@ -2561,6 +2703,15 @@
           "refId": "A",
           "expr": "sum by (name) (rate(spring_kafka_listener_seconds_count{job=\"spring-boot\",name=~\"matching-fill-.*\",result=\"success\"}[1m])) > 0.5",
           "legendFormat": "{{name}}"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "refId": "B",
+          "expr": "sum(rate(matching_command_duration_seconds_count{job=\"spring-boot\",type=\"FILL\"}[1m]))",
+          "legendFormat": "체결 명령/s 합계"
         }
       ]
     },
@@ -2575,7 +2726,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 165,
+        "y": 173,
         "w": 12,
         "h": 8
       },
@@ -2628,7 +2779,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 173,
+        "y": 181,
         "w": 12,
         "h": 8
       },
@@ -2676,7 +2827,7 @@
       "collapsed": false,
       "gridPos": {
         "x": 0,
-        "y": 181,
+        "y": 189,
         "w": 24,
         "h": 1
       },
@@ -2693,7 +2844,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 182,
+        "y": 190,
         "w": 8,
         "h": 7
       },
@@ -2751,7 +2902,7 @@
       },
       "gridPos": {
         "x": 8,
-        "y": 182,
+        "y": 190,
         "w": 8,
         "h": 7
       },
@@ -2809,7 +2960,7 @@
       },
       "gridPos": {
         "x": 16,
-        "y": 182,
+        "y": 190,
         "w": 8,
         "h": 7
       },
@@ -2867,7 +3018,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 189,
+        "y": 197,
         "w": 8,
         "h": 7
       },
@@ -2925,7 +3076,7 @@
       },
       "gridPos": {
         "x": 8,
-        "y": 189,
+        "y": 197,
         "w": 8,
         "h": 7
       },
@@ -2974,7 +3125,7 @@
       },
       "gridPos": {
         "x": 16,
-        "y": 189,
+        "y": 197,
         "w": 8,
         "h": 7
       },
@@ -3050,7 +3201,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 196,
+        "y": 204,
         "w": 8,
         "h": 7
       },
@@ -3099,7 +3250,7 @@
       },
       "gridPos": {
         "x": 8,
-        "y": 196,
+        "y": 204,
         "w": 8,
         "h": 7
       },
@@ -3132,7 +3283,7 @@
             "uid": "prometheus"
           },
           "refId": "A",
-          "expr": "sum by (listener) (label_replace(rate(spring_kafka_listener_seconds_count{job=\"spring-boot\",service=~\"$service\",result=\"success\"}[1m]), \"listener\", \"$1\", \"name\", \"(.+)-[0-9]+\"))",
+          "expr": "sum by (listener) (label_replace(rate(spring_kafka_listener_seconds_count{job=\"spring-boot\",service=~\"$service\",name!~\"matching-fill-.*\",result=\"success\"}[1m]), \"listener\", \"$1\", \"name\", \"(.+)-[0-9]+\"))",
           "legendFormat": "{{listener}} /s"
         },
         {
@@ -3141,8 +3292,26 @@
             "uid": "prometheus"
           },
           "refId": "B",
-          "expr": "1000 * sum by (listener) (label_replace(rate(spring_kafka_listener_seconds_sum{job=\"spring-boot\",service=~\"$service\"}[1m]), \"listener\", \"$1\", \"name\", \"(.+)-[0-9]+\")) / sum by (listener) (label_replace(rate(spring_kafka_listener_seconds_count{job=\"spring-boot\",service=~\"$service\"}[1m]), \"listener\", \"$1\", \"name\", \"(.+)-[0-9]+\"))",
+          "expr": "1000 * sum by (listener) (label_replace(rate(spring_kafka_listener_seconds_sum{job=\"spring-boot\",service=~\"$service\",name!~\"matching-fill-.*\"}[1m]), \"listener\", \"$1\", \"name\", \"(.+)-[0-9]+\")) / sum by (listener) (label_replace(rate(spring_kafka_listener_seconds_count{job=\"spring-boot\",service=~\"$service\",name!~\"matching-fill-.*\"}[1m]), \"listener\", \"$1\", \"name\", \"(.+)-[0-9]+\"))",
           "legendFormat": "{{listener}} ms"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "refId": "C",
+          "expr": "1000 * sum(rate(matching_command_duration_seconds_sum{job=\"spring-boot\",service=~\"$service\"}[1m])) / sum(rate(matching_command_duration_seconds_count{job=\"spring-boot\",service=~\"$service\"}[1m]))",
+          "legendFormat": "matching-fill 명령 ms"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "refId": "D",
+          "expr": "sum(rate(matching_command_duration_seconds_count{job=\"spring-boot\",type=\"FILL\",service=~\"$service\"}[1m]))",
+          "legendFormat": "matching-fill 체결 명령 /s"
         }
       ]
     },
@@ -3157,7 +3326,7 @@
       },
       "gridPos": {
         "x": 16,
-        "y": 196,
+        "y": 204,
         "w": 8,
         "h": 7
       },
