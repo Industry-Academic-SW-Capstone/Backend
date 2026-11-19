@@ -27,8 +27,8 @@ public class MatchingQueueMetrics {
                 .description("이미 반영한 위치라 건너뛴 명령 수(재전달)").register(registry);
     }
 
-    public void pickedUp(long enqueuedAt) {
-        queueWait.record(elapsedSince(enqueuedAt));
+    public void pickedUp(long enqueuedAt, long pickedUpAt) {
+        queueWait.record(Duration.ofMillis(Math.max(0, pickedUpAt - enqueuedAt)));
     }
 
     public void filled(long enqueuedAt) {
