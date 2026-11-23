@@ -40,7 +40,8 @@ public class ExtraEventConsumer {
             return;
         }
         switch (event.type()) {
-            case REWARD_GRANTED -> rewardPaymentService.pay(event.memberId(), event.rewardGranted().moneyAmount());
+            case REWARD_GRANTED -> rewardPaymentService.pay(
+                    event.eventId(), event.memberId(), event.rewardGranted().moneyAmount());
             case TIER_CHANGED -> memberTierService.updateTier(event.memberId(), event.tierChanged().tier());
         }
     }

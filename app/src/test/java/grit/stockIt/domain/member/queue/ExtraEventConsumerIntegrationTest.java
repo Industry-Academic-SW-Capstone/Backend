@@ -4,6 +4,7 @@ import grit.stockIt.contract.ExtraEvent;
 import grit.stockIt.contract.InvalidExtraEventException;
 import grit.stockIt.domain.account.entity.Account;
 import grit.stockIt.domain.account.repository.AccountRepository;
+import grit.stockIt.domain.account.repository.RewardPaymentRepository;
 import grit.stockIt.domain.contest.entity.Contest;
 import grit.stockIt.domain.contest.repository.ContestRepository;
 import grit.stockIt.domain.member.entity.AuthProvider;
@@ -38,6 +39,7 @@ class ExtraEventConsumerIntegrationTest extends IntegrationTestSupport {
     @Autowired private MemberRepository memberRepository;
     @Autowired private ContestRepository contestRepository;
     @Autowired private AccountRepository accountRepository;
+    @Autowired private RewardPaymentRepository rewardPaymentRepository;
 
     @Test
     @DisplayName("보상 지급 요청은 기본 계좌 예수금에 더해진다")
@@ -59,6 +61,25 @@ class ExtraEventConsumerIntegrationTest extends IntegrationTestSupport {
         extraEventConsumer.consume(event);
 
         assertThat(cashOf(account)).isEqualByComparingTo(INITIAL_CASH.add(BigDecimal.valueOf(REWARD_AMOUNT)));
+        assertThat(rewardPaymentRepository.findByMemberId(memberIdOf(account))).hasSize(1);
+    }
+
+    // 정산 원장처럼 보상도 기록이 있어야 계좌 현금을 기록만으로 다시 맞춰 볼 수 있다.
+    @Test
+    @DisplayName("보상을 지급하면 이벤트 번호와 금액이 보상 기록에 남는다")
+    void rewardGranted_recordsPayment() {
+        Account account = createDefaultAccount();
+        ExtraEvent event = rewardEvent(memberIdOf(account));
+
+        extraEventConsumer.consume(event);
+
+        assertThat(rewardPaymentRepository.findByMemberId(memberIdOf(account)))
+                .singleElement()
+                .satisfies(payment -> {
+                    assertThat(payment.getEventId()).isEqualTo(event.eventId());
+                    assertThat(payment.getAccountId()).isEqualTo(account.getAccountId());
+                    assertThat(payment.getAmount()).isEqualByComparingTo(BigDecimal.valueOf(REWARD_AMOUNT));
+                });
     }
 
     // 정산이 계좌를 잠근 동안 온 지급은 기다렸다가 정산이 커밋한 잔고 위에 더한다.

@@ -78,8 +78,8 @@ job/        배치 작업 (KIS 마스터 파일 다운로드/파싱)
   그룹 `notification`)이 각자 받아, 처리 기록(`processed_event`)으로 같은 이벤트를 한 번만 처리합니다. 실패는 재시도 후 DLT.
 - **부가 이벤트 (`contract.ExtraEvent`, Kafka `extra.events`, 키 = 회원)** — 부가 서비스(미션)가 증권사에 보상 예수금 지급을
   요청하고(`REWARD_GRANTED`) 티어 변화를 알립니다(`TIER_CHANGED`, 티어가 바뀔 때만). 미션 트랜잭션에서 `ExtraEventOutbox` 로
-  아웃박스에 적습니다. 증권사 `ExtraEventConsumer`(그룹 `broker`)가 기본 계좌를 잠그고 지급하거나 회원 테이블의 티어 복사본을
-  바꾸며, 같은 이벤트는 `processed_event` 로 한 번만 처리합니다. 랭킹은 이 복사본(`member.tier`)을 읽습니다.
+  아웃박스에 적습니다. 증권사 `ExtraEventConsumer`(그룹 `broker`)가 기본 계좌를 잠그고 지급하면서 보상 기록(`reward_payment`)을
+  남기거나 회원 테이블의 티어 복사본을 바꾸며, 같은 이벤트는 `processed_event` 로 한 번만 처리합니다. 랭킹은 이 복사본(`member.tier`)을 읽습니다.
 - **서비스 사이 동기 조회 (`contract.BrokerQueryClient`, `contract.ExtraQueryClient`)** — 지금 답이 필요한 드문 조회만 둡니다.
   시세 → 거래소: 기동 시 열린 주문(`ExchangeQueryClient`). 부가 → 증권사: 파산 신청 자산, 보유 일수 배치의 보유 회원(묶음으로), 전체 발송 대상 회원. 증권사 → 부가: 대표 칭호 장착 시
   칭호 존재·보유 여부, 프로필의 보유 칭호. 구현(`LocalBrokerQueryClient`, `LocalExtraQueryClient`)은 지금 같은 프로세스 호출입니다.
