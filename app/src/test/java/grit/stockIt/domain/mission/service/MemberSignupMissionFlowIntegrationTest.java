@@ -40,7 +40,7 @@ import org.springframework.test.context.jdbc.Sql;
  * 관찰 가능한 결과(DB 상태)만 단언하고, 호출/주입 메커니즘은 검증하지 않는다.
  *
  * 시드: data.sql (idempotent upsert) — 트랙 첫 미션 201/301/401, 활동 점수 트래커 998.
- * 기본 대회(Contest)는 DefaultContestInitializer(ApplicationRunner)가 컨텍스트 기동 시 생성한다.
+ * 기본 대회(Contest)는 DefaultContestInitializer가 컨텍스트 기동 시 생성한다.
  */
 @Sql(scripts = "/data.sql", executionPhase = Sql.ExecutionPhase.BEFORE_TEST_METHOD)
 class MemberSignupMissionFlowIntegrationTest extends IntegrationTestSupport {

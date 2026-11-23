@@ -3,7 +3,6 @@ package grit.stockIt.global.support;
 import grit.stockIt.domain.contest.service.DefaultContestInitializer;
 import org.junit.jupiter.api.AfterEach;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.DefaultApplicationArguments;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -144,7 +143,7 @@ public abstract class IntegrationTestSupport {
     /**
      * 기본 대회를 다시 심는다.
      *
-     * <p>{@link DefaultContestInitializer}는 {@code ApplicationRunner}라 <b>앱 기동 시 한 번만</b>
+     * <p>{@link DefaultContestInitializer}는 <b>앱 기동 시 한 번만</b>
      * 실행된다. 테스트 사이에 컨텍스트가 재기동되지 않으므로, TRUNCATE 후 여기서 복원하지 않으면
      * 이후 모든 테스트가 {@code "Default contest not found"}로 깨진다
      * ({@code AccountService}가 회원 가입 시 기본 대회를 요구한다).
@@ -153,10 +152,6 @@ public abstract class IntegrationTestSupport {
      * 바뀌어도 테스트가 자동으로 따라가게 하기 위함이다.
      */
     private void restoreDefaultContest() {
-        try {
-            defaultContestInitializer.run(new DefaultApplicationArguments());
-        } catch (Exception e) {
-            throw new IllegalStateException("기본 대회 복원 실패", e);
-        }
+        defaultContestInitializer.ensureDefaultContest();
     }
 }
