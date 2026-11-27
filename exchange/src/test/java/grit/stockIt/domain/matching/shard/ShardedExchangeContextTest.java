@@ -1,18 +1,14 @@
 package grit.stockIt.domain.matching.shard;
 
-import grit.launch.exchange.ExchangeApplication;
 import grit.stockIt.global.shard.ShardContext;
 import grit.stockIt.global.shard.ShardRouter;
-import grit.stockIt.testsupport.ServiceContextTestSupport;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.actuate.health.HealthComponent;
 import org.springframework.boot.actuate.health.HealthEndpoint;
 import org.springframework.boot.actuate.health.Status;
-import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 
@@ -22,31 +18,16 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-// 샤드 DB 둘(같은 컨테이너의 빈 DB 둘)로 거래소를 띄운다. validate 라 샤드 스키마 스크립트가 엔티티와 어긋나면 뜨지 않는다.
-@SpringBootTest(classes = ExchangeApplication.class, properties = {
-        "spring.jpa.hibernate.ddl-auto=validate",
-        "spring.jpa.open-in-view=false",
-        "stockit.exchange.sharding.enabled=true",
-        "stockit.exchange.sharding.partition-count=4"
-})
-@ActiveProfiles("exchange")
+// validate 라 샤드 스키마 스크립트가 엔티티와 어긋나면 뜨지 않는다.
 @DisplayName("샤드 둘로 거래소 기동")
-class ShardedExchangeContextTest extends ServiceContextTestSupport {
+class ShardedExchangeContextTest extends ShardedExchangeTestSupport {
 
     private static final List<String> EXCHANGE_TABLES =
             List.of("exchange_order", "exchange_fill", "consumer_watermark", "outbox_message", "processed_event");
 
     @DynamicPropertySource
     static void configureShards(DynamicPropertyRegistry registry) {
-        String shardA = freshDatabaseUrl("shard_a");
-        String shardB = freshDatabaseUrl("shard_b");
-        registry.add("stockit.exchange.sharding.shards[0].url", () -> shardA);
-        registry.add("stockit.exchange.sharding.shards[1].url", () -> shardB);
-        for (int shard = 0; shard < 2; shard++) {
-            registry.add("stockit.exchange.sharding.shards[" + shard + "].username", POSTGRES::getUsername);
-            registry.add("stockit.exchange.sharding.shards[" + shard + "].password", POSTGRES::getPassword);
-            registry.add("stockit.exchange.sharding.shards[" + shard + "].pool-size", () -> 3);
-        }
+        registerShards(registry, "shard_a", "shard_b");
     }
 
     @Autowired
@@ -74,7 +55,7 @@ class ShardedExchangeContextTest extends ServiceContextTestSupport {
     @Test
     @DisplayName("샤드마다 거래소 표가 exchange schema 에 있다")
     void eachShardHasExchangeTables() {
-        for (int shard = 0; shard < 2; shard++) {
+        for (int shard = 0; shard < SHARDS; shard++) {
             ShardContext.run(shard, () -> EXCHANGE_TABLES.forEach(table ->
                     assertThat(jdbcTemplate.queryForObject("SELECT to_regclass(?) IS NOT NULL", Boolean.class,
                             "exchange." + table)).as(table).isTrue()));

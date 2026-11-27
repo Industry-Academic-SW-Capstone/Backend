@@ -3,6 +3,8 @@ package grit.stockIt.domain.matching.queue;
 import grit.stockIt.domain.matching.queue.MatchingCommandHandler.CommandResult;
 import grit.stockIt.domain.matching.repository.ConsumerWatermarkWriter;
 import grit.stockIt.domain.matching.service.FillIdGenerator;
+import grit.stockIt.global.shard.ShardContext;
+import grit.stockIt.global.shard.ShardRouter;
 import jakarta.persistence.EntityManager;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -17,6 +19,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.OptionalLong;
+import java.util.function.Supplier;
 
 // poll 한 번의 명령을 같은 파티션 구간마다 batch-max 개씩 끊어 묶음 하나를 트랜잭션 하나로 처리해 커밋 수를 줄인다. 묶음이 실패하면 한 건씩 각자 트랜잭션으로 다시 처리한다.
 @Slf4j
@@ -32,6 +35,7 @@ public class MatchingBatchProcessor {
     private final EntityManager entityManager;
     private final FillIdGenerator fillIdGenerator;
     private final ConsumerWatermarkWriter consumerWatermarkWriter;
+    private final ShardRouter shardRouter;
 
     @Value("${matching.queue.batch-max:20}")
     private int batchMax;
@@ -94,7 +98,7 @@ public class MatchingBatchProcessor {
         List<CommandResult> results;
         discardIssuedIds(batch.get(0));
         try {
-            results = transactionTemplate.execute(status -> handleAll(batch));
+            results = inPartitionShard(batch.get(0), () -> transactionTemplate.execute(status -> handleAll(batch)));
         } catch (RuntimeException e) {
             // 한 건짜리를 다시 처리하면 같은 명령을 두 번 시도할 뿐이다. 레코드 리스너처럼 바로 에러 핸들러에 넘긴다.
             if (batch.size() == 1) {
@@ -117,13 +121,18 @@ public class MatchingBatchProcessor {
             long startedAt = System.nanoTime();
             List<CommandResult> results;
             try {
-                results = transactionTemplate.execute(status -> handleAll(List.of(record)));
+                results = inPartitionShard(record, () -> transactionTemplate.execute(status -> handleAll(List.of(record))));
             } catch (RuntimeException e) {
                 throw failed(record, e);
             }
             metrics.batch(1);
             recordAfterCommit(results.get(0), System.nanoTime() - startedAt);
         }
+    }
+
+    // 묶음은 한 파티션이라 샤드도 하나다. 트랜잭션이 열리며 커넥션을 받으므로 그 바깥에서 정한다.
+    private <T> T inPartitionShard(ConsumerRecord<?, ?> record, Supplier<T> action) {
+        return ShardContext.call(shardRouter.shardOf(record.partition()), action);
     }
 
     private static BatchListenerFailedException failed(ConsumerRecord<String, MatchingCommand> record,
