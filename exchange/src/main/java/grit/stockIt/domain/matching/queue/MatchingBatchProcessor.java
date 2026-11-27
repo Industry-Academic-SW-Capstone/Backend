@@ -1,6 +1,8 @@
 package grit.stockIt.domain.matching.queue;
 
 import grit.stockIt.domain.matching.queue.MatchingCommandHandler.CommandResult;
+import grit.stockIt.domain.matching.repository.ConsumerWatermarkWriter;
+import grit.stockIt.domain.matching.service.FillIdGenerator;
 import jakarta.persistence.EntityManager;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -14,6 +16,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.OptionalLong;
 
 // poll 한 번의 명령을 같은 파티션 구간마다 batch-max 개씩 끊어 묶음 하나를 트랜잭션 하나로 처리해 커밋 수를 줄인다. 묶음이 실패하면 한 건씩 각자 트랜잭션으로 다시 처리한다.
 @Slf4j
@@ -27,6 +30,8 @@ public class MatchingBatchProcessor {
     private final MatchingQueueMetrics metrics;
     private final TransactionTemplate transactionTemplate;
     private final EntityManager entityManager;
+    private final FillIdGenerator fillIdGenerator;
+    private final ConsumerWatermarkWriter consumerWatermarkWriter;
 
     @Value("${matching.queue.batch-max:20}")
     private int batchMax;
@@ -87,6 +92,7 @@ public class MatchingBatchProcessor {
     private void processTogether(List<ConsumerRecord<String, MatchingCommand>> batch) {
         long startedAt = System.nanoTime();
         List<CommandResult> results;
+        discardIssuedIds(batch.get(0));
         try {
             results = transactionTemplate.execute(status -> handleAll(batch));
         } catch (RuntimeException e) {
@@ -106,6 +112,7 @@ public class MatchingBatchProcessor {
 
     // 롤백된 묶음은 워터마크도 그대로라 처음부터 다시 처리해도 중복이 없다. 앞서 커밋된 것이 있으면 워터마크가 거른다.
     private void processOneByOne(List<ConsumerRecord<String, MatchingCommand>> batch) {
+        discardIssuedIds(batch.get(0));
         for (ConsumerRecord<String, MatchingCommand> record : batch) {
             long startedAt = System.nanoTime();
             List<CommandResult> results;
@@ -132,7 +139,18 @@ public class MatchingBatchProcessor {
             // 다음 명령의 후보 조회는 네이티브 SQL 이라 앞 명령이 바꾼 주문을 DB 에 내려 둬야 본다.
             entityManager.flush();
         }
+        // 롤백되면 이 기록도 함께 사라진다. 커밋된 묶음만 마지막 체결 번호를 워터마크에 남긴다.
+        ConsumerRecord<String, MatchingCommand> first = batch.get(0);
+        OptionalLong lastFillId = fillIdGenerator.takeIssuedSinceLastTake(first.partition());
+        if (lastFillId.isPresent()) {
+            consumerWatermarkWriter.recordLastFillId(first.topic(), first.partition(), lastFillId.getAsLong());
+        }
         return results;
+    }
+
+    // 롤백된 묶음이 남긴 번호 기록을 비워, 다음 묶음의 마지막 번호에 섞이지 않게 한다.
+    private void discardIssuedIds(ConsumerRecord<String, MatchingCommand> first) {
+        fillIdGenerator.takeIssuedSinceLastTake(first.partition());
     }
 
     // 커밋 전에 세면 롤백 뒤 한 건씩 다시 처리할 때 두 번 센다.

@@ -1,12 +1,14 @@
 package grit.stockIt.domain.matching.repository;
 
 import grit.stockIt.domain.matching.queue.CommandPosition;
+import grit.stockIt.domain.matching.service.FillIdGenerator;
 import jakarta.persistence.EntityManager;
 import lombok.RequiredArgsConstructor;
 import org.hibernate.Session;
 import org.springframework.stereotype.Repository;
 
 import java.sql.PreparedStatement;
+import java.sql.ResultSet;
 
 // 워커가 처리한 위치를 명령 처리와 같은 트랜잭션에 기록한다. 지금 위치가 기록보다 클 때만 올리므로
 // 0행이면 이미 반영한 위치다(재전달).
@@ -22,9 +24,16 @@ public class ConsumerWatermarkWriter {
             ON CONFLICT (topic, partition_no) DO UPDATE
                SET last_offset = EXCLUDED.last_offset, updated_at = EXCLUDED.updated_at
              WHERE consumer_watermark.last_offset < EXCLUDED.last_offset
+            RETURNING last_fill_id
+            """;
+
+    private static final String RECORD_LAST_FILL_ID_SQL = """
+            UPDATE consumer_watermark SET last_fill_id = ?
+             WHERE topic = ? AND partition_no = ? AND (last_fill_id IS NULL OR last_fill_id < ?)
             """;
 
     private final EntityManager entityManager;
+    private final FillIdGenerator fillIdGenerator;
 
     // 워커는 종목을 한 줄로 처리하므로 문장 하나의 비용이 그대로 종목당 천장을 낮춘다. JPA 쿼리 대신 JDBC 로 바로 보낸다.
     public boolean advance(CommandPosition position) {
@@ -33,7 +42,29 @@ public class ConsumerWatermarkWriter {
                 statement.setString(1, position.topic());
                 statement.setInt(2, position.partition());
                 statement.setLong(3, position.offset());
-                return statement.executeUpdate() > 0;
+                try (ResultSet advanced = statement.executeQuery()) {
+                    if (!advanced.next()) {
+                        return false;
+                    }
+                    // 새로 넣은 행은 null 이다. 이전 담당 워커가 남긴 번호 뒤에서 이어 붙이게 알린다.
+                    long lastFillId = advanced.getLong(1);
+                    if (!advanced.wasNull()) {
+                        fillIdGenerator.observe(position.partition(), lastFillId);
+                    }
+                    return true;
+                }
+            }
+        });
+    }
+
+    public void recordLastFillId(String topic, int partition, long lastFillId) {
+        entityManager.unwrap(Session.class).doWork(connection -> {
+            try (PreparedStatement statement = connection.prepareStatement(RECORD_LAST_FILL_ID_SQL)) {
+                statement.setLong(1, lastFillId);
+                statement.setString(2, topic);
+                statement.setInt(3, partition);
+                statement.setLong(4, lastFillId);
+                statement.executeUpdate();
             }
         });
     }

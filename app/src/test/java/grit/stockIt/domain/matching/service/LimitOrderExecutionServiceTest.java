@@ -35,6 +35,7 @@ import java.util.concurrent.atomic.AtomicLong;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
@@ -57,6 +58,7 @@ class LimitOrderExecutionServiceTest {
     @Mock private OrderBookRepository orderBookRepository;
     @Mock private ConsumerWatermarkWriter consumerWatermarkWriter;
     @Mock private ExecutionReportOutbox executionReportOutbox;
+    @Mock private FillIdGenerator fillIdGenerator;
 
     @InjectMocks
     private LimitOrderExecutionService limitOrderExecutionService;
@@ -77,11 +79,8 @@ class LimitOrderExecutionServiceTest {
             }
             return found;
         });
-        when(exchangeFillRepository.save(any(ExchangeFill.class))).thenAnswer(invocation -> {
-            ExchangeFill fill = invocation.getArgument(0);
-            ReflectionTestUtils.setField(fill, "fillId", nextFillId.getAndIncrement());
-            return fill;
-        });
+        when(fillIdGenerator.next(anyInt())).thenAnswer(invocation -> nextFillId.getAndIncrement());
+        when(exchangeFillRepository.save(any(ExchangeFill.class))).thenAnswer(invocation -> invocation.getArgument(0));
     }
 
     @Test

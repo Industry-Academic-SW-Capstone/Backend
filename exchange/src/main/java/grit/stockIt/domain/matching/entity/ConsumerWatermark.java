@@ -23,6 +23,9 @@ public class ConsumerWatermark {
     @Column(name = "last_offset", nullable = false)
     private long lastOffset;
 
+    @Column(name = "last_fill_id")
+    private Long lastFillId;
+
     @Column(name = "updated_at", nullable = false)
     private LocalDateTime updatedAt;
 }
