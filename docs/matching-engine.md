@@ -183,9 +183,10 @@ ON CONFLICT (topic, partition_no) DO UPDATE
 샤드를 켜도 명령 흐름은 같다. 워커가 명령을 받으면 그 파티션이 속한 샤드의 DB 로 트랜잭션을 연다.
 
 - **파티션 → 샤드**: `partitions` 를 샤드마다 적으면 그대로, 모든 샤드에서 비우면 `partition-count` 를 샤드 수로 연속 구간으로 나눈다(`p * 샤드 수 / partition-count`).
-  일부만 적거나, 겹치거나, 빠진 파티션이 있거나, `partition-count` 가 1~256 밖이면 기동에 실패한다. 한 번 정한 표를 런타임에 옮기는 기능은 없다.
+  일부만 적거나, 겹치거나, 빠진 파티션이 있거나, `partition-count` 가 1~256 밖이거나 `matching.commands` 의 실제 파티션 수와 다르면(토픽이 없어도) 기동에 실패한다(`ShardPartitionCountVerifier`, 리스너가 뜨기 전). 한 번 정한 표를 런타임에 옮기는 기능은 없다.
 - **바쁜 종목**: `MATCHING_HOT_STOCKS=005930:3,000660:7` 처럼 종목 코드 → 파티션 번호를 주면 그 종목은 해시 대신 그 파티션에 고정된다(`HotStockPartitioner`, `matching.commands` 에만 적용).
-  명령을 보내는 모든 서비스(시세·증권사·거래소·부가)가 **같은 값**을 가져야 한다. 같은 종목 코드를 두 번 쓰거나 번호가 토픽 파티션 수를 넘으면 실패한다.
+  명령을 보내는 모든 서비스(시세·증권사·거래소)가 **같은 값**을 가져야 한다. 같은 종목 코드를 두 번 쓰면 기동에 실패한다.
+  번호가 토픽 파티션 수 이상이면 보낼 때 예외가 나서, 그 명령을 담은 DB 의 아웃박스 릴레이가 그 행에서 멈추고 그 DB 의 뒤 메시지가 모두 막힌다.
 - **체결 번호(`exchange_fill.fill_id`)**: 샤드가 나뉘어도 겹치지 않게 DB 가 아니라 워커가 붙이고(`FillIdGenerator`), 53비트다(JS 정수 안전 범위).
 
   | 비트 | 뜻 |
@@ -252,7 +253,7 @@ ON CONFLICT (topic, partition_no) DO UPDATE
 | `matching.command.duration{type}` | 명령 한 건 처리 시간 = 묶음 시간 ÷ 묶음의 명령 수. `type` 별 횟수는 정확하지만 시간은 묶음 평균이다 |
 | `settlement.e2e` | 체결 커밋 → 정산 커밋 (아웃박스 릴레이 시간 포함) |
 | `outbox.relay.published` / `outbox.relay.failures` | 아웃박스에서 보낸 수 / 전송 실패 횟수 |
-| `outbox.pending.rows` / `outbox.pending.oldest.age` | 아웃박스에서 보내기를 기다리는 행 수 / 가장 오래 기다린 시간(초). 5초마다 센다(`outbox.relay.pending-sample-interval`). Kafka lag 에 안 보이는 릴레이 밀림. `shard` 태그가 붙는다 — 서비스 전체 밀림은 행 수는 `sum by (service)`, 나이는 `max by (service)` 로 본다 |
+| `outbox.pending.rows` / `outbox.pending.oldest.age` | 아웃박스에서 보내기를 기다리는 행 수 / 가장 오래 기다린 시간(초). 5초마다 센다(`outbox.relay.pending-sample-interval`). Kafka lag 에 안 보이는 릴레이 밀림. `shard` 태그가 붙는다 — 서버마다 모든 샤드를 세어 같은 값을 내므로, 서비스 전체 행 수는 샤드별 `max` 를 서비스로 `sum`(`sum by (service) (max by (service, shard) (...))`), 나이는 `max by (service)` 로 본다 |
 
 워커 처리 시간·횟수·실패는 `spring.kafka.listener`(리스너 id 가 `name` 태그. `matching-fill` 은 poll 단위라 한 번에 묶음 여럿이 들 수 있다), 전송 ack 는 `spring.kafka.template`,
 lag 과 DLT 적재 수는 kafka-exporter 로 본다. 대시보드는 `monitoring/grafana/dashboards/mixed-load-dashboard.json`.

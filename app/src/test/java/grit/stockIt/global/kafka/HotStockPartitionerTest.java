@@ -56,6 +56,12 @@ class HotStockPartitionerTest {
     }
 
     @Test
+    void hotStock_byteArrayKey_goesToTablePartition() {
+        byte[] bytes = "005930".getBytes(StandardCharsets.UTF_8);
+        assertThat(partitioner("005930:3").partition(COMMANDS, bytes, bytes, null, null, cluster)).isEqualTo(3);
+    }
+
+    @Test
     void otherStock_matchesKafkaDefault() {
         HotStockPartitioner partitioner = partitioner("005930:3");
         for (int i = 0; i < 20; i++) {

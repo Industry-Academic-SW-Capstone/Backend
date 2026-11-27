@@ -215,13 +215,17 @@ public class OutboxRelay implements SmartLifecycle {
     public void stop() {
         running = false;
         workers.forEach(Thread::interrupt);
+        // 중단돼도 남은 스레드를 마저 기다린다. 중단 표시는 다 기다린 뒤 되돌린다.
+        boolean interrupted = false;
         for (Thread worker : workers) {
             try {
                 worker.join(Duration.ofSeconds(5).toMillis());
             } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                return;
+                interrupted = true;
             }
+        }
+        if (interrupted) {
+            Thread.currentThread().interrupt();
         }
     }
 

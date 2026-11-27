@@ -5,6 +5,7 @@ import org.apache.kafka.common.Cluster;
 import org.apache.kafka.common.PartitionInfo;
 import org.apache.kafka.common.utils.Utils;
 
+import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -32,7 +33,9 @@ public class HotStockPartitioner implements Partitioner {
         if (keyBytes == null) {
             return nullKeyPartition(cluster, topic, partitions);
         }
-        if (MatchingTopics.COMMANDS.equals(topic) && key instanceof String stockCode) {
+        if (MatchingTopics.COMMANDS.equals(topic)) {
+            // DLT 재전송은 byte[] 키로 보낸다. 키는 StringSerializer 의 UTF-8 이라 되돌려 읽는다.
+            String stockCode = key instanceof String text ? text : new String(keyBytes, StandardCharsets.UTF_8);
             Integer pinned = table.get(stockCode);
             if (pinned != null) {
                 if (pinned >= count) {

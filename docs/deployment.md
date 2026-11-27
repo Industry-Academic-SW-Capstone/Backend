@@ -70,13 +70,13 @@ push → CI (모든 브랜치)                CD (main 브랜치만)
 
 ### 거래소 샤드 환경변수
 
-거래소 DB 를 나눌 때 **거래소 서버에만** 준다(설정 의미와 제약은 `docs/matching-engine.md` 의 "샤드"). 증권사·부가·시세와 `app` 에는 주지 않는다.
+거래소 DB 를 나눌 때 **거래소 서버에만** 준다(설정 의미와 제약은 `docs/matching-engine.md` 의 "샤드"). 증권사·부가·시세와 `app` 에는 주지 않는다. 단 `MATCHING_HOT_STOCKS` 는 예외로 모든 서비스에 같은 값을 준다.
 `STOCKIT_EXCHANGE_SHARDING_ENABLED` 가 없으면 기존 `POSTGRES_*` 로 DB 하나를 쓴다.
 
 | 환경변수 | 뜻 |
 |----------|----|
 | `STOCKIT_EXCHANGE_SHARDING_ENABLED` | `true` 면 샤드를 켠다 |
-| `STOCKIT_EXCHANGE_SHARDING_PARTITION_COUNT` | `matching.commands` 의 실제 파티션 수와 같게 |
+| `STOCKIT_EXCHANGE_SHARDING_PARTITION_COUNT` | `matching.commands` 의 실제 파티션 수와 같게. 다르거나 토픽이 없으면 기동에 실패하므로 토픽을 먼저 만든다 |
 | `STOCKIT_EXCHANGE_SHARDING_SHARDS_<n>_URL` · `_USERNAME` · `_PASSWORD` | 샤드 n 의 접속 정보(n 은 0 부터, 비밀번호는 시크릿) |
 | `STOCKIT_EXCHANGE_SHARDING_SHARDS_<n>_POOL_SIZE` | 샤드별 풀 크기. 서버 수 × 풀 크기 ≤ 그 RDS 의 `max_connections` |
 | `STOCKIT_EXCHANGE_SHARDING_SHARDS_<n>_PARTITIONS` | 담당 파티션(쉼표 구분). 모든 샤드에서 비우면 연속 구간 |

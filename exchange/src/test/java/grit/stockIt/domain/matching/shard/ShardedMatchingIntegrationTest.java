@@ -18,9 +18,6 @@ import grit.stockIt.domain.order.entity.OrderType;
 import grit.stockIt.global.outbox.OutboxRelay;
 import grit.stockIt.global.shard.ShardContext;
 import io.micrometer.core.instrument.MeterRegistry;
-import org.apache.kafka.clients.admin.AdminClient;
-import org.apache.kafka.clients.admin.AdminClientConfig;
-import org.apache.kafka.clients.admin.NewTopic;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
@@ -35,8 +32,6 @@ import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
-import org.testcontainers.containers.KafkaContainer;
-import org.testcontainers.utility.DockerImageName;
 
 import java.math.BigDecimal;
 import java.time.Duration;
@@ -69,18 +64,9 @@ class ShardedMatchingIntegrationTest extends ShardedExchangeTestSupport {
     private static final List<String> EXCHANGE_TABLES =
             List.of("exchange_order", "exchange_fill", "consumer_watermark", "outbox_message");
 
-    private static final KafkaContainer KAFKA =
-            new KafkaContainer(DockerImageName.parse("confluentinc/cp-kafka:7.6.1")).withKraft();
-
-    static {
-        KAFKA.start();
-        createTopics();
-    }
-
     @DynamicPropertySource
     static void configure(DynamicPropertyRegistry registry) {
         registerShards(registry, "shard_matching_a", "shard_matching_b");
-        registry.add("spring.kafka.bootstrap-servers", KAFKA::getBootstrapServers);
     }
 
     @Autowired private MatchingBatchProcessor processor;
@@ -255,26 +241,12 @@ class ShardedMatchingIntegrationTest extends ShardedExchangeTestSupport {
 
     private static KafkaConsumer<String, String> reportConsumer() {
         KafkaConsumer<String, String> consumer = new KafkaConsumer<>(Map.of(
-                ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, KAFKA.getBootstrapServers(),
+                ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, ShardTestKafka.bootstrapServers(),
                 ConsumerConfig.GROUP_ID_CONFIG, "report-reader-" + UUID.randomUUID(),
                 ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest",
                 ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class,
                 ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class));
         consumer.subscribe(List.of(ExchangeTopics.REPORTS));
         return consumer;
-    }
-
-    private static void createTopics() {
-        try (AdminClient admin = AdminClient.create(
-                Map.of(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, KAFKA.getBootstrapServers()))) {
-            admin.createTopics(List.of(
-                    new NewTopic(MatchingTopics.COMMANDS, 4, (short) 1),
-                    new NewTopic(MatchingTopics.COMMANDS + ".DLT", 1, (short) 1),
-                    new NewTopic(ExchangeTopics.REPORTS, 3, (short) 1),
-                    new NewTopic(ExchangeTopics.REPORTS + ".DLT", 1, (short) 1)
-            )).all().get();
-        } catch (Exception e) {
-            throw new IllegalStateException("테스트 토픽 생성 실패", e);
-        }
     }
 }

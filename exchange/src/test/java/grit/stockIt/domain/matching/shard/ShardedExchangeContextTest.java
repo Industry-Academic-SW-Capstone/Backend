@@ -63,6 +63,18 @@ class ShardedExchangeContextTest extends ShardedExchangeTestSupport {
     }
 
     @Test
+    @DisplayName("스키마를 만든 뒤 잠금을 풀어 둔다")
+    void schemaLock_releasedAfterStart() {
+        for (int shard = 0; shard < SHARDS; shard++) {
+            ShardContext.run(shard, () -> assertThat(jdbcTemplate.queryForObject("""
+                    SELECT count(*) FROM pg_locks
+                    WHERE locktype = 'advisory'
+                      AND database = (SELECT oid FROM pg_database WHERE datname = current_database())
+                    """, Integer.class)).isZero());
+        }
+    }
+
+    @Test
     @DisplayName("기동이 끝난 뒤 샤드를 정하지 않고 커넥션을 받으면 예외")
     void unscopedConnectionAfterStart_throws() {
         assertThatThrownBy(() -> dataSource.getConnection())

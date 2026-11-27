@@ -96,8 +96,8 @@ public class MatchingBatchProcessor {
     private void processTogether(List<ConsumerRecord<String, MatchingCommand>> batch) {
         long startedAt = System.nanoTime();
         List<CommandResult> results;
-        discardIssuedIds(batch.get(0));
         try {
+            discardIssuedIds(batch.get(0));
             results = inPartitionShard(batch.get(0), () -> transactionTemplate.execute(status -> handleAll(batch)));
         } catch (RuntimeException e) {
             // 한 건짜리를 다시 처리하면 같은 명령을 두 번 시도할 뿐이다. 레코드 리스너처럼 바로 에러 핸들러에 넘긴다.
@@ -116,11 +116,11 @@ public class MatchingBatchProcessor {
 
     // 롤백된 묶음은 워터마크도 그대로라 처음부터 다시 처리해도 중복이 없다. 앞서 커밋된 것이 있으면 워터마크가 거른다.
     private void processOneByOne(List<ConsumerRecord<String, MatchingCommand>> batch) {
-        discardIssuedIds(batch.get(0));
         for (ConsumerRecord<String, MatchingCommand> record : batch) {
             long startedAt = System.nanoTime();
             List<CommandResult> results;
             try {
+                discardIssuedIds(record);
                 results = inPartitionShard(record, () -> transactionTemplate.execute(status -> handleAll(List.of(record))));
             } catch (RuntimeException e) {
                 throw failed(record, e);
