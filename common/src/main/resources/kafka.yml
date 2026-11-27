@@ -27,3 +27,7 @@ spring:
         spring.deserializer.value.delegate.class: org.springframework.kafka.support.serializer.JsonDeserializer
         spring.json.trusted.packages: grit.stockIt.domain.*
         spring.json.use.type.headers: false
+
+matching:
+  # 바쁜 종목을 체결 명령 파티션에 고정하는 표(예: 005930:3,000660:7). 비우면 Kafka 기본 해시.
+  hot-stocks: ${MATCHING_HOT_STOCKS:}

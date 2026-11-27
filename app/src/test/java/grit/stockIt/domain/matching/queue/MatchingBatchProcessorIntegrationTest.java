@@ -160,6 +160,19 @@ class MatchingBatchProcessorIntegrationTest extends IntegrationTestSupport {
     }
 
     @Test
+    @DisplayName("체결 번호를 붙일 수 없는 파티션이면 그 레코드로 멈춘다")
+    void 체결_번호를_붙일_수_없는_파티션이면_그_레코드로_멈춘다() {
+        ConsumerRecord<String, MatchingCommand> first = record(300, 0, buyFill(1));
+        ConsumerRecord<String, MatchingCommand> second = record(300, 1, buyFill(1));
+
+        assertThatThrownBy(() -> processor.process(List.of(first, second)))
+                .isInstanceOfSatisfying(BatchListenerFailedException.class, e -> {
+                    assertThat(e.getRecord()).isSameAs(first);
+                    assertThat(e.getCause()).isInstanceOf(IllegalArgumentException.class);
+                });
+    }
+
+    @Test
     @DisplayName("중간 명령이 검증에 실패하면 앞은 반영하고 그 명령에서 멈춘다")
     void 중간_명령이_검증에_실패하면_앞은_반영하고_그_명령에서_멈춘다() {
         placeSell(1L, 1);

@@ -33,6 +33,7 @@ public class LimitOrderExecutionService {
     private final OrderBookRepository orderBookRepository;
     private final ConsumerWatermarkWriter consumerWatermarkWriter;
     private final ExecutionReportOutbox executionReportOutbox;
+    private final FillIdGenerator fillIdGenerator;
 
     private final LimitOrderMatchPlanner matchPlanner = new LimitOrderMatchPlanner();
 
@@ -49,12 +50,12 @@ public class LimitOrderExecutionService {
         if (!consumerWatermarkWriter.advance(position)) {
             return Optional.empty();
         }
-        List<FilledExecution> executions = doFill(stockCode, event);
+        List<FilledExecution> executions = doFill(stockCode, event, position.partition());
         executionReportOutbox.append(executions, System.currentTimeMillis());
         return Optional.of(executions);
     }
 
-    private List<FilledExecution> doFill(String stockCode, LimitOrderFillEvent event) {
+    private List<FilledExecution> doFill(String stockCode, LimitOrderFillEvent event, int partition) {
         int remainingQuantity = event.quantity();
         if (remainingQuantity <= 0) {
             log.warn("체결 이벤트 수량이 0 이하입니다. eventId={} quantity={}", event.eventId(), event.quantity());
@@ -109,7 +110,8 @@ public class LimitOrderExecutionService {
             }
 
             order.applyFill(desiredFillQuantity);
-            ExchangeFill fill = exchangeFillRepository.save(ExchangeFill.of(order, event.price(), desiredFillQuantity));
+            long fillId = fillIdGenerator.next(partition);
+            ExchangeFill fill = exchangeFillRepository.save(ExchangeFill.of(fillId, order, event.price(), desiredFillQuantity));
             executions.add(new FilledExecution(fill.getFillId(), order.getOrderId(), order.getAccountId(),
                     stockCode, order.getOrderMethod(), event.price(), desiredFillQuantity,
                     order.getFilledQuantity(), order.getRemainingQuantity()));
