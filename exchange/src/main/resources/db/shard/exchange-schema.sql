@@ -1,8 +1,6 @@
 -- 거래소 샤드 DB 의 스키마. 샤드 설정이 있으면 기동 때 샤드마다 돌린다(ShardDataSourceConfig). 여러 번 돌려도 같다.
 -- 운영 DB 의 V12·V13·V15·V18·V20·V22 를 다 적용한 거래소 schema 와 같은 모양이다. 엔티티나 그 V 파일이 바뀌면 같이 고친다.
 
-CREATE SCHEMA IF NOT EXISTS exchange;
-
 CREATE TABLE IF NOT EXISTS exchange.exchange_order (
     order_id        BIGINT         PRIMARY KEY,
     account_id      BIGINT         NOT NULL,

@@ -19,6 +19,7 @@ import org.springframework.core.io.ClassPathResource;
 import org.springframework.jdbc.datasource.init.ResourceDatabasePopulator;
 
 import java.sql.Connection;
+import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.ArrayList;
@@ -33,6 +34,7 @@ import java.util.Optional;
 public class ShardDataSourceConfig {
 
     private static final String SCHEMA_SCRIPT = "db/shard/exchange-schema.sql";
+    private static final String SCHEMA_NAME = "exchange";
     // 빈 샤드에 서버 여럿이 함께 뜨면 CREATE ... IF NOT EXISTS 끼리도 pg_type 유일 위반으로 부딪혀, 한 서버씩 돌린다.
     private static final long SCHEMA_LOCK_KEY = 0x53544F434B4954L;
 
@@ -67,6 +69,13 @@ public class ShardDataSourceConfig {
         try (Connection connection = pool.getConnection(); Statement statement = connection.createStatement()) {
             statement.execute("SELECT pg_advisory_lock(" + SCHEMA_LOCK_KEY + ")");
             try {
+                // 서비스 계정은 DB 에 CREATE 권한이 없고, CREATE SCHEMA IF NOT EXISTS 도 권한부터 본다. 없을 때만 만든다.
+                try (ResultSet schema = statement.executeQuery("SELECT to_regnamespace('" + SCHEMA_NAME + "') IS NOT NULL")) {
+                    schema.next();
+                    if (!schema.getBoolean(1)) {
+                        statement.execute("CREATE SCHEMA " + SCHEMA_NAME);
+                    }
+                }
                 new ResourceDatabasePopulator(new ClassPathResource(SCHEMA_SCRIPT)).populate(connection);
             } finally {
                 statement.execute("SELECT pg_advisory_unlock(" + SCHEMA_LOCK_KEY + ")");
