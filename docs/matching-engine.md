@@ -13,6 +13,7 @@ KIS 실시간 체결 틱에 맞춰 사용자 주문을 체결하는 엔진의 �
 - **결과는 통보로 돌아온다.** 거래소는 결과(접수·거부·체결·취소·만료)를 그 트랜잭션 안에서 아웃박스에 적고, 릴레이가 계좌 키 통로
   `exchange.reports` 로 보낸다. 증권사의 정산 워커가 받아 자기 주문·체결 내역·계좌를 고친다(FIX 의 Execution Report 와 같은 모양).
 - **계좌를 고치는 것은 증권사뿐이다.** 거래소는 계좌를 모른다.
+- **거래소 DB 는 파티션 묶음(샤드)으로 나눌 수 있다.** 설정하지 않으면 지금처럼 DB 하나다(아래 "샤드").
 
 ## 전체 흐름
 
@@ -173,6 +174,51 @@ ON CONFLICT (topic, partition_no) DO UPDATE
   보내고 지우기 전에 죽으면 다시 보낸다(최소 한 번). PostgreSQL advisory lock 으로 인스턴스가 여럿이어도 한 곳만 보낸다.
   보낼 것이 없으면 `outbox.relay.poll-interval`(20ms) 쉬므로 그만큼 지연에 더해진다.
 - 증권사의 ORDER·CANCEL 과 거래소의 통보가 같은 장치를 쓴다. 서비스를 나누면 각자 자기 DB 에 이 테이블을 둔다.
+- 샤드를 켜면 샤드마다 `outbox_message` 가 있고, 릴레이도 서버마다 샤드당 스레드 하나(`outbox-relay-{n}`)로 돈다. advisory lock 은 샤드 DB 마다 따로 잡는다.
+  샤드가 하나(끔)면 스레드 이름은 `outbox-relay` 그대로다.
+
+## 샤드 (거래소 DB 나누기)
+
+거래소 DB 하나가 쓰기 한계가 되면 파티션을 묶음으로 나눠 DB 인스턴스를 여럿 둔다. 한 종목은 한 파티션에만 들어가므로(단일 작성자) 종목의 오더북·체결·워터마크·아웃박스는 항상 한 샤드 안에 있다.
+샤드를 켜도 명령 흐름은 같다. 워커가 명령을 받으면 그 파티션이 속한 샤드의 DB 로 트랜잭션을 연다.
+
+- **파티션 → 샤드**: `partitions` 를 샤드마다 적으면 그대로, 모든 샤드에서 비우면 `partition-count` 를 샤드 수로 연속 구간으로 나눈다(`p * 샤드 수 / partition-count`).
+  일부만 적거나, 겹치거나, 빠진 파티션이 있거나, `partition-count` 가 1~256 밖이면 기동에 실패한다. 한 번 정한 표를 런타임에 옮기는 기능은 없다.
+- **바쁜 종목**: `MATCHING_HOT_STOCKS=005930:3,000660:7` 처럼 종목 코드 → 파티션 번호를 주면 그 종목은 해시 대신 그 파티션에 고정된다(`HotStockPartitioner`, `matching.commands` 에만 적용).
+  명령을 보내는 모든 서비스(시세·증권사·거래소·부가)가 **같은 값**을 가져야 한다. 같은 종목 코드를 두 번 쓰거나 번호가 토픽 파티션 수를 넘으면 실패한다.
+- **체결 번호(`exchange_fill.fill_id`)**: 샤드가 나뉘어도 겹치지 않게 DB 가 아니라 워커가 붙이고(`FillIdGenerator`), 53비트다(JS 정수 안전 범위).
+
+  | 비트 | 뜻 |
+  |------|----|
+  | 39 | 2026-01-01T00:00:00Z 부터 지난 ms |
+  | 8 | 파티션 번호 (0~255) |
+  | 6 | 같은 ms·파티션 안 순번 (0~63) |
+
+  한 ms 에 64건을 넘으면 시계를 기다리지 않고 논리 ms 를 하나 앞당긴다. 파티션별로 번호는 항상 늘어난다.
+  - 담당 워커가 바뀌어도 이어 붙도록 워터마크에 파티션별 마지막 번호(`consumer_watermark.last_fill_id`)를 남긴다. 체결과 같은 트랜잭션에서 갱신하고, 워터마크를 올릴 때 돌려받은 값으로 새 담당 워커의 생성기를 맞춘다(`max(시계, 마지막 번호)` 에서 이어 붙는다).
+  - 롤백된 묶음에서 붙인 번호는 기록하지 않는다. 한 건씩 다시 처리할 때도 앞서 붙인 번호는 버리고 새로 붙이므로 번호에 구멍이 생길 수는 있어도 겹치지는 않는다.
+  - 파티션 번호가 256 이상이면 이 배치를 쓸 수 없다.
+- **설정 키** (`stockit.exchange.sharding`, 환경변수는 Spring 완화 바인딩 — 점·하이픈은 `_`, 대문자, 배열 `[0]` 은 `_0_`):
+
+  | 키 | 환경변수 | 뜻 |
+  |----|----------|----|
+  | `enabled` | `STOCKIT_EXCHANGE_SHARDING_ENABLED` | 샤드 켬. 없으면 false |
+  | `partition-count` | `STOCKIT_EXCHANGE_SHARDING_PARTITION_COUNT` | `matching.commands` 파티션 수(1~256) |
+  | `shards[n].url` | `STOCKIT_EXCHANGE_SHARDING_SHARDS_0_URL` | 샤드 n 의 JDBC URL |
+  | `shards[n].username` | `STOCKIT_EXCHANGE_SHARDING_SHARDS_0_USERNAME` | 계정 |
+  | `shards[n].password` | `STOCKIT_EXCHANGE_SHARDING_SHARDS_0_PASSWORD` | 비밀번호 |
+  | `shards[n].pool-size` | `STOCKIT_EXCHANGE_SHARDING_SHARDS_0_POOL_SIZE` | 샤드별 풀 크기. 없으면 `spring.datasource.hikari.maximum-pool-size`(`DB_POOL_SIZE`) |
+  | `shards[n].partitions` | `STOCKIT_EXCHANGE_SHARDING_SHARDS_0_PARTITIONS` | 담당 파티션(쉼표 구분). 모든 샤드에서 비우면 연속 구간 |
+  | (`matching.hot-stocks`) | `MATCHING_HOT_STOCKS` | 바쁜 종목 표. 모든 서비스에 같은 값 |
+
+  나머지 풀 설정(`connection-timeout` 등)은 `spring.datasource.hikari.*` 를 따르고, 검색 경로는 `stockit.db.search-path`(`exchange`)다. 풀 이름은 `exchange-shard-{n}` 이다.
+- **켤 때 지킬 것**
+  - `spring.jpa.open-in-view=false` 가 필요하다(`SPRING_JPA_OPEN_IN_VIEW=false`). 아니면 기동에 실패한다.
+  - 기동이 끝난 뒤에는 샤드를 정하지 않은 DB 접근이 예외를 던진다(조용히 샤드 0 으로 가지 않는다). 새 DB 접근 경로를 만들면 `ShardContext` 로 샤드를 정한 뒤 트랜잭션을 열어야 하고, 트랜잭션 안에서 다른 샤드로 바꿀 수 없다.
+  - 기동할 때 샤드마다 `db/shard/exchange-schema.sql`(`IF NOT EXISTS`)로 스키마와 테이블을 만든다. 엔티티를 바꾸면 이 스크립트도 같이 고친다(`ddl-auto=validate` 가 어긋남을 잡는다). 이미 있는 DB 에는 V22 를 먼저 적용한다.
+  - `partition-count` 는 실제 `matching.commands` 파티션 수와 같아야 한다. 런타임 검사가 없어, 표에 없는 파티션의 레코드는 처리에 실패해 `matching.commands.DLT` 로 간다.
+  - 거래소를 따로 띄울 때만 쓴다. 네 서비스를 한 프로세스로 띄우는 `app` 에서는 지원하지 않고, 증권사·부가에는 설정하지 않는다(`ShardRouter` 빈이 없어 아웃박스 릴레이가 기동에 실패한다).
+- **샤드 설정이 없으면** `SingleShardRouter` 가 항상 샤드 0 이고 Boot 의 기본 DataSource 를 그대로 쓴다. 동작·스레드 이름·지표 이름이 이전과 같다.
 
 ## 실패 처리 (`KafkaConfig`)
 
@@ -191,6 +237,7 @@ ON CONFLICT (topic, partition_no) DO UPDATE
 
 워커 스레드는 처리하는 동안 커넥션을 하나씩 쥔다. 스테이징 풀 60 = 체결 워커 24 + 정산 워커 8 + 미션·알림 워커 4 + 아웃박스 릴레이 1 + HTTP 23 이상.
 워커 수를 바꾸면 풀도 함께 맞춘다.
+샤드를 켜면 풀이 샤드마다 따로 생기므로(`pool-size`) 각 샤드 RDS 의 `max_connections` 는 거래소 서버 수 × 그 샤드의 풀 크기보다 커야 한다.
 
 ## 지표
 
@@ -205,7 +252,7 @@ ON CONFLICT (topic, partition_no) DO UPDATE
 | `matching.command.duration{type}` | 명령 한 건 처리 시간 = 묶음 시간 ÷ 묶음의 명령 수. `type` 별 횟수는 정확하지만 시간은 묶음 평균이다 |
 | `settlement.e2e` | 체결 커밋 → 정산 커밋 (아웃박스 릴레이 시간 포함) |
 | `outbox.relay.published` / `outbox.relay.failures` | 아웃박스에서 보낸 수 / 전송 실패 횟수 |
-| `outbox.pending.rows` / `outbox.pending.oldest.age` | 아웃박스에서 보내기를 기다리는 행 수 / 가장 오래 기다린 시간(초). 5초마다 센다(`outbox.relay.pending-sample-interval`). Kafka lag 에 안 보이는 릴레이 밀림 |
+| `outbox.pending.rows` / `outbox.pending.oldest.age` | 아웃박스에서 보내기를 기다리는 행 수 / 가장 오래 기다린 시간(초). 5초마다 센다(`outbox.relay.pending-sample-interval`). Kafka lag 에 안 보이는 릴레이 밀림. `shard` 태그가 붙는다 — 서비스 전체 밀림은 행 수는 `sum by (service)`, 나이는 `max by (service)` 로 본다 |
 
 워커 처리 시간·횟수·실패는 `spring.kafka.listener`(리스너 id 가 `name` 태그. `matching-fill` 은 poll 단위라 한 번에 묶음 여럿이 들 수 있다), 전송 ack 는 `spring.kafka.template`,
 lag 과 DLT 적재 수는 kafka-exporter 로 본다. 대시보드는 `monitoring/grafana/dashboards/mixed-load-dashboard.json`.
@@ -220,6 +267,8 @@ lag 과 DLT 적재 수는 kafka-exporter 로 본다. 대시보드는 `monitoring
 - `AccountLedgerConcurrencyTest` — 주문 접수·워커·정산·홀딩 해제가 한 계좌를 동시에 고칠 때 장부
 - `MatchingQueueFlowIntegrationTest` / `SingleStockCommandConcurrencyIntegrationTest` (Testcontainers Kafka) — 실제 큐로 입구 → 체결 → 통보 → 정산, 취소·만료, 재전달
 - `MatchingCommandConsumerIntegrationTest` — 위치 기록, 독 메시지 DLT 후에도 파티션이 계속 흐름
+- `FillIdGeneratorTest` / `FillIdPersistenceIntegrationTest` / `HotStockPartitionerTest` — 체결 번호 배치·담당 교체·롤백, 바쁜 종목 표
+- `PartitionShardRouterTest` / `ShardContextTest` / `ShardRoutingDataSourceTest` / `ShardedExchangeContextTest` / `ShardedMatchingIntegrationTest` (거래소 모듈) — 파티션 표 검증, 샤드 선택, 샤드 두 개로 입구 → 체결 → 릴레이, 샤드 없이 접근하면 예외
 
 ## 관련 파일
 
@@ -233,6 +282,9 @@ lag 과 DLT 적재 수는 kafka-exporter 로 본다. 대시보드는 `monitoring
 - `domain/order/service/OrderHoldReleaseService.java` — 취소·만료·거부 통보로 홀딩 해제
 - `domain/settlement/` — 정산 워커(`ExecutionReportConsumer`)와 정산
 - `global/outbox/` — 아웃박스 기록·릴레이
+- `global/shard/` — 샤드 선택(`ShardRouter`, `ShardContext`), `global/kafka/HotStockPartitioner` — 바쁜 종목 고정
+- `domain/matching/shard/` — 샤드 설정·라우팅 DataSource, `domain/matching/service/FillIdGenerator.java` — 체결 번호
+- `exchange/src/main/resources/db/shard/exchange-schema.sql` — 샤드 DB 초기화, `common/.../db/migration/V22__exchange_fill_snowflake_id.sql`
 - `global/config/KafkaConfig.java` — 실패 처리·DLT
 - `global/dlt/DeadLetterService.java` — DLT 조회·재전송·건너뜀
 - `common/src/main/resources/kafka.yml` — 프로듀서·컨슈머 설정

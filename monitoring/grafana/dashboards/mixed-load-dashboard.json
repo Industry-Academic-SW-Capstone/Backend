@@ -326,7 +326,7 @@
             "uid": "prometheus"
           },
           "refId": "A",
-          "expr": "max by (service) (outbox_pending_rows{job=\"spring-boot\"})",
+          "expr": "sum by (service) (outbox_pending_rows{job=\"spring-boot\"})",
           "legendFormat": "{{service}}"
         }
       ]
@@ -3359,7 +3359,7 @@
             "uid": "prometheus"
           },
           "refId": "A",
-          "expr": "max(outbox_pending_rows{job=\"spring-boot\",service=~\"$service\"})",
+          "expr": "max(sum by (service) (outbox_pending_rows{job=\"spring-boot\",service=~\"$service\"}))",
           "legendFormat": "대기 행"
         },
         {
