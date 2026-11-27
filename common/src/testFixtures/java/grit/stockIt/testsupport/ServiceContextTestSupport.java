@@ -10,6 +10,11 @@ import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.utility.DockerImageName;
 
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.SQLException;
+import java.sql.Statement;
+
 import static org.assertj.core.api.Assertions.assertThat;
 
 // 서비스 하나가 혼자 뜨는지(빈 연결이 끊기지 않는지) 확인하는 테스트의 기반. 서비스 모듈의 테스트가
@@ -18,7 +23,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 @ActiveProfiles("servicetest")
 public abstract class ServiceContextTestSupport {
 
-    static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>(DockerImageName.parse("postgres:17"))
+    protected static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>(DockerImageName.parse("postgres:17"))
             .withDatabaseName("test_database")
             .withUsername("test_user")
             .withPassword("test_password")
@@ -42,6 +47,19 @@ public abstract class ServiceContextTestSupport {
         registry.add("spring.datasource.password", POSTGRES::getPassword);
         registry.add("spring.data.redis.host", REDIS::getHost);
         registry.add("spring.data.redis.port", REDIS::getFirstMappedPort);
+    }
+
+    // 같은 컨테이너에 빈 DB 를 새로 만들고 JDBC URL 을 돌려준다. 컨테이너를 재사용하므로 지난 실행의 DB 는 지우고 만든다.
+    protected static String freshDatabaseUrl(String name) {
+        try (Connection connection = DriverManager.getConnection(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(),
+                POSTGRES.getPassword());
+             Statement statement = connection.createStatement()) {
+            statement.execute("DROP DATABASE IF EXISTS " + name + " WITH (FORCE)");
+            statement.execute("CREATE DATABASE " + name);
+        } catch (SQLException e) {
+            throw new IllegalStateException("테스트 DB 를 만들지 못했습니다: " + name, e);
+        }
+        return POSTGRES.getJdbcUrl().replace("/" + POSTGRES.getDatabaseName(), "/" + name);
     }
 
     // DB 없이 뜨는 서비스(시세)도 이 기반을 쓰므로 있을 때만 꺼낸다.

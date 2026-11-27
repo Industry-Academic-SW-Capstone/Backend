@@ -8,6 +8,7 @@ import org.springframework.context.annotation.Configuration;
 
 import java.util.Arrays;
 import java.util.List;
+import java.util.Optional;
 import java.util.regex.Pattern;
 
 // 서비스마다 자기 schema 의 표만 보게 한다. 커넥션을 열 때 search_path 를 정해, 이름만 쓴 SQL(아웃박스·처리 기록·잠금 조회)도
@@ -20,6 +21,20 @@ public class SearchPathConfig {
 
     @Bean
     public static BeanPostProcessor searchPathInitializer(@Value("${stockit.db.search-path:}") String searchPath) {
+        Optional<String> initSql = connectionInitSql(searchPath);
+        return new BeanPostProcessor() {
+            @Override
+            public Object postProcessBeforeInitialization(Object bean, String beanName) {
+                if (bean instanceof HikariDataSource dataSource) {
+                    initSql.ifPresent(dataSource::setConnectionInitSql);
+                }
+                return bean;
+            }
+        };
+    }
+
+    // 빈이 아닌 풀(거래소 샤드 풀)도 같은 값을 쓰도록 연다.
+    public static Optional<String> connectionInitSql(String searchPath) {
         List<String> schemas = Arrays.stream(searchPath.split(","))
                 .map(String::trim)
                 .filter(schema -> !schema.isEmpty())
@@ -29,14 +44,6 @@ public class SearchPathConfig {
                 throw new IllegalStateException("stockit.db.search-path 에 쓸 수 없는 schema 이름입니다: " + schema);
             }
         });
-        return new BeanPostProcessor() {
-            @Override
-            public Object postProcessBeforeInitialization(Object bean, String beanName) {
-                if (bean instanceof HikariDataSource dataSource && !schemas.isEmpty()) {
-                    dataSource.setConnectionInitSql("SET search_path TO " + String.join(", ", schemas));
-                }
-                return bean;
-            }
-        };
+        return schemas.isEmpty() ? Optional.empty() : Optional.of("SET search_path TO " + String.join(", ", schemas));
     }
 }
